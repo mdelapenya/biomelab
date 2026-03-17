@@ -24,19 +24,7 @@ var (
 			Foreground(lipgloss.Color("245")).
 			MarginTop(1)
 
-	mainBadge = lipgloss.NewStyle().
-			Background(lipgloss.Color("62")).
-			Foreground(lipgloss.Color("230")).
-			Padding(0, 1).
-			Bold(true)
-
-	branchStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
-
-	agentActiveStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42")) // green
-	agentNoneStyle   = lipgloss.NewStyle().Faint(true)
-
-	dirtyStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214")) // yellow/orange
-	cleanStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))  // green
+	cleanStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42")) // green
 
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).

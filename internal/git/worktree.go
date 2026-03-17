@@ -406,15 +406,11 @@ func (r *Repository) RemoveWorktree(name string) error {
 		return fmt.Errorf("remove worktree metadata: %w", err)
 	}
 
-	// Delete the local branch.
-	if err := r.repo.DeleteBranch(name); err != nil {
-		// Branch config may not exist; ignore that error.
-	}
-	// Also delete the branch reference itself.
+	// Delete the local branch (config may not exist; ignore errors).
+	_ = r.repo.DeleteBranch(name)
+	// Also delete the branch reference itself (may not exist; ignore errors).
 	refName := plumbing.NewBranchReferenceName(name)
-	if err := r.repo.Storer.RemoveReference(refName); err != nil {
-		// Reference may not exist; ignore.
-	}
+	_ = r.repo.Storer.RemoveReference(refName)
 
 	// Prune stale worktree entries by removing any metadata dirs
 	// whose gitdir points to a non-existent path.
@@ -440,7 +436,7 @@ func (r *Repository) pruneWorktrees() {
 			continue
 		}
 		if _, err := os.Stat(wtPath); os.IsNotExist(err) {
-			os.RemoveAll(metaDir)
+			_ = os.RemoveAll(metaDir)
 		}
 	}
 }

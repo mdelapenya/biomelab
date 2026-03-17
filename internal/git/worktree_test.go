@@ -31,8 +31,8 @@ func setupTestRepo(t *testing.T) (string, *gogit.Repository) {
 	if err != nil {
 		t.Fatalf("failed to create file: %v", err)
 	}
-	f.Write([]byte("# Test\n"))
-	f.Close()
+	_, _ = f.Write([]byte("# Test\n"))
+	_ = f.Close()
 
 	_, err = wt.Add("README.md")
 	if err != nil {
@@ -105,7 +105,7 @@ func TestListWorktrees_WithLinked(t *testing.T) {
 	}
 
 	linkedPath := filepath.Join(filepath.Dir(dir), "test-branch")
-	t.Cleanup(func() { os.RemoveAll(linkedPath) })
+	t.Cleanup(func() { _ = os.RemoveAll(linkedPath) })
 
 	linkedFS := osfs.New(linkedPath)
 	err = wt.Add(linkedFS, "test-branch")
@@ -152,7 +152,7 @@ func TestCreateAndRemoveWorktree(t *testing.T) {
 
 	branchName := "feature-test"
 	linkedPath := filepath.Join(filepath.Dir(dir), branchName)
-	t.Cleanup(func() { os.RemoveAll(linkedPath) })
+	t.Cleanup(func() { _ = os.RemoveAll(linkedPath) })
 
 	err = repo.CreateWorktree(branchName)
 	if err != nil {
