@@ -51,7 +51,7 @@ type Model struct {
 	// cardZones tracks bounding rects for click detection.
 	// Each entry maps worktree index -> {x, y, width, height} in body coordinates.
 	cardZones  []zone
-	mouseOn    bool
+	mouseOn    bool // default true, toggled with 'm'
 }
 
 type zone struct {
@@ -67,10 +67,11 @@ func New(repo *git.Repository, detector *agent.Detector) Model {
 	ti.Width = 30
 
 	return Model{
-		repo:     repo,
-		detector: detector,
-		keys:     defaultKeyMap(),
+		repo:      repo,
+		detector:  detector,
+		keys:      defaultKeyMap(),
 		textInput: ti,
+		mouseOn:   true,
 	}
 }
 
