@@ -36,5 +36,10 @@ type pullMsg struct {
 	err error
 }
 
+// editorOpenedMsg is sent after attempting to open an editor.
+type editorOpenedMsg struct {
+	err error
+}
+
 // tickMsg triggers a periodic refresh.
 type tickMsg struct{}

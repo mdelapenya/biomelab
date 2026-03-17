@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -147,6 +149,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMsg = errorStyle.Render("Warp: " + msg.err.Error())
 		} else {
 			m.statusMsg = cleanStyle.Render("Warp panel opened")
+		}
+		return m, nil
+
+	case editorOpenedMsg:
+		if msg.err != nil {
+			m.statusMsg = errorStyle.Render("Editor: " + msg.err.Error())
+		} else {
+			m.statusMsg = cleanStyle.Render("Editor opened")
 		}
 		return m, nil
 
@@ -301,6 +311,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.textInput.Focus()
 		m.statusMsg = ""
 		return m, m.textInput.Cursor.BlinkCmd()
+
+	case key.Matches(msg, m.keys.Editor):
+		if m.cursor >= 0 && m.cursor < len(m.worktrees) {
+			wt := m.worktrees[m.cursor]
+			return m, doOpenEditor(wt.Path)
+		}
 
 	case key.Matches(msg, m.keys.Enter):
 		if m.cursor >= 0 && m.cursor < len(m.worktrees) {
@@ -478,7 +494,7 @@ func (m Model) View() string {
 	if m.mouseOn {
 		mouseLabel = "m mouse:on"
 	}
-	help := helpStyle.Render("←→↑↓ navigate • ↵ open tab • p pull • c create • d delete • " + mouseLabel + " • q quit")
+	help := helpStyle.Render("←→↑↓ navigate • ↵ open tab • e editor • p pull • c create • d delete • " + mouseLabel + " • q quit")
 
 	if m.ready {
 		return header + "\n" + m.viewport.View() + "\n" + help
@@ -561,6 +577,18 @@ func doRemoveWorktree(repo *git.Repository, name string) tea.Cmd {
 	return func() tea.Msg {
 		err := repo.RemoveWorktree(name)
 		return worktreeRemovedMsg{err: err}
+	}
+}
+
+func doOpenEditor(dir string) tea.Cmd {
+	return func() tea.Msg {
+		editor := os.Getenv("GWAIM_EDITOR")
+		if editor == "" {
+			editor = "code"
+		}
+		cmd := exec.Command(editor, dir)
+		err := cmd.Start()
+		return editorOpenedMsg{err: err}
 	}
 }
 
