@@ -18,12 +18,13 @@ jobs:
 
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
-          go-version: "1.25.x"
+          go-version-file: go.mod
 
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@1481404843c368bc19ca9406f87d6e0fc97bdcfd # v7.0.0
-        with:
-          version: v2.11.3
+      - name: Install Task
+        uses: go-task/setup-task@70f2430ad412f838533de8c0515c749ffb2b8bd3 # v1.1.0
+
+      - name: Lint
+        run: task lint
 
   test:
     name: Test
@@ -33,10 +34,13 @@ jobs:
 
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
-          go-version: "1.25.x"
+          go-version-file: go.mod
 
-      - name: Run tests with race detector
-        run: go test -race -v ./...
+      - name: Install Task
+        uses: go-task/setup-task@70f2430ad412f838533de8c0515c749ffb2b8bd3 # v1.1.0
+
+      - name: Test
+        run: task test-race
 
   build:
     name: Build
@@ -47,7 +51,10 @@ jobs:
 
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
-          go-version: "1.25.x"
+          go-version-file: go.mod
+
+      - name: Install Task
+        uses: go-task/setup-task@70f2430ad412f838533de8c0515c749ffb2b8bd3 # v1.1.0
 
       - name: Build
-        run: go build -o bin/gwaim ./cmd/gwaim
+        run: task build
