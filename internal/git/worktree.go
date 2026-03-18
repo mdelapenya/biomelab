@@ -1,10 +1,12 @@
 package git
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/go-git/go-billy/v6/osfs"
 	gogit "github.com/go-git/go-git/v6"
@@ -119,9 +121,12 @@ func parseRepoName(remoteURL string) string {
 
 // Fetch updates remote tracking refs so sync status is accurate.
 func (r *Repository) Fetch() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
 	opts := &gogit.FetchOptions{}
 
-	err := r.repo.Fetch(opts)
+	err := r.repo.Fetch(ctx, opts)
 	if err == nil || err == gogit.NoErrAlreadyUpToDate {
 		return nil
 	}
@@ -133,7 +138,7 @@ func (r *Repository) Fetch() error {
 			return fmt.Errorf("fetch auth: %w", credErr)
 		}
 		opts.Auth = auth
-		err = r.repo.Fetch(opts)
+		err = r.repo.Fetch(ctx, opts)
 		if err == gogit.NoErrAlreadyUpToDate {
 			return nil
 		}
