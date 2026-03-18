@@ -183,6 +183,156 @@ func TestCreateAndRemoveWorktree(t *testing.T) {
 	}
 }
 
+// setupWorktreeManually creates a linked worktree with its metadata.
+// wtName is the worktree name (used for the metadata dir under .git/worktrees/).
+// branchName is the branch (may contain slashes like "ralph/issue-1456").
+// This simulates what `git worktree add -b ralph/issue-1456 ../1492` does.
+func setupWorktreeManually(t *testing.T, repoDir, wtName, branchName string) string {
+	t.Helper()
+
+	repo, err := OpenRepository(repoDir)
+	if err != nil {
+		t.Fatalf("failed to open repo: %v", err)
+	}
+	head, err := repo.repo.Head()
+	if err != nil {
+		t.Fatalf("failed to get HEAD: %v", err)
+	}
+	commitHash := head.Hash().String()
+
+	wtPath := filepath.Join(filepath.Dir(repoDir), wtName)
+	if err := os.MkdirAll(wtPath, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	metaDir := filepath.Join(repoDir, ".git", "worktrees", wtName)
+	if err := os.MkdirAll(metaDir, 0o755); err != nil {
+		t.Fatalf("failed to create meta dir: %v", err)
+	}
+
+	writeFile := func(path, content string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("failed to write %s: %v", path, err)
+		}
+	}
+
+	writeFile(filepath.Join(metaDir, "gitdir"), filepath.Join(wtPath, ".git")+"\n")
+	writeFile(filepath.Join(metaDir, "HEAD"), "ref: refs/heads/"+branchName+"\n")
+	writeFile(filepath.Join(metaDir, "commondir"), "../..\n")
+	if err := os.MkdirAll(filepath.Join(metaDir, "refs"), 0o755); err != nil {
+		t.Fatalf("failed to create refs dir: %v", err)
+	}
+	writeFile(filepath.Join(wtPath, ".git"), "gitdir: "+metaDir+"\n")
+
+	// Create the branch reference (may need intermediate dirs for slashed names).
+	refsDir := filepath.Join(repoDir, ".git", "refs", "heads")
+	if err := os.MkdirAll(filepath.Dir(filepath.Join(refsDir, branchName)), 0o755); err != nil {
+		t.Fatalf("failed to create branch ref dir: %v", err)
+	}
+	writeFile(filepath.Join(refsDir, branchName), commitHash+"\n")
+
+	return wtPath
+}
+
+func TestRemoveWorktree_WithSlashedBranch(t *testing.T) {
+	dir, _ := setupTestRepo(t)
+
+	// Git stores the worktree under a flat name (e.g., "1492"),
+	// even if the branch is "ralph/issue-1456".
+	wtName := "1492"
+	branchName := "ralph/issue-1456"
+	wtPath := setupWorktreeManually(t, dir, wtName, branchName)
+	t.Cleanup(func() { _ = os.RemoveAll(wtPath) })
+
+	repo, err := OpenRepository(dir)
+	if err != nil {
+		t.Fatalf("failed to open: %v", err)
+	}
+
+	// Verify the worktree appears with the slashed branch name.
+	wts, err := repo.ListWorktrees()
+	if err != nil {
+		t.Fatalf("ListWorktrees failed: %v", err)
+	}
+
+	found := false
+	for _, wt := range wts {
+		if wt.Branch == branchName {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("worktree with branch %q not found in list", branchName)
+	}
+
+	// Remove using the worktree name (not the branch name).
+	err = repo.RemoveWorktree(wtName)
+	if err != nil {
+		t.Fatalf("RemoveWorktree failed: %v", err)
+	}
+
+	// Verify it's gone from the list.
+	wts, err = repo.ListWorktrees()
+	if err != nil {
+		t.Fatalf("ListWorktrees failed: %v", err)
+	}
+	for _, wt := range wts {
+		if wt.Branch == branchName {
+			t.Errorf("worktree with branch %q still present after removal", branchName)
+		}
+	}
+
+	// Verify directory and metadata are gone.
+	if _, err := os.Stat(wtPath); !os.IsNotExist(err) {
+		t.Errorf("worktree directory %q still exists", wtPath)
+	}
+	metaDir := filepath.Join(dir, ".git", "worktrees", wtName)
+	if _, err := os.Stat(metaDir); !os.IsNotExist(err) {
+		t.Errorf("metadata directory %q still exists", metaDir)
+	}
+}
+
+func TestRemoveWorktree_Simple(t *testing.T) {
+	dir, _ := setupTestRepo(t)
+
+	repo, err := OpenRepository(dir)
+	if err != nil {
+		t.Fatalf("failed to open: %v", err)
+	}
+
+	branchName := "feature-remove"
+	linkedPath := filepath.Join(filepath.Dir(dir), branchName)
+	t.Cleanup(func() { _ = os.RemoveAll(linkedPath) })
+
+	err = repo.CreateWorktree(branchName)
+	if err != nil {
+		t.Fatalf("CreateWorktree failed: %v", err)
+	}
+
+	err = repo.RemoveWorktree(branchName)
+	if err != nil {
+		t.Fatalf("RemoveWorktree failed: %v", err)
+	}
+
+	if _, err := os.Stat(linkedPath); !os.IsNotExist(err) {
+		t.Error("worktree directory still exists")
+	}
+
+	metaDir := filepath.Join(dir, ".git", "worktrees", branchName)
+	if _, err := os.Stat(metaDir); !os.IsNotExist(err) {
+		t.Error("metadata directory still exists")
+	}
+
+	wts, err := repo.ListWorktrees()
+	if err != nil {
+		t.Fatalf("ListWorktrees failed: %v", err)
+	}
+	if len(wts) != 1 {
+		t.Fatalf("expected 1 worktree after remove, got %d", len(wts))
+	}
+}
+
 func TestDirtyDetection(t *testing.T) {
 	dir, _ := setupTestRepo(t)
 

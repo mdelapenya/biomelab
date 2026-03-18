@@ -263,8 +263,8 @@ func (r *Repository) linkedWorktree(name string) (*Worktree, error) {
 	// The gitdir file contains the path to the worktree's .git file.
 	wtPath, err := readWorktreePath(wtMetaDir)
 	if err != nil {
-		// Fallback: assume sibling directory.
-		wtPath = filepath.Join(filepath.Dir(r.repoRoot), name)
+		// Fallback: assume gwaim-worktrees directory.
+		wtPath = filepath.Join(r.worktreesDir(), name)
 	}
 
 	wt := &Worktree{
@@ -322,16 +322,22 @@ func readWorktreePath(wtMetaDir string) (string, error) {
 	return filepath.Dir(gitdir), nil
 }
 
+// worktreesDir returns the directory where gwaim stores linked worktrees.
+// Uses .git/gwaim-worktrees/ to avoid collisions with sibling repositories.
+func (r *Repository) worktreesDir() string {
+	return filepath.Join(r.repoRoot, ".git", "gwaim-worktrees")
+}
+
 // CreateWorktree creates a new linked worktree with a new branch.
 func (r *Repository) CreateWorktree(branchName string) error {
-	wtPath := filepath.Join(filepath.Dir(r.repoRoot), branchName)
+	wtPath := filepath.Join(r.worktreesDir(), branchName)
 	wtFS := osfs.New(wtPath)
 	return r.wt.Add(wtFS, branchName)
 }
 
 // CreateWorktreeAtCommit creates a new linked worktree at a specific commit.
 func (r *Repository) CreateWorktreeAtCommit(branchName string, commit plumbing.Hash) error {
-	wtPath := filepath.Join(filepath.Dir(r.repoRoot), branchName)
+	wtPath := filepath.Join(r.worktreesDir(), branchName)
 	wtFS := osfs.New(wtPath)
 	return r.wt.Add(wtFS, branchName, xworktree.WithCommit(commit))
 }
@@ -397,8 +403,8 @@ func (r *Repository) RemoveWorktree(name string) error {
 	wtMetaDir := filepath.Join(r.repoRoot, ".git", "worktrees", name)
 	wtPath, err := readWorktreePath(wtMetaDir)
 	if err != nil {
-		// Fallback: assume sibling directory.
-		wtPath = filepath.Join(filepath.Dir(r.repoRoot), name)
+		// Fallback: assume gwaim-worktrees directory.
+		wtPath = filepath.Join(r.worktreesDir(), name)
 	}
 
 	// Remove the worktree directory from disk.
