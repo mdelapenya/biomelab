@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"net/url"
-	osExec "os/exec"
+	"os/exec"
 	"strings"
 
 	githttp "github.com/go-git/go-git/v6/plumbing/transport/http"
@@ -22,7 +22,7 @@ func credentialFill(remoteURL string) (*githttp.BasicAuth, error) {
 	input := fmt.Sprintf("protocol=%s\nhost=%s\npath=%s\n\n",
 		u.Scheme, u.Host, strings.TrimPrefix(u.Path, "/"))
 
-	cmd := osExec.Command("git", "credential", "fill")
+	cmd := exec.Command("git", "credential", "fill")
 	cmd.Stdin = strings.NewReader(input)
 
 	out, err := cmd.Output()

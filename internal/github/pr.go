@@ -2,7 +2,6 @@ package github
 
 import (
 	"encoding/json"
-	"fmt"
 	"os/exec"
 	"strings"
 	"sync"
@@ -137,23 +136,3 @@ func StatusIcon(status string) string {
 	}
 }
 
-// FormatPR returns a one-line summary of a PR.
-func FormatPR(pr *PRInfo) string {
-	state := pr.State
-	if pr.Draft {
-		state = "draft"
-	}
-
-	s := fmt.Sprintf("#%d %s (%s)", pr.Number, truncate(pr.Title, 30), state)
-	if icon := StatusIcon(pr.CheckStatus); icon != "" {
-		s += " " + icon
-	}
-	return s
-}
-
-func truncate(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max-1] + "…"
-}

@@ -11,9 +11,7 @@ import (
 	"github.com/go-git/go-billy/v6/osfs"
 	gogit "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/cache"
 	githttp "github.com/go-git/go-git/v6/plumbing/transport/http"
-	"github.com/go-git/go-git/v6/storage/filesystem"
 	xworktree "github.com/go-git/go-git/v6/x/plumbing/worktree"
 )
 
@@ -28,23 +26,6 @@ const (
 	SyncDiverged              // both have commits the other doesn't
 	SyncNoUpstream            // no remote tracking branch
 )
-
-func (s SyncStatus) String() string {
-	switch s {
-	case SyncUpToDate:
-		return "up-to-date"
-	case SyncAhead:
-		return "ahead"
-	case SyncBehind:
-		return "behind"
-	case SyncDiverged:
-		return "diverged"
-	case SyncNoUpstream:
-		return "no upstream"
-	default:
-		return ""
-	}
-}
 
 // Worktree holds the information about a single git worktree.
 type Worktree struct {
@@ -383,13 +364,6 @@ func (r *Repository) CreateWorktree(branchName string) error {
 	return r.wt.Add(wtFS, branchName)
 }
 
-// CreateWorktreeAtCommit creates a new linked worktree at a specific commit.
-func (r *Repository) CreateWorktreeAtCommit(branchName string, commit plumbing.Hash) error {
-	wtPath := filepath.Join(r.worktreesDir(), branchName)
-	wtFS := osfs.New(wtPath)
-	return r.wt.Add(wtFS, branchName, xworktree.WithCommit(commit))
-}
-
 // Pull fetches from the remote and merges into the main worktree's current branch.
 // Credentials are obtained from the user's configured git credential helpers.
 func (r *Repository) Pull() error {
@@ -502,19 +476,6 @@ func (r *Repository) pruneWorktrees() {
 	}
 }
 
-// WorktreePaths returns all worktree absolute paths for agent matching.
-func (r *Repository) WorktreePaths() ([]string, error) {
-	wts, err := r.ListWorktrees()
-	if err != nil {
-		return nil, err
-	}
-	paths := make([]string, len(wts))
-	for i, wt := range wts {
-		paths[i] = wt.Path
-	}
-	return paths, nil
-}
-
 // RepoRoot finds the root of the git repository containing the given path.
 func RepoRoot(path string) (string, error) {
 	r, err := gogit.PlainOpenWithOptions(path, &gogit.PlainOpenOptions{
@@ -532,9 +493,3 @@ func RepoRoot(path string) (string, error) {
 	return wt.Filesystem.Root(), nil
 }
 
-// NewStorageFromPath creates a filesystem storage for a repo path, useful for testing.
-func NewStorageFromPath(path string) *filesystem.Storage {
-	fs := osfs.New(path)
-	dotgitFS, _ := fs.Chroot(".git")
-	return filesystem.NewStorage(dotgitFS, cache.NewObjectLRUDefault())
-}

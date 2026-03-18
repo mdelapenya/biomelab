@@ -381,24 +381,3 @@ func TestRepoRoot(t *testing.T) {
 	}
 }
 
-func TestWorktreePaths(t *testing.T) {
-	dir, _ := setupTestRepo(t)
-
-	repo, err := OpenRepository(dir)
-	if err != nil {
-		t.Fatalf("failed to open: %v", err)
-	}
-
-	paths, err := repo.WorktreePaths()
-	if err != nil {
-		t.Fatalf("WorktreePaths failed: %v", err)
-	}
-
-	if len(paths) != 1 {
-		t.Fatalf("expected 1 path, got %d", len(paths))
-	}
-
-	if paths[0] != dir {
-		t.Errorf("got path %q, want %q", paths[0], dir)
-	}
-}
