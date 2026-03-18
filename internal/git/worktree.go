@@ -148,6 +148,54 @@ func (r *Repository) Fetch() error {
 	return err
 }
 
+// ListWorktreesQuick returns worktrees with only branch info — no dirty/sync checks.
+// Used for fast initial render.
+func (r *Repository) ListWorktreesQuick() ([]Worktree, error) {
+	var result []Worktree
+
+	// Main worktree — branch only.
+	head, err := r.repo.Head()
+	if err != nil {
+		return nil, err
+	}
+	mainWt := Worktree{Path: r.repoRoot, IsMain: true}
+	if head.Name().IsBranch() {
+		mainWt.Branch = head.Name().Short()
+	} else {
+		mainWt.Detached = true
+		mainWt.Branch = head.Hash().String()[:7]
+	}
+	result = append(result, mainWt)
+
+	// Linked worktrees — branch from HEAD file only.
+	names, err := r.wt.List()
+	if err != nil {
+		return result, nil
+	}
+	for _, name := range names {
+		wtMetaDir := filepath.Join(r.repoRoot, ".git", "worktrees", name)
+		wtPath, pathErr := readWorktreePath(wtMetaDir)
+		if pathErr != nil {
+			wtPath = filepath.Join(r.worktreesDir(), name)
+		}
+		wt := Worktree{Path: wtPath}
+		headData, headErr := os.ReadFile(filepath.Join(wtMetaDir, "HEAD"))
+		if headErr != nil {
+			continue
+		}
+		headStr := strings.TrimSpace(string(headData))
+		if strings.HasPrefix(headStr, "ref: ") {
+			ref := strings.TrimPrefix(headStr, "ref: ")
+			wt.Branch = strings.TrimPrefix(ref, "refs/heads/")
+		} else {
+			wt.Detached = true
+			wt.Branch = headStr[:min(7, len(headStr))]
+		}
+		result = append(result, wt)
+	}
+	return result, nil
+}
+
 // ListWorktrees returns all worktrees (main + linked) with their metadata.
 func (r *Repository) ListWorktrees() ([]Worktree, error) {
 	var result []Worktree

@@ -76,7 +76,9 @@ func New(repo *git.Repository, detector *agent.Detector) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(doRefresh(m.repo, m.detector), doTick())
+	// Fast initial load: just worktrees, no fetch/agents/PRs.
+	// Full refresh runs right after via doTick.
+	return tea.Batch(doQuickRefresh(m.repo), doRefresh(m.repo, m.detector), doTick())
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -530,6 +532,18 @@ func (m Model) cardWidth(cols int) int {
 }
 
 // Commands
+
+// doQuickRefresh lists worktrees with branch info only — no dirty/sync checks,
+// no fetch, no agent detection, no PR lookup. Used for instant first render.
+func doQuickRefresh(repo *git.Repository) tea.Cmd {
+	return func() tea.Msg {
+		wts, err := repo.ListWorktreesQuick()
+		if err != nil {
+			return refreshMsg{err: err}
+		}
+		return refreshMsg{worktrees: wts, agents: agent.DetectionResult{}, prs: github.PRResult{}}
+	}
+}
 
 func doRefresh(repo *git.Repository, detector *agent.Detector) tea.Cmd {
 	return func() tea.Msg {
