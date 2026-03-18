@@ -401,8 +401,10 @@ func (r *Repository) RemoveWorktree(name string) error {
 		return fmt.Errorf("remove worktree directory: %w", err)
 	}
 
-	// Remove the worktree metadata from .git/worktrees/<name>.
-	if err := r.wt.Remove(name); err != nil {
+	// Remove the worktree metadata directory directly.
+	// We don't use r.wt.Remove() because it rejects names with slashes
+	// (e.g., "ralph/issue-1456") due to its name regex.
+	if err := os.RemoveAll(wtMetaDir); err != nil {
 		return fmt.Errorf("remove worktree metadata: %w", err)
 	}
 
