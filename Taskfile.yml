@@ -1,12 +1,23 @@
 version: '3'
 
 vars:
-  GO: go
+  GO_VERSION:
+    sh: grep '^go ' go.mod | awk '{print $2}'
+  GO:
+    sh: eval "$(gvm {{.GO_VERSION}})" && which go
   BIN: bin/gwaim
 
 tasks:
+  setup:
+    desc: Install gvm if not present
+    status:
+      - command -v gvm
+    cmds:
+      - go install github.com/andrewkroh/gvm/cmd/gvm@latest
+
   build:
     desc: Build the gwaim binary
+    deps: [setup]
     cmds:
       - '{{.GO}} build -o {{.BIN}} ./cmd/gwaim'
     sources:
@@ -16,21 +27,25 @@ tasks:
 
   test:
     desc: Run all tests
+    deps: [setup]
     cmds:
       - '{{.GO}} test -v ./...'
 
   test-race:
     desc: Run all tests with race detector
+    deps: [setup]
     cmds:
       - '{{.GO}} test -race -v ./...'
 
   install:
     desc: Install gwaim to $GOPATH/bin
+    deps: [setup]
     cmds:
       - '{{.GO}} install ./cmd/gwaim'
 
   lint:
     desc: Run golangci-lint v2
+    deps: [setup]
     cmds:
       - '{{.GO}} run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.3 run ./...'
 
