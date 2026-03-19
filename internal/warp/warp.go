@@ -20,15 +20,20 @@ var (
 func OpenTab(repoName, dir, agentCmd string) error {
 	openTabsMu.Lock()
 	tabExists := openTabs[repoName]
+	if !tabExists {
+		// Mark as created before releasing the lock to prevent duplicate creation.
+		openTabs[repoName] = true
+	}
 	openTabsMu.Unlock()
 
 	if !tabExists {
 		if err := createRepoTab(repoName, dir); err != nil {
+			// Roll back on failure.
+			openTabsMu.Lock()
+			delete(openTabs, repoName)
+			openTabsMu.Unlock()
 			return err
 		}
-		openTabsMu.Lock()
-		openTabs[repoName] = true
-		openTabsMu.Unlock()
 	} else {
 		if err := focusRepoTab(repoName); err != nil {
 			if err := createRepoTab(repoName, dir); err != nil {
