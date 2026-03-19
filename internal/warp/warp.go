@@ -144,6 +144,11 @@ func osascriptOutput(lines []string) ([]byte, error) {
 	return cmd.Output()
 }
 
+// shellQuote wraps a string in single quotes for safe shell use.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
 // escAS escapes double quotes for use inside AppleScript double-quoted strings.
 // Does NOT escape backslashes — they are needed for shell escape sequences
 // like \033 inside printf commands.
@@ -175,7 +180,7 @@ func linuxNewTab(repoName, dir string) error {
 }
 
 func linuxSplitPanel(dir, agentCmd string) error {
-	shellCmd := "cd " + dir
+	shellCmd := "cd " + shellQuote(dir)
 	if agentCmd != "" {
 		shellCmd += " && " + agentCmd
 	}
@@ -187,7 +192,7 @@ func linuxSplitPanel(dir, agentCmd string) error {
 	}{
 		{"gnome-terminal", []string{"--tab", "--working-directory", dir, "--", "sh", "-c", shellCmd}},
 		{"konsole", []string{"--new-tab", "--workdir", dir, "-e", "sh", "-c", shellCmd}},
-		{"xfce4-terminal", []string{"--tab", "--working-directory", dir, "-e", "sh -c '" + shellCmd + "'"}},
+		{"xfce4-terminal", []string{"--tab", "--working-directory", dir, "--", "sh", "-c", shellCmd}},
 	}
 
 	for _, t := range terminals {
