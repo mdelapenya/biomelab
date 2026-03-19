@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-git/go-billy/v6/osfs"
@@ -39,6 +40,7 @@ type Worktree struct {
 
 // Repository wraps a go-git repository and its worktree manager.
 type Repository struct {
+	mu       sync.Mutex
 	repo     *gogit.Repository
 	wt       *xworktree.Worktree
 	repoRoot string
@@ -66,6 +68,24 @@ func OpenRepository(path string) (*Repository, error) {
 // Root returns the repository root path.
 func (r *Repository) Root() string {
 	return r.repoRoot
+}
+
+// reopen refreshes the go-git repo and worktree manager handles.
+// This is necessary because go-git caches packfile indexes in memory,
+// and if git gc/repack runs externally, the cache goes stale causing
+// "packfile not found" errors.
+func (r *Repository) reopen() error {
+	repo, err := gogit.PlainOpen(r.repoRoot)
+	if err != nil {
+		return err
+	}
+	wt, err := xworktree.New(repo.Storer)
+	if err != nil {
+		return err
+	}
+	r.repo = repo
+	r.wt = wt
+	return nil
 }
 
 // RepoName returns the "owner/repo" name derived from the origin remote URL.
@@ -101,10 +121,32 @@ func parseRepoName(remoteURL string) string {
 }
 
 // Fetch updates remote tracking refs so sync status is accurate.
+// Uses a 15-second timeout to avoid hanging on slow networks.
 func (r *Repository) Fetch() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
+	type result struct{ err error }
+	ch := make(chan result, 1)
 
+	go func() {
+		ch <- result{err: r.doFetch()}
+	}()
+
+	select {
+	case res := <-ch:
+		return res.err
+	case <-time.After(15 * time.Second):
+		return fmt.Errorf("fetch timed out")
+	}
+}
+
+func (r *Repository) doFetch() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if err := r.reopen(); err != nil {
+		return err
+	}
+
+	ctx := context.Background()
 	opts := &gogit.FetchOptions{}
 
 	err := r.repo.Fetch(ctx, opts)
@@ -112,7 +154,6 @@ func (r *Repository) Fetch() error {
 		return nil
 	}
 
-	// If auth is required, resolve credentials from git credential helpers.
 	if isAuthError(err) {
 		auth, credErr := r.resolveCredentials()
 		if credErr != nil {
@@ -132,6 +173,8 @@ func (r *Repository) Fetch() error {
 // ListWorktreesQuick returns worktrees with only branch info — no dirty/sync checks.
 // Used for fast initial render.
 func (r *Repository) ListWorktreesQuick() ([]Worktree, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	var result []Worktree
 
 	// Main worktree — branch only.
@@ -179,6 +222,13 @@ func (r *Repository) ListWorktreesQuick() ([]Worktree, error) {
 
 // ListWorktrees returns all worktrees (main + linked) with their metadata.
 func (r *Repository) ListWorktrees() ([]Worktree, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if err := r.reopen(); err != nil {
+		return nil, err
+	}
+
 	var result []Worktree
 
 	// Add the main worktree.
@@ -359,6 +409,8 @@ func (r *Repository) worktreesDir() string {
 
 // CreateWorktree creates a new linked worktree with a new branch.
 func (r *Repository) CreateWorktree(branchName string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	wtPath := filepath.Join(r.worktreesDir(), branchName)
 	wtFS := osfs.New(wtPath)
 	return r.wt.Add(wtFS, branchName)
@@ -367,6 +419,13 @@ func (r *Repository) CreateWorktree(branchName string) error {
 // Pull fetches from the remote and merges into the main worktree's current branch.
 // Credentials are obtained from the user's configured git credential helpers.
 func (r *Repository) Pull() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if err := r.reopen(); err != nil {
+		return err
+	}
+
 	wt, err := r.repo.Worktree()
 	if err != nil {
 		return err
@@ -421,6 +480,9 @@ func (r *Repository) resolveCredentials() (*githttp.BasicAuth, error) {
 // RemoveWorktree fully removes a linked worktree: removes the worktree directory,
 // removes the worktree metadata, deletes the branch, and prunes stale entries.
 func (r *Repository) RemoveWorktree(name string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	// Read the worktree path before removing metadata.
 	wtMetaDir := filepath.Join(r.repoRoot, ".git", "worktrees", name)
 	wtPath, err := readWorktreePath(wtMetaDir)
