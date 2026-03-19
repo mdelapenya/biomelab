@@ -121,24 +121,8 @@ func parseRepoName(remoteURL string) string {
 }
 
 // Fetch updates remote tracking refs so sync status is accurate.
-// Uses a 15-second timeout to avoid hanging on slow networks.
+// Uses a 15-second context timeout to cancel slow fetches cleanly.
 func (r *Repository) Fetch() error {
-	type result struct{ err error }
-	ch := make(chan result, 1)
-
-	go func() {
-		ch <- result{err: r.doFetch()}
-	}()
-
-	select {
-	case res := <-ch:
-		return res.err
-	case <-time.After(15 * time.Second):
-		return fmt.Errorf("fetch timed out")
-	}
-}
-
-func (r *Repository) doFetch() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -146,7 +130,9 @@ func (r *Repository) doFetch() error {
 		return err
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
 	opts := &gogit.FetchOptions{}
 
 	err := r.repo.Fetch(ctx, opts)
