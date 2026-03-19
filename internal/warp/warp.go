@@ -5,11 +5,11 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"sync"
 )
 
 var (
-	// tracks which repo tabs have been created in this session.
 	openTabs   = make(map[string]bool)
 	openTabsMu sync.Mutex
 )
@@ -30,9 +30,7 @@ func OpenTab(repoName, dir, agentCmd string) error {
 		openTabs[repoName] = true
 		openTabsMu.Unlock()
 	} else {
-		// Focus the repo tab before splitting.
 		if err := focusRepoTab(repoName); err != nil {
-			// If we can't focus, create a new tab instead.
 			if err := createRepoTab(repoName, dir); err != nil {
 				return err
 			}
@@ -42,7 +40,6 @@ func OpenTab(repoName, dir, agentCmd string) error {
 	return splitPanel(dir, agentCmd)
 }
 
-// createRepoTab creates a new terminal tab and sets its title to the repo name.
 func createRepoTab(repoName, dir string) error {
 	switch runtime.GOOS {
 	case "darwin":
@@ -54,16 +51,13 @@ func createRepoTab(repoName, dir string) error {
 	}
 }
 
-// focusRepoTab brings the repo tab to focus.
 func focusRepoTab(repoName string) error {
 	if runtime.GOOS != "darwin" {
-		// On non-macOS, we can't reliably focus tabs. Assume it's still focused.
 		return nil
 	}
 	return darwinFocusTab(repoName)
 }
 
-// splitPanel opens a split panel in the current tab and runs the command.
 func splitPanel(dir, agentCmd string) error {
 	switch runtime.GOOS {
 	case "darwin":
@@ -75,79 +69,84 @@ func splitPanel(dir, agentCmd string) error {
 	}
 }
 
-// --- macOS implementations using keyboard shortcuts via System Events ---
+// --- macOS ---
 
 func darwinNewTab(repoName, dir string) error {
-	// Cmd+T for new tab, then set title via escape sequence.
-	titleCmd := fmt.Sprintf(`printf '\033]0;%s\007'`, repoName)
-	script := fmt.Sprintf(`
-tell application "System Events"
-    keystroke "t" using command down
-    delay 0.5
-    keystroke "cd %s && %s"
-    key code 36
-end tell`, dir, titleCmd)
+	titleCmd := `printf \"\\033]0;` + escAS(repoName) + `\\007\"`
+	text := "cd " + escAS(dir) + " && " + titleCmd
 
-	cmd := exec.Command("osascript", "-e", script)
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	return osascript([]string{
+		`tell application "System Events"`,
+		`    keystroke "t" using command down`,
+		`    delay 0.5`,
+		`    keystroke "` + text + `"`,
+		`    key code 36`,
+		`end tell`,
+	})
 }
 
 func darwinFocusTab(repoName string) error {
-	// Use Cmd+Shift+[ and Cmd+Shift+] to cycle tabs and check titles.
-	// This is fragile, so we just try to find the tab by title using
-	// System Events accessibility attributes on all UI elements.
-	// If not found within a reasonable attempt, return error.
-	script := fmt.Sprintf(`
-tell application "System Events"
-    tell process "Warp"
-        set frontmost to true
-        -- Try to find tab by cycling through them (max 20 tabs)
-        repeat 20 times
-            -- Get the title of the front window
-            set winTitle to name of front window
-            if winTitle contains %q then
-                return "found"
-            end if
-            -- Move to next tab
-            keystroke "}" using command down
-            delay 0.1
-        end repeat
-    end tell
-end tell
-return "not found"`, repoName)
-
-	cmd := exec.Command("osascript", "-e", script)
-	out, err := cmd.Output()
+	out, err := osascriptOutput([]string{
+		`tell application "System Events"`,
+		`    tell process "Warp"`,
+		`        set frontmost to true`,
+		`        repeat 20 times`,
+		`            set winTitle to name of front window`,
+		`            if winTitle contains "` + escAS(repoName) + `" then`,
+		`                return "found"`,
+		`            end if`,
+		`            keystroke "]" using {shift down, command down}`,
+		`            delay 0.1`,
+		`        end repeat`,
+		`    end tell`,
+		`end tell`,
+		`return "not found"`,
+	})
 	if err != nil {
 		return err
 	}
-	if string(out) != "found\n" {
-		return fmt.Errorf("tab %q not found", repoName)
+	if strings.TrimSpace(string(out)) != "found" {
+		return fmt.Errorf("tab not found")
 	}
 	return nil
 }
 
 func darwinSplitPanel(dir, agentCmd string) error {
-	command := fmt.Sprintf("cd %s", dir)
+	text := "cd " + escAS(dir)
 	if agentCmd != "" {
-		command += " && " + agentCmd
+		text += " && " + agentCmd
 	}
 
-	script := fmt.Sprintf(`
-tell application "System Events"
-    keystroke "d" using {shift down, command down}
-    delay 0.5
-    keystroke %q
-    key code 36
-end tell`, command)
+	return osascript([]string{
+		`tell application "System Events"`,
+		`    keystroke "d" using {shift down, command down}`,
+		`    delay 0.5`,
+		`    keystroke "` + text + `"`,
+		`    key code 36`,
+		`end tell`,
+	})
+}
 
-	cmd := exec.Command("osascript", "-e", script)
+func osascript(lines []string) error {
+	cmd := exec.Command("osascript", "-e", strings.Join(lines, "\n"))
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
 
-// --- Linux implementations ---
+func osascriptOutput(lines []string) ([]byte, error) {
+	cmd := exec.Command("osascript", "-e", strings.Join(lines, "\n"))
+	cmd.Stderr = os.Stderr
+	return cmd.Output()
+}
+
+// escAS escapes double quotes for use inside AppleScript double-quoted strings.
+// Does NOT escape backslashes — they are needed for shell escape sequences
+// like \033 inside printf commands.
+func escAS(s string) string {
+	return strings.ReplaceAll(s, `"`, `\"`)
+}
+
+// --- Linux ---
 
 func linuxNewTab(repoName, dir string) error {
 	terminals := []struct {
@@ -167,33 +166,28 @@ func linuxNewTab(repoName, dir string) error {
 		}
 	}
 
-	return fmt.Errorf("no supported terminal found — consider running inside tmux")
+	return fmt.Errorf("no supported terminal found")
 }
 
 func linuxSplitPanel(dir, agentCmd string) error {
-	// Most Linux terminals don't support split panels.
-	// Fall back to opening a new tab.
-	command := ""
+	shellCmd := "cd " + dir
 	if agentCmd != "" {
-		command = agentCmd
+		shellCmd += " && " + agentCmd
 	}
+	shellCmd += "; exec $SHELL"
 
 	terminals := []struct {
 		bin  string
 		args []string
 	}{
-		{"gnome-terminal", []string{"--tab", "--working-directory", dir}},
-		{"konsole", []string{"--new-tab", "--workdir", dir}},
-		{"xfce4-terminal", []string{"--tab", "--working-directory", dir}},
+		{"gnome-terminal", []string{"--tab", "--working-directory", dir, "--", "sh", "-c", shellCmd}},
+		{"konsole", []string{"--new-tab", "--workdir", dir, "-e", "sh", "-c", shellCmd}},
+		{"xfce4-terminal", []string{"--tab", "--working-directory", dir, "-e", "sh -c '" + shellCmd + "'"}},
 	}
 
 	for _, t := range terminals {
 		if _, err := exec.LookPath(t.bin); err == nil {
-			args := t.args
-			if command != "" {
-				args = append(args, "--", "sh", "-c", command+"; exec $SHELL")
-			}
-			cmd := exec.Command(t.bin, args...)
+			cmd := exec.Command(t.bin, t.args...)
 			cmd.Stderr = os.Stderr
 			return cmd.Start()
 		}
