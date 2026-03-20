@@ -293,6 +293,38 @@ func TestUpdate_ConfirmDeleteEscCancels(t *testing.T) {
 	}
 }
 
+func TestUpdate_RepairFromMain(t *testing.T) {
+	m := testModel(2)
+	m.cursor = 0 // main worktree
+
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}}
+	updated, cmd := m.Update(msg)
+	model := updated.(Model)
+
+	if model.statusMsg == "" {
+		t.Error("expected status message for repair")
+	}
+	if cmd == nil {
+		t.Error("expected a command for repair")
+	}
+}
+
+func TestUpdate_RepairBlockedFromNonMain(t *testing.T) {
+	m := testModel(2)
+	m.cursor = 1 // non-main worktree
+
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}}
+	updated, cmd := m.Update(msg)
+	model := updated.(Model)
+
+	if model.statusMsg != "" {
+		t.Error("expected no status message when repair from non-main")
+	}
+	if cmd != nil {
+		t.Error("expected no command when repair from non-main")
+	}
+}
+
 func TestUpdate_WindowSize(t *testing.T) {
 	m := testModel(2)
 

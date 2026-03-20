@@ -10,6 +10,7 @@ type keyMap struct {
 	Create key.Binding
 	Delete key.Binding
 	Pull   key.Binding
+	Repair key.Binding
 	Editor key.Binding
 	Mouse  key.Binding
 	Enter  key.Binding
@@ -45,6 +46,10 @@ func defaultKeyMap() keyMap {
 		Pull: key.NewBinding(
 			key.WithKeys("p"),
 			key.WithHelp("p", "pull"),
+		),
+		Repair: key.NewBinding(
+			key.WithKeys("r"),
+			key.WithHelp("r", "repair"),
 		),
 		Editor: key.NewBinding(
 			key.WithKeys("e"),

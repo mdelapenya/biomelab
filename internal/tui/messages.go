@@ -41,5 +41,11 @@ type editorOpenedMsg struct {
 	err error
 }
 
+// worktreeRepairedMsg is sent after a worktree repair completes.
+type worktreeRepairedMsg struct {
+	output string // per-worktree repair details from git, empty if nothing needed repair
+	err    error
+}
+
 // tickMsg triggers a periodic refresh.
 type tickMsg struct{}

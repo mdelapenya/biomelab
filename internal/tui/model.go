@@ -172,6 +172,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, doRefresh(m.repo, m.detector)
 
+	case worktreeRepairedMsg:
+		if msg.err != nil {
+			m.statusMsg = errorStyle.Render("Repair: " + msg.err.Error())
+		} else if msg.output != "" {
+			m.statusMsg = cleanStyle.Render("Repair: " + msg.output)
+		} else {
+			m.statusMsg = cleanStyle.Render("Nothing to repair")
+		}
+		return m, doRefresh(m.repo, m.detector)
+
 	case tea.KeyMsg:
 		updated, cmd := m.handleKey(msg)
 		m = updated.(Model)
@@ -314,6 +324,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Pull):
 		m.statusMsg = cleanStyle.Render("Pulling...")
 		return m, doPull(m.repo)
+
+	case key.Matches(msg, m.keys.Repair):
+		if m.cursor != 0 {
+			return m, nil // repair only from main worktree
+		}
+		m.statusMsg = cleanStyle.Render("Repairing worktrees...")
+		return m, doRepairWorktrees(m.repo)
 
 	case key.Matches(msg, m.keys.Mouse):
 		m.mouseOn = !m.mouseOn
@@ -517,7 +534,7 @@ func (m Model) View() string {
 	if m.mouseOn {
 		mouseLabel = "m mouse:on"
 	}
-	help := helpStyle.Render("←→↑↓ navigate • ↵ open tab • e editor • p pull • c create • d delete • " + mouseLabel + " • q quit")
+	help := helpStyle.Render("←→↑↓ navigate • ↵ open tab • e editor • p pull • r repair • c create • d delete • " + mouseLabel + " • q quit")
 
 	if m.ready {
 		return header + "\n" + m.viewport.View() + "\n" + help
@@ -605,6 +622,13 @@ func doCreateWorktree(repo *git.Repository, branchName string) tea.Cmd {
 	return func() tea.Msg {
 		err := repo.CreateWorktree(branchName)
 		return worktreeCreatedMsg{branchName: branchName, err: err}
+	}
+}
+
+func doRepairWorktrees(repo *git.Repository) tea.Cmd {
+	return func() tea.Msg {
+		output, err := repo.Repair()
+		return worktreeRepairedMsg{output: output, err: err}
 	}
 }
 
