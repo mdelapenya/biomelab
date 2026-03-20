@@ -15,7 +15,7 @@ var (
 )
 
 // OpenTab opens a new terminal panel for a worktree.
-// If no tab for the repo exists yet, it creates one first.
+// If no tab for the repo exists yet, it creates one and runs the cd (+agent) there.
 // Subsequent calls add a split panel to the existing repo tab.
 func OpenTab(repoName, dir, agentCmd string) error {
 	openTabsMu.Lock()
@@ -27,28 +27,31 @@ func OpenTab(repoName, dir, agentCmd string) error {
 	openTabsMu.Unlock()
 
 	if !tabExists {
-		if err := createRepoTab(repoName, dir); err != nil {
+		if err := createRepoTab(repoName, dir, agentCmd); err != nil {
 			// Roll back on failure.
 			openTabsMu.Lock()
 			delete(openTabs, repoName)
 			openTabsMu.Unlock()
 			return err
 		}
-	} else {
-		if err := focusRepoTab(repoName); err != nil {
-			if err := createRepoTab(repoName, dir); err != nil {
-				return err
-			}
+		// The new tab already has the cd + agent command, no split needed.
+		return nil
+	}
+
+	if err := focusRepoTab(repoName); err != nil {
+		if err := createRepoTab(repoName, dir, agentCmd); err != nil {
+			return err
 		}
+		return nil
 	}
 
 	return splitPanel(dir, agentCmd)
 }
 
-func createRepoTab(repoName, dir string) error {
+func createRepoTab(repoName, dir, agentCmd string) error {
 	switch runtime.GOOS {
 	case "darwin":
-		return darwinNewTab(repoName, dir)
+		return darwinNewTab(dir, agentCmd)
 	case "linux":
 		return linuxNewTab(repoName, dir)
 	default:
@@ -76,9 +79,11 @@ func splitPanel(dir, agentCmd string) error {
 
 // --- macOS ---
 
-func darwinNewTab(repoName, dir string) error {
-	titleCmd := `printf \"\\033]0;` + escAS(repoName) + `\\007\"`
-	text := "cd " + escAS(dir) + " && " + titleCmd
+func darwinNewTab(dir, agentCmd string) error {
+	text := "cd " + escAS(dir)
+	if agentCmd != "" {
+		text += " && " + agentCmd
+	}
 
 	return osascript([]string{
 		`tell application "System Events"`,
