@@ -18,6 +18,7 @@ type ProcessLister interface {
 // ProcessInfo holds the data we need from each OS process.
 type ProcessInfo struct {
 	PID     int32
+	PPID    int32
 	Name    string
 	Cwd     string
 	Status  string
@@ -62,6 +63,9 @@ func enrichProcess(ctx context.Context, info *ProcessInfo) {
 	if createTime, err := p.CreateTimeWithContext(ctx); err == nil {
 		info.Created = time.UnixMilli(createTime)
 	}
+	if ppid, err := p.PpidWithContext(ctx); err == nil {
+		info.PPID = ppid
+	}
 }
 
 // Detector finds coding agent processes and matches them to worktree paths.
@@ -92,12 +96,18 @@ func (d *Detector) Detect(worktreePaths []string) DetectionResult {
 	var agents []ProcessInfo
 	for _, p := range procs {
 		name := strings.ToLower(filepath.Base(p.Name))
+		matched := false
 		for kind, patterns := range ProcessPatterns {
 			for _, pat := range patterns {
 				if strings.Contains(name, pat) {
 					p.Name = string(kind) // normalize to kind name
 					agents = append(agents, p)
+					matched = true
+					break
 				}
+			}
+			if matched {
+				break
 			}
 		}
 	}
@@ -113,9 +123,25 @@ func (d *Detector) Detect(worktreePaths []string) DetectionResult {
 		}
 	}
 
+	// Deduplicate parent-child pairs: when a CLI agent (e.g. copilot) spawns a
+	// child with the same name and CWD, drop the child and keep the parent.
+	// Independent sessions of the same agent kind are preserved.
+	agentPIDs := make(map[int32]string, len(agents)) // PID → normalized kind name
+	for _, a := range agents {
+		agentPIDs[a.PID] = a.Name
+	}
+	var deduped []ProcessInfo
+	for _, a := range agents {
+		// Skip if the parent is also an agent of the same kind.
+		if parentKind, ok := agentPIDs[a.PPID]; ok && parentKind == a.Name {
+			continue
+		}
+		deduped = append(deduped, a)
+	}
+
 	// Match to worktree paths.
 	result := make(DetectionResult)
-	for _, a := range agents {
+	for _, a := range deduped {
 		if a.Cwd == "" {
 			continue
 		}
@@ -135,5 +161,6 @@ func (d *Detector) Detect(worktreePaths []string) DetectionResult {
 			}
 		}
 	}
+
 	return result
 }

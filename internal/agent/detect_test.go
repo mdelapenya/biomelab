@@ -82,11 +82,33 @@ func TestDetect_EmptyCWDSkipped(t *testing.T) {
 	}
 }
 
-func TestDetect_MultipleAgentsSameWorktree(t *testing.T) {
+func TestDetect_ParentChildDeduped(t *testing.T) {
+	// A CLI agent spawns a child with the same name and CWD.
+	// Only the parent should be kept.
 	lister := &mockLister{
 		procs: []ProcessInfo{
-			{PID: 100, Name: "claude", Cwd: "/project", Status: "S"},
-			{PID: 200, Name: "claude", Cwd: "/project", Status: "S"},
+			{PID: 100, Name: "copilot", Cwd: "/project", Status: "S"},
+			{PID: 200, PPID: 100, Name: "copilot", Cwd: "/project", Status: "S"},
+		},
+	}
+
+	d := NewDetectorWithLister(lister)
+	result := d.Detect([]string{"/project"})
+
+	if len(result["/project"]) != 1 {
+		t.Errorf("expected 1 agent (parent-child deduped), got %d", len(result["/project"]))
+	}
+	if result["/project"][0].PID != "100" {
+		t.Errorf("expected parent PID 100, got %s", result["/project"][0].PID)
+	}
+}
+
+func TestDetect_IndependentSessionsSameKind(t *testing.T) {
+	// Two independent sessions of the same agent (not parent-child) should both appear.
+	lister := &mockLister{
+		procs: []ProcessInfo{
+			{PID: 100, PPID: 1, Name: "claude", Cwd: "/project", Status: "S"},
+			{PID: 200, PPID: 1, Name: "claude", Cwd: "/project", Status: "S"},
 		},
 	}
 
@@ -94,7 +116,24 @@ func TestDetect_MultipleAgentsSameWorktree(t *testing.T) {
 	result := d.Detect([]string{"/project"})
 
 	if len(result["/project"]) != 2 {
-		t.Errorf("expected 2 agents, got %d", len(result["/project"]))
+		t.Errorf("expected 2 agents (independent sessions), got %d", len(result["/project"]))
+	}
+}
+
+func TestDetect_DifferentKindsSameWorktree(t *testing.T) {
+	// Two different agent kinds in the same worktree should both appear.
+	lister := &mockLister{
+		procs: []ProcessInfo{
+			{PID: 100, Name: "claude", Cwd: "/project", Status: "S"},
+			{PID: 200, Name: "copilot", Cwd: "/project", Status: "S"},
+		},
+	}
+
+	d := NewDetectorWithLister(lister)
+	result := d.Detect([]string{"/project"})
+
+	if len(result["/project"]) != 2 {
+		t.Errorf("expected 2 agents (different kinds), got %d", len(result["/project"]))
 	}
 }
 
