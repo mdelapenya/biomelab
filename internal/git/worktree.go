@@ -135,7 +135,7 @@ func (r *Repository) Fetch() error {
 
 	opts := &gogit.FetchOptions{}
 
-	err := r.repo.Fetch(ctx, opts)
+	err := r.repo.FetchContext(ctx, opts)
 	if err == nil || err == gogit.NoErrAlreadyUpToDate {
 		return nil
 	}
@@ -146,7 +146,7 @@ func (r *Repository) Fetch() error {
 			return fmt.Errorf("fetch auth: %w", credErr)
 		}
 		opts.Auth = auth
-		err = r.repo.Fetch(ctx, opts)
+		err = r.repo.FetchContext(ctx, opts)
 		if err == gogit.NoErrAlreadyUpToDate {
 			return nil
 		}
