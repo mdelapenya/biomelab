@@ -226,6 +226,73 @@ func TestUpdate_ConfirmDeleteCancel(t *testing.T) {
 	}
 }
 
+func TestUpdate_ConfirmDeleteRequiresEnterAfterY(t *testing.T) {
+	m := testModel(2)
+	m.mode = modeConfirmDelete
+	m.cursor = 1
+
+	// Pressing 'y' should stay in confirm-delete mode with deleteConfirmed set.
+	yMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}}
+	updated, _ := m.Update(yMsg)
+	model := updated.(Model)
+
+	if model.mode != modeConfirmDelete {
+		t.Errorf("after 'y': mode = %d, want modeConfirmDelete", model.mode)
+	}
+	if !model.deleteConfirmed {
+		t.Error("after 'y': deleteConfirmed should be true")
+	}
+
+	// Pressing Enter after 'y' should confirm deletion and return to normal.
+	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
+	updated, cmd := model.Update(enterMsg)
+	model = updated.(Model)
+
+	if model.mode != modeNormal {
+		t.Errorf("after Enter: mode = %d, want modeNormal", model.mode)
+	}
+	if cmd == nil {
+		t.Error("after Enter: expected a command for worktree removal")
+	}
+}
+
+func TestUpdate_ConfirmDeleteEnterWithoutYCancels(t *testing.T) {
+	m := testModel(2)
+	m.mode = modeConfirmDelete
+	m.cursor = 1
+
+	// Pressing Enter without 'y' should cancel.
+	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
+	updated, cmd := m.Update(enterMsg)
+	model := updated.(Model)
+
+	if model.mode != modeNormal {
+		t.Errorf("mode = %d, want modeNormal after Enter without y", model.mode)
+	}
+	if cmd != nil {
+		t.Error("expected no command when Enter pressed without y confirmation")
+	}
+}
+
+func TestUpdate_ConfirmDeleteEscCancels(t *testing.T) {
+	m := testModel(2)
+	m.mode = modeConfirmDelete
+	m.deleteConfirmed = true
+	m.cursor = 1
+
+	// Pressing Esc should cancel even after 'y'.
+	escMsg := tea.KeyMsg{Type: tea.KeyEscape}
+	updated, _ := m.Update(escMsg)
+	model := updated.(Model)
+
+	if model.mode != modeNormal {
+		t.Errorf("mode = %d, want modeNormal after Esc", model.mode)
+	}
+	if model.deleteConfirmed {
+		t.Error("deleteConfirmed should be reset after Esc")
+	}
+}
+
 func TestUpdate_WindowSize(t *testing.T) {
 	m := testModel(2)
 

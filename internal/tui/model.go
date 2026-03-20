@@ -50,8 +50,9 @@ type Model struct {
 	ready     bool
 	// cardZones tracks bounding rects for click detection.
 	// Each entry maps worktree index -> {x, y, width, height} in body coordinates.
-	cardZones  []zone
-	mouseOn    bool // default true, toggled with 'm'
+	cardZones      []zone
+	mouseOn        bool // default true, toggled with 'm'
+	deleteConfirmed bool // true after user types 'y' in confirm-delete mode
 }
 
 type zone struct {
@@ -229,15 +230,33 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Handle confirm delete mode.
 	if m.mode == modeConfirmDelete {
 		switch {
-		case key.Matches(msg, key.NewBinding(key.WithKeys("y", "Y"))):
-			if m.cursor >= 0 && m.cursor < len(m.worktrees) {
+		case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
+			if m.deleteConfirmed && m.cursor >= 0 && m.cursor < len(m.worktrees) {
 				wt := m.worktrees[m.cursor]
 				m.mode = modeNormal
+				m.deleteConfirmed = false
 				return m, doRemoveWorktree(m.repo, wt.Branch)
 			}
 			m.mode = modeNormal
+			m.deleteConfirmed = false
+			m.statusMsg = ""
+			return m, nil
+		case key.Matches(msg, key.NewBinding(key.WithKeys("y", "Y"))):
+			m.deleteConfirmed = true
+			if m.cursor >= 0 && m.cursor < len(m.worktrees) {
+				wt := m.worktrees[m.cursor]
+				m.statusMsg = confirmStyle.Render(
+					fmt.Sprintf("Delete worktree %q? Press Enter to confirm, Esc to cancel.", wt.Branch),
+				)
+			}
+			return m, nil
+		case key.Matches(msg, key.NewBinding(key.WithKeys("esc"))):
+			m.mode = modeNormal
+			m.deleteConfirmed = false
+			m.statusMsg = ""
 			return m, nil
 		default:
+			m.deleteConfirmed = false
 			m.mode = modeNormal
 			m.statusMsg = ""
 			return m, nil
@@ -336,6 +355,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.mode = modeConfirmDelete
+			m.deleteConfirmed = false
 			m.statusMsg = confirmStyle.Render(
 				fmt.Sprintf("Delete worktree %q? This removes the directory, branch, and prunes metadata. (y/N)", wt.Branch),
 			)
