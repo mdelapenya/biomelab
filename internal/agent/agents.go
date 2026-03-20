@@ -16,7 +16,7 @@ const (
 var ProcessPatterns = map[Kind][]string{
 	Claude:   {"claude"},
 	Kiro:     {"kiro"},
-	Copilot:  {"copilot-agent", "copilot-language-server"},
+	Copilot:  {"copilot-agent", "copilot-language-server", "copilot"},
 	Codex:    {"codex"},
 	OpenCode: {"opencode"},
 	Gemini:   {"gemini"},
