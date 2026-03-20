@@ -154,3 +154,59 @@ func TestDetect_CopilotPattern(t *testing.T) {
 		t.Errorf("expected copilot, got %s", result["/work"][0].Kind)
 	}
 }
+
+func TestDetect_CmdlineMatch(t *testing.T) {
+	// Agents like gemini run as Node.js scripts: the process name is "node"
+	// but the cmdline contains the agent name.
+	lister := &mockLister{
+		procs: []ProcessInfo{
+			{PID: 500, Name: "node", Cmdline: "/opt/homebrew/bin/node /opt/homebrew/bin/gemini --yolo", Cwd: "/project", Status: "S"},
+		},
+	}
+
+	d := NewDetectorWithLister(lister)
+	result := d.Detect([]string{"/project"})
+
+	if len(result["/project"]) != 1 {
+		t.Fatalf("expected 1 agent from cmdline match, got %d", len(result["/project"]))
+	}
+	if result["/project"][0].Kind != Gemini {
+		t.Errorf("expected gemini, got %s", result["/project"][0].Kind)
+	}
+}
+
+func TestDetect_CmdlineNoFalsePositive(t *testing.T) {
+	// A node process without any agent in the cmdline should not match.
+	lister := &mockLister{
+		procs: []ProcessInfo{
+			{PID: 600, Name: "node", Cmdline: "/usr/bin/node /app/server.js", Cwd: "/project"},
+		},
+	}
+
+	d := NewDetectorWithLister(lister)
+	result := d.Detect([]string{"/project"})
+
+	if len(result["/project"]) != 0 {
+		t.Errorf("expected 0 agents, got %d", len(result["/project"]))
+	}
+}
+
+func TestDetect_CmdlineParentChildDeduped(t *testing.T) {
+	// Gemini spawns two node processes (parent + child). Only parent should remain.
+	lister := &mockLister{
+		procs: []ProcessInfo{
+			{PID: 500, PPID: 1, Name: "node", Cmdline: "/opt/homebrew/bin/node /opt/homebrew/bin/gemini --yolo", Cwd: "/project", Status: "S"},
+			{PID: 600, PPID: 500, Name: "node", Cmdline: "/opt/homebrew/bin/node /opt/homebrew/bin/gemini --yolo", Cwd: "/project", Status: "S"},
+		},
+	}
+
+	d := NewDetectorWithLister(lister)
+	result := d.Detect([]string{"/project"})
+
+	if len(result["/project"]) != 1 {
+		t.Errorf("expected 1 agent (parent-child deduped), got %d", len(result["/project"]))
+	}
+	if result["/project"][0].PID != "500" {
+		t.Errorf("expected parent PID 500, got %s", result["/project"][0].PID)
+	}
+}

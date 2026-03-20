@@ -20,6 +20,7 @@ type ProcessInfo struct {
 	PID     int32
 	PPID    int32
 	Name    string
+	Cmdline string
 	Cwd     string
 	Status  string
 	Created time.Time
@@ -40,9 +41,14 @@ func (o *osProcessLister) Processes(ctx context.Context) ([]ProcessInfo, error) 
 		if err != nil {
 			continue
 		}
+		var cmdline string
+		if cl, err := p.CmdlineWithContext(ctx); err == nil {
+			cmdline = cl
+		}
 		result = append(result, ProcessInfo{
-			PID:  p.Pid,
-			Name: name,
+			PID:     p.Pid,
+			Name:    name,
+			Cmdline: cmdline,
 		})
 	}
 	return result, nil
@@ -93,13 +99,16 @@ func (d *Detector) Detect(worktreePaths []string) DetectionResult {
 	}
 
 	// Filter to agent processes only.
+	// Match against both the process name and the command line, since some agents
+	// (e.g. gemini) run as Node.js scripts where the process name is "node".
 	var agents []ProcessInfo
 	for _, p := range procs {
 		name := strings.ToLower(filepath.Base(p.Name))
+		cmdline := strings.ToLower(p.Cmdline)
 		matched := false
 		for kind, patterns := range ProcessPatterns {
 			for _, pat := range patterns {
-				if strings.Contains(name, pat) {
+				if strings.Contains(name, pat) || strings.Contains(cmdline, pat) {
 					p.Name = string(kind) // normalize to kind name
 					agents = append(agents, p)
 					matched = true
