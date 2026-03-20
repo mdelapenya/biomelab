@@ -1,6 +1,6 @@
 # gwaim
 
-**Git Worktree Agent Interactive Manager** -- A terminal UI for managing git worktrees and the coding agents running inside them.
+**Git Worktree AI Manager** -- A terminal UI for managing git worktrees and the coding agents running inside them.
 
 ## Features
 
@@ -10,8 +10,9 @@
 - **PR status** -- Fetches pull request information and CI check status for each branch using the `gh` CLI. Shows PR number, title, state (open/draft/merged/closed), and CI result (pass/fail/pending).
 - **Sync status** -- Compares each branch against its remote tracking branch (`origin/<branch>`) and shows whether it is up-to-date, ahead, behind, or diverged. Runs `git fetch` on every refresh cycle to keep remote refs current.
 - **Create worktrees** -- Press `c` from the main card to create a new linked worktree. A branch name prompt appears under the main card. After creation, a new terminal tab opens automatically in the worktree directory.
-- **Delete worktrees** -- Press `d` on any linked worktree to delete it. A confirmation prompt shows what will happen: the worktree directory is removed, the branch is deleted, and stale metadata is pruned. The main worktree cannot be deleted.
+- **Delete worktrees** -- Press `d` on any linked worktree to delete it. A two-step confirmation prompt shows what will happen: press `y` to arm, then `Enter` to confirm. The worktree directory is removed, the branch is deleted, and stale metadata is pruned. The main worktree cannot be deleted.
 - **Pull** -- Press `p` to pull from the remote. Uses go-git with credentials resolved from your configured git credential helpers (osxkeychain, gh auth, etc.).
+- **Repair worktrees** -- Press `r` from the main card to run `git worktree repair`, which fixes broken links between the main worktree and linked worktrees (e.g., after a worktree directory was moved manually). The status bar shows which worktrees were repaired, or "Nothing to repair" if all links are healthy.
 - **Open in terminal** -- Press `Enter` to open the selected worktree in a new terminal tab. If an agent is running in the worktree, the agent command is executed automatically. The first `Enter` creates a tab named after the repo (e.g., `docker/sandboxes`); subsequent presses add split panels to that same tab.
 - **Mouse support** -- Press `m` to toggle mouse mode. When enabled, click on cards to select them. When disabled (default), normal text selection works for copying paths, branch names, etc.
 - **Scrollable viewport** -- When the terminal is too small to show all cards (e.g., after splitting panels), scroll with the mouse wheel or page up/down.
@@ -20,7 +21,7 @@
 
 - **Go 1.25+** -- Required to build from source.
 - **gh CLI** -- The [GitHub CLI](https://cli.github.com/) is required for pull request and CI status information. Install it and authenticate with `gh auth login`.
-- **git** -- Required on the host for credential helper resolution (`git credential fill`). All other git operations use go-git natively.
+- **git** -- Required on the host for credential helper resolution (`git credential fill`) and worktree repair (`git worktree repair`). All other git operations use go-git natively.
 - **Global gitignore** -- gwaim creates worktrees in a `.gwaim-worktrees/` directory at the repository root. You must add this to your global gitignore so it is not tracked by any repository:
 
   ```bash
@@ -92,8 +93,10 @@ The TUI discovers the repository root, lists all worktrees (main and linked), de
 | `down` / `j`    | Move cursor down (main goes to first linked card)                 |
 | `Enter`          | Open selected worktree in a new terminal tab/panel                |
 | `c`              | Create a new worktree (only from the main card)                   |
-| `d`              | Delete the selected linked worktree (with confirmation)           |
+| `d`              | Delete the selected linked worktree (y + Enter to confirm)        |
+| `e`              | Open the selected worktree in an editor (`$GWAIM_EDITOR` or `code`) |
 | `p`              | Pull from remote (fetches and merges into main branch)            |
+| `r`              | Repair worktree links (only from the main card)                   |
 | `m`              | Toggle mouse mode on/off (default: off for text selection)        |
 | `q` / `Ctrl+C`  | Quit                                                              |
 
@@ -124,7 +127,7 @@ The gwaim dashboard stays running in its own tab throughout.
 gwaim is structured into the following internal packages:
 
 - **`cmd/gwaim`** -- Entry point. Opens the repository, creates the agent detector, and starts the Bubbletea program.
-- **`internal/git`** -- Git operations using [go-git v6](https://github.com/go-git/go-git). Handles repository opening, worktree listing (main + linked), creation, removal, pruning, pull, fetch, and sync status computation. Uses the `x/plumbing/worktree` extension for linked worktree management. Credentials are resolved via `git credential fill`.
+- **`internal/git`** -- Git operations using [go-git v6](https://github.com/go-git/go-git). Handles repository opening, worktree listing (main + linked), creation, removal, repair, pruning, pull, fetch, and sync status computation. Uses the `x/plumbing/worktree` extension for linked worktree management. Credentials are resolved via `git credential fill`. Repair shells out to `git worktree repair` (go-git v6 has no repair API).
 - **`internal/agent`** -- Detects coding agent processes using [gopsutil](https://github.com/shirou/gopsutil). Enumerates all processes, filters by known agent patterns, resolves their CWDs, and matches them to worktree paths. Reports PID, process state, and start time.
 - **`internal/github`** -- Fetches pull request information for branches using `gh pr view`. Runs lookups concurrently (up to 4 at a time). Extracts PR number, title, state, draft status, and CI check rollup.
 - **`internal/tui`** -- The Bubbletea TUI model. Manages the viewport, card grid layout, hierarchical navigation, input modes (normal, create, confirm-delete), mouse toggle, periodic refresh, and zone-based click detection.

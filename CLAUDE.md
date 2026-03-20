@@ -4,7 +4,7 @@ This file provides context for Claude and other coding agents working on this co
 
 ## What is gwaim?
 
-gwaim (Git Worktree Agent Interactive Manager) is a Go TUI that manages git worktrees in the context of coding agents. It shows a dashboard of all worktrees in a repository, detects which coding agents are running in each, and provides actions to create/delete worktrees, pull, and open terminal tabs.
+gwaim (Git Worktree AI Manager) is a Go TUI that manages git worktrees in the context of coding agents. It shows a dashboard of all worktrees in a repository, detects which coding agents are running in each, and provides actions to create/delete/repair worktrees, pull, open editors, and open terminal tabs.
 
 ## Build and test commands
 
@@ -24,7 +24,7 @@ Go version: 1.25+ (check `go env GOROOT` if you hit version mismatches).
 ```
 cmd/gwaim/main.go           Entry point
 internal/
-  git/worktree.go           Go-git v6 wrapper: list, create, remove, pull, fetch, sync status
+  git/worktree.go           Go-git v6 wrapper: list, create, remove, repair, pull, fetch, sync status
   git/credential.go         Git credential helper protocol (git credential fill)
   agent/agents.go           Agent kind registry (claude, kiro, copilot, codex, opencode, gemini)
   agent/detect.go           Process detection via gopsutil
@@ -48,7 +48,7 @@ docs/
 
 ## Architecture decisions
 
-**No shelling out to git** for git operations. The one exception is `git credential fill` in `internal/git/credential.go`, which implements the git credential helper protocol to obtain auth tokens. This is necessary because go-git has no built-in credential helper support.
+**No shelling out to git** for git operations. The exceptions are `git credential fill` in `internal/git/credential.go` (credential helper protocol, because go-git has no built-in credential helper support) and `git worktree repair` in `internal/git/worktree.go` (because go-git v6 has no repair API).
 
 **go-git v6 worktree limitations**: `linkedRepo.Head()` returns the shared (main) HEAD, not the per-worktree HEAD. We read `.git/worktrees/<name>/HEAD` directly from the filesystem for linked worktrees. Similarly, worktree paths come from `.git/worktrees/<name>/gitdir`.
 
@@ -64,9 +64,9 @@ docs/
 
 Modes: `modeNormal`, `modeCreate`, `modeConfirmDelete`
 
-- `modeNormal` -- Arrow keys navigate, `c`/`d`/`p`/`m`/`Enter`/`q` trigger actions.
+- `modeNormal` -- Arrow keys navigate, `c`/`d`/`e`/`p`/`r`/`m`/`Enter`/`q` trigger actions.
 - `modeCreate` -- Text input active. `Enter` confirms, `Esc` cancels. Only accessible from main card (cursor == 0).
-- `modeConfirmDelete` -- `y` confirms deletion, any other key cancels. Not available on main worktree.
+- `modeConfirmDelete` -- Two-step: `y` arms the deletion, then `Enter` confirms. `Esc` or any other key cancels. Not available on main worktree.
 
 Cursor 0 = main worktree. Cursor 1+ = linked worktrees. Left/right only work in linked grid. Up from first linked row goes to main. Down from main goes to first linked.
 
