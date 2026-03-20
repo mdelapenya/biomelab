@@ -128,13 +128,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.statusMsg = errorStyle.Render("Error: " + msg.err.Error())
 			m.mode = modeNormal
-			return m, doRefresh(m.repo, m.detector)
+			return m, tea.Batch(doQuickRefresh(m.repo), doRefresh(m.repo, m.detector))
 		}
 		m.statusMsg = cleanStyle.Render("Worktree created — opening panel...")
 		m.mode = modeNormal
 		// Open a Warp panel in the new worktree with the agent command.
 		newWtPath := filepath.Join(m.repo.Root(), ".gwaim-worktrees", msg.branchName)
 		return m, tea.Batch(
+			doQuickRefresh(m.repo),
 			doRefresh(m.repo, m.detector),
 			doOpenWarpPanel(m.repo.RepoName(), git.Worktree{Path: newWtPath, Branch: msg.branchName}, nil),
 		)
@@ -146,7 +147,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMsg = cleanStyle.Render("Worktree removed")
 		}
 		m.mode = modeNormal
-		return m, doRefresh(m.repo, m.detector)
+		return m, tea.Batch(doQuickRefresh(m.repo), doRefresh(m.repo, m.detector))
 
 	case warpOpenedMsg:
 		if msg.err != nil {
@@ -170,7 +171,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.statusMsg = cleanStyle.Render("Pull complete")
 		}
-		return m, doRefresh(m.repo, m.detector)
+		return m, tea.Batch(doQuickRefresh(m.repo), doRefresh(m.repo, m.detector))
 
 	case worktreeRepairedMsg:
 		if msg.err != nil {
@@ -180,7 +181,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.statusMsg = cleanStyle.Render("Nothing to repair")
 		}
-		return m, doRefresh(m.repo, m.detector)
+		return m, tea.Batch(doQuickRefresh(m.repo), doRefresh(m.repo, m.detector))
 
 	case tea.KeyMsg:
 		updated, cmd := m.handleKey(msg)
