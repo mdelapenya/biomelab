@@ -388,9 +388,10 @@ func readWorktreePath(wtMetaDir string) (string, error) {
 }
 
 // worktreesDir returns the directory where gwaim stores linked worktrees.
-// Uses .git/gwaim-worktrees/ to avoid collisions with sibling repositories.
+// Uses .gwaim-worktrees/ in the repo root. Users must add this directory
+// to their global gitignore (~/.config/git/ignore or core.excludesFile).
 func (r *Repository) worktreesDir() string {
-	return filepath.Join(r.repoRoot, ".git", "gwaim-worktrees")
+	return filepath.Join(r.repoRoot, ".gwaim-worktrees")
 }
 
 // CreateWorktree creates a new linked worktree with a new branch.

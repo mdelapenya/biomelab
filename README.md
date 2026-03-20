@@ -21,6 +21,17 @@
 - **Go 1.25+** -- Required to build from source.
 - **gh CLI** -- The [GitHub CLI](https://cli.github.com/) is required for pull request and CI status information. Install it and authenticate with `gh auth login`.
 - **git** -- Required on the host for credential helper resolution (`git credential fill`). All other git operations use go-git natively.
+- **Global gitignore** -- gwaim creates worktrees in a `.gwaim-worktrees/` directory at the repository root. You must add this to your global gitignore so it is not tracked by any repository:
+
+  ```bash
+  echo ".gwaim-worktrees" >> ~/.config/git/ignore
+  ```
+
+  Or, if you use a custom `core.excludesFile`:
+
+  ```bash
+  echo ".gwaim-worktrees" >> "$(git config --global core.excludesFile)"
+  ```
 
 ## Terminal support
 
