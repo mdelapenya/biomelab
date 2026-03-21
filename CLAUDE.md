@@ -83,6 +83,6 @@ Always run `go test -race ./...` -- the TUI must be safe for concurrent `View` +
 
 - `m.worktrees[1:]` panics if worktrees is empty. Always guard with `len(m.worktrees) > 1`.
 - `textinput.New()` must be called before the model is used in tests, or `Focus()` will nil-panic.
-- go-git v6 is a pseudo-version (`v6.0.0-20260317113930-fb0d09929504`). It may have breaking changes.
+- go-git v6 is a pseudo-version (`v6.0.0-20260320111621-ea91339c5263`). It may have breaking changes. Do NOT use a `replace` directive to pin it — that blocks `go install ...@latest`.
 - The `gh` CLI must be authenticated (`gh auth login`) or PR fetching silently returns no results.
 - Fetch errors are shown in the status bar. If credentials fail, the status will show the error.

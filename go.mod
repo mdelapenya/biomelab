@@ -2,16 +2,12 @@ module github.com/mdelapenya/gwaim
 
 go 1.25.6
 
-// Pin go-git v6 to a specific commit since it's unreleased.
-// The module proxy may serve inconsistent content for pseudo-versions.
-replace github.com/go-git/go-git/v6 => github.com/go-git/go-git/v6 v6.0.0-20260320111621-ea91339c5263
-
 require (
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/go-git/go-billy/v6 v6.0.0-20260226131633-45bd0956d66f
-	github.com/go-git/go-git/v6 v6.0.0-20260317113930-fb0d09929504
+	github.com/go-git/go-git/v6 v6.0.0-20260320111621-ea91339c5263
 	github.com/shirou/gopsutil/v4 v4.26.2
 )
 
