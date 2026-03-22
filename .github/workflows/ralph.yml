@@ -48,6 +48,8 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          token: ${{ secrets.GH_PAT_TOKEN }}
 
       - uses: mdelapenya/claude-ralph-github-action@d5b56ef50014baefc7cfcab9cd8c2bae84b6920b # v0
         timeout-minutes: 60
