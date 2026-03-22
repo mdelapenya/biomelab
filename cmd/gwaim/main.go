@@ -1,8 +1,10 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -12,6 +14,13 @@ import (
 )
 
 func main() {
+	var refreshFlag time.Duration
+	flag.DurationVar(&refreshFlag, "refresh", 0, "Dashboard refresh interval (e.g. 5s, 500ms)")
+	flag.DurationVar(&refreshFlag, "r", 0, "Dashboard refresh interval (shorthand)")
+	flag.Parse()
+
+	refreshInterval := resolveRefreshInterval(refreshFlag)
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -32,11 +41,27 @@ func main() {
 
 	detector := agent.NewDetector()
 
-	model := tui.New(repo, detector)
+	model := tui.New(repo, detector, refreshInterval)
 	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// resolveRefreshInterval applies the precedence: CLI flag → GWAIM_REFRESH env → default.
+func resolveRefreshInterval(flagVal time.Duration) time.Duration {
+	if flagVal != 0 {
+		return flagVal
+	}
+	if val := os.Getenv("GWAIM_REFRESH"); val != "" {
+		d, err := time.ParseDuration(val)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "invalid GWAIM_REFRESH value %q: %v\n", val, err)
+			os.Exit(1)
+		}
+		return d
+	}
+	return tui.DefaultRefreshInterval
 }

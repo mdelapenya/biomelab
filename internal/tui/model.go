@@ -21,7 +21,8 @@ import (
 	"github.com/mdelapenya/gwaim/internal/warp"
 )
 
-const refreshInterval = 3 * time.Second
+// DefaultRefreshInterval is the default dashboard refresh interval.
+const DefaultRefreshInterval = 3 * time.Second
 
 type mode int
 
@@ -51,8 +52,9 @@ type Model struct {
 	// cardZones tracks bounding rects for click detection.
 	// Each entry maps worktree index -> {x, y, width, height} in body coordinates.
 	cardZones      []zone
-	mouseOn        bool // default true, toggled with 'm'
+	mouseOn         bool // default true, toggled with 'm'
 	deleteConfirmed bool // true after user types 'y' in confirm-delete mode
+	refreshInterval time.Duration
 }
 
 type zone struct {
@@ -60,26 +62,32 @@ type zone struct {
 	x, y, w, h    int
 }
 
-// New creates a new TUI model.
-func New(repo *git.Repository, detector *agent.Detector) Model {
+// New creates a new TUI model. The refreshInterval controls how often the
+// dashboard refreshes data. Pass 0 to use DefaultRefreshInterval.
+func New(repo *git.Repository, detector *agent.Detector, refreshInterval time.Duration) Model {
 	ti := textinput.New()
 	ti.Placeholder = "branch-name"
 	ti.CharLimit = 80
 	ti.Width = 30
 
+	if refreshInterval <= 0 {
+		refreshInterval = DefaultRefreshInterval
+	}
+
 	return Model{
-		repo:      repo,
-		detector:  detector,
-		keys:      defaultKeyMap(),
-		textInput: ti,
-		mouseOn:   true,
+		repo:            repo,
+		detector:        detector,
+		keys:            defaultKeyMap(),
+		textInput:       ti,
+		mouseOn:         true,
+		refreshInterval: refreshInterval,
 	}
 }
 
 func (m Model) Init() tea.Cmd {
 	// Fast initial load: just worktrees, no fetch/agents/PRs.
 	// Full refresh runs right after via doTick.
-	return tea.Batch(doQuickRefresh(m.repo), doRefresh(m.repo, m.detector), doTick())
+	return tea.Batch(doQuickRefresh(m.repo), doRefresh(m.repo, m.detector), m.doTick())
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -104,7 +112,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
-		return m, tea.Batch(doRefresh(m.repo, m.detector), doTick())
+		return m, tea.Batch(doRefresh(m.repo, m.detector), m.doTick())
 
 	case refreshMsg:
 		if msg.err != nil {
@@ -535,7 +543,8 @@ func (m Model) View() string {
 	if m.mouseOn {
 		mouseLabel = "m mouse:on"
 	}
-	help := helpStyle.Render("←→↑↓ navigate • ↵ open tab • e editor • p pull • r repair • c create • d delete • " + mouseLabel + " • q quit")
+	refreshLabel := fmt.Sprintf("refresh:%s", m.refreshInterval)
+	help := helpStyle.Render("←→↑↓ navigate • ↵ open tab • e editor • p pull • r repair • c create • d delete • " + mouseLabel + " • " + refreshLabel + " • q quit")
 
 	if m.ready {
 		return header + "\n" + m.viewport.View() + "\n" + help
@@ -606,8 +615,8 @@ func doRefresh(repo *git.Repository, detector *agent.Detector) tea.Cmd {
 	}
 }
 
-func doTick() tea.Cmd {
-	return tea.Tick(refreshInterval, func(_ time.Time) tea.Msg {
+func (m Model) doTick() tea.Cmd {
+	return tea.Tick(m.refreshInterval, func(_ time.Time) tea.Msg {
 		return tickMsg{}
 	})
 }
