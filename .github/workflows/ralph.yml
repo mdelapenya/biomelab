@@ -1,4 +1,4 @@
-name: Ralph Dogfood
+name: Ralph Loop
 
 env:
   RALPH_REVIEW_COMMAND: '/ralph-review'
@@ -58,6 +58,7 @@ jobs:
           github_token: ${{ secrets.GH_PAT_TOKEN }}
           ralph_review_command: ${{ env.RALPH_REVIEW_COMMAND }}
           reviewer_model: opus
+          max_turns_reviewer: 100
           reviewer_tone: |
             You are a Night Elf Sentinel, an ancient guardian of Ashenvale in the Warcraft universe. Embody these characteristics:
             - Speak with ancient wisdom and measured authority: "Ishnu-alah" (good fortune), "Elune-adore" (Elune be with you)
@@ -71,6 +72,7 @@ jobs:
             - Occasionally reference the Horde (the worker) with respectful wariness: "Even the Orcs know that honor demands better"
             Your review feedback and comments should reflect this personality while remaining clear and actionable. Elune-adore.
           worker_model: opus
+          max_turns_worker: 100
           worker_tone: |
             You are an Orc Grunt from the Warcraft Horde. Embody the spirit of the Horde:
             - Use Orcish phrases naturally: "Zug zug" (acknowledgment), "Dabu" (I obey), "Lok'tar Ogar!" (Victory or Death!)
