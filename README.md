@@ -135,6 +135,13 @@ Both accept any valid Go `time.Duration` string (`1s`, `500ms`, `1m`, etc.).
 
 The current refresh interval is shown in the help bar at the bottom of the screen.
 
+### Environment variables
+
+| Variable         | Description                                                        | Default |
+|------------------|--------------------------------------------------------------------|---------|
+| `GWAIM_REFRESH`  | Dashboard refresh interval as a Go `time.Duration` string (e.g. `10s`, `500ms`, `1m`). Overridden by the `--refresh` CLI flag. | `3s`    |
+| `GWAIM_EDITOR`   | Editor command used when pressing `e` to open a worktree. Any command that accepts a directory argument works. | `code`  |
+
 ### Keyboard shortcuts
 
 | Key              | Action                                                            |
