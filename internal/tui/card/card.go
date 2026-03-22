@@ -33,6 +33,8 @@ var (
 	ciFailStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 	ciPendStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 
+	ghUnavailStyle = lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("214"))
+
 	syncUpToDateStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	syncNeedSyncStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 	syncDivergedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
@@ -40,7 +42,7 @@ var (
 )
 
 // Render produces the content for a single worktree card.
-func Render(wt git.Worktree, agents []agent.Info, pr *github.PRInfo) string {
+func Render(wt git.Worktree, agents []agent.Info, pr *github.PRInfo, ghAvail github.GHAvailability) string {
 	var b strings.Builder
 
 	// Branch line
@@ -59,8 +61,15 @@ func Render(wt git.Worktree, agents []agent.Info, pr *github.PRInfo) string {
 	b.WriteString("\n\n")
 
 	// PR status
-	if pr != nil {
+	switch {
+	case pr != nil:
 		b.WriteString(renderPR(pr))
+		b.WriteString("\n")
+	case ghAvail == github.GHNotFound:
+		b.WriteString(ghUnavailStyle.Render("gh not installed — install gh CLI"))
+		b.WriteString("\n")
+	case ghAvail == github.GHNotAuthenticated:
+		b.WriteString(ghUnavailStyle.Render("gh not authenticated — run: gh auth login"))
 		b.WriteString("\n")
 	}
 

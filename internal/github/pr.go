@@ -7,6 +7,32 @@ import (
 	"sync"
 )
 
+// GHAvailability represents whether the gh CLI is usable.
+type GHAvailability int
+
+const (
+	// GHAvailable means gh is installed and authenticated.
+	GHAvailable GHAvailability = iota
+	// GHNotFound means gh is not installed or not in PATH.
+	GHNotFound
+	// GHNotAuthenticated means gh is installed but not authenticated.
+	GHNotAuthenticated
+)
+
+// CheckGH performs a pre-flight check for the gh CLI.
+// It verifies that gh is present in PATH and that the user is authenticated.
+// Intended to be called once at startup, not on every refresh.
+func CheckGH() GHAvailability {
+	if _, err := exec.LookPath("gh"); err != nil {
+		return GHNotFound
+	}
+	cmd := exec.Command("gh", "auth", "status")
+	if err := cmd.Run(); err != nil {
+		return GHNotAuthenticated
+	}
+	return GHAvailable
+}
+
 // PRInfo holds pull request information for a branch.
 type PRInfo struct {
 	Number int    `json:"number"`
