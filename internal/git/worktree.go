@@ -162,6 +162,11 @@ func (r *Repository) Fetch() error {
 func (r *Repository) ListWorktreesQuick() ([]Worktree, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	if err := r.reopen(); err != nil {
+		return nil, err
+	}
+
 	var result []Worktree
 
 	// Main worktree — branch only.
