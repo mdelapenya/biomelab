@@ -2,6 +2,7 @@ package tui
 
 import (
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -19,9 +20,10 @@ func testModel(n int) Model {
 	ti.Width = 30
 
 	m := Model{
-		keys:      defaultKeyMap(),
-		agents:    make(agent.DetectionResult),
-		textInput: ti,
+		keys:            defaultKeyMap(),
+		agents:          make(agent.DetectionResult),
+		textInput:       ti,
+		refreshInterval: DefaultRefreshInterval,
 	}
 	for i := range n {
 		wt := git.Worktree{
@@ -375,6 +377,20 @@ func TestColumns(t *testing.T) {
 		if got != tt.wantCols {
 			t.Errorf("width=%d: columns() = %d, want %d", tt.width, got, tt.wantCols)
 		}
+	}
+}
+
+func TestNew_DefaultRefreshInterval(t *testing.T) {
+	m := New(nil, nil, 0)
+	if m.refreshInterval != DefaultRefreshInterval {
+		t.Errorf("refreshInterval = %v, want %v", m.refreshInterval, DefaultRefreshInterval)
+	}
+}
+
+func TestNew_CustomRefreshInterval(t *testing.T) {
+	m := New(nil, nil, 10*time.Second)
+	if m.refreshInterval != 10*time.Second {
+		t.Errorf("refreshInterval = %v, want 10s", m.refreshInterval)
 	}
 }
 

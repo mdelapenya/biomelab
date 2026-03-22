@@ -113,6 +113,28 @@ gwaim
 
 The TUI discovers the repository root, lists all worktrees (main and linked), detects running agents, fetches remote refs, and queries PR status for each branch. Data refreshes automatically every 3 seconds.
 
+### Configuring the refresh interval
+
+The dashboard refresh interval can be tuned via a CLI flag or environment variable:
+
+```bash
+gwaim --refresh 10s     # refresh every 10 seconds
+gwaim -r 500ms          # refresh every 500ms
+```
+
+Or set the `GWAIM_REFRESH` environment variable:
+
+```bash
+export GWAIM_REFRESH=30s  # set once in shell profile
+gwaim
+```
+
+Both accept any valid Go `time.Duration` string (`1s`, `500ms`, `1m`, etc.).
+
+**Precedence order** (highest to lowest): CLI flag (`--refresh` / `-r`) → `GWAIM_REFRESH` env var → default (`3s`).
+
+The current refresh interval is shown in the help bar at the bottom of the screen.
+
 ### Keyboard shortcuts
 
 | Key              | Action                                                            |
@@ -166,7 +188,7 @@ gwaim is structured into the following internal packages:
 
 ### Data flow
 
-1. On startup and every 3 seconds, gwaim runs a refresh cycle: fetch remote refs, list worktrees (with dirty and sync status), detect agents, and query PRs.
+1. On startup and at the configured refresh interval (default 3 seconds), gwaim runs a refresh cycle: fetch remote refs, list worktrees (with dirty and sync status), detect agents, and query PRs.
 2. The `refreshMsg` carries all results back to the Bubbletea update loop.
 3. `renderBody` produces the scrollable content and records card bounding zones for click detection.
 4. `syncViewport` pushes the rendered content into the viewport (preserving scroll position).
