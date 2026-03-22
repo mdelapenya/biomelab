@@ -39,6 +39,7 @@ type Model struct {
 	worktrees []git.Worktree
 	agents    agent.DetectionResult
 	prs       github.PRResult
+	ghAvail   github.GHAvailability
 	cursor    int
 	width     int
 	height    int
@@ -87,7 +88,8 @@ func New(repo *git.Repository, detector *agent.Detector, refreshInterval time.Du
 func (m Model) Init() tea.Cmd {
 	// Fast initial load: just worktrees, no fetch/agents/PRs.
 	// Full refresh runs right after via doTick.
-	return tea.Batch(doQuickRefresh(m.repo), doRefresh(m.repo, m.detector), m.doTick())
+	// gh pre-flight runs once at startup.
+	return tea.Batch(doCheckGH(), doQuickRefresh(m.repo), doRefresh(m.repo, m.detector, m.ghAvail), m.doTick())
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -111,8 +113,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.syncViewport()
 		return m, nil
 
+	case ghCheckMsg:
+		m.ghAvail = msg.avail
+		return m, nil
+
 	case tickMsg:
-		return m, tea.Batch(doRefresh(m.repo, m.detector), m.doTick())
+		return m, tea.Batch(doRefresh(m.repo, m.detector, m.ghAvail), m.doTick())
 
 	case refreshMsg:
 		if msg.err != nil {
@@ -136,7 +142,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.statusMsg = errorStyle.Render("Error: " + msg.err.Error())
 			m.mode = modeNormal
-			return m, tea.Batch(doQuickRefresh(m.repo), doRefresh(m.repo, m.detector))
+			return m, tea.Batch(doQuickRefresh(m.repo), doRefresh(m.repo, m.detector, m.ghAvail))
 		}
 		m.statusMsg = cleanStyle.Render("Worktree created — opening panel...")
 		m.mode = modeNormal
@@ -144,7 +150,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		newWtPath := filepath.Join(m.repo.Root(), ".gwaim-worktrees", msg.branchName)
 		return m, tea.Batch(
 			doQuickRefresh(m.repo),
-			doRefresh(m.repo, m.detector),
+			doRefresh(m.repo, m.detector, m.ghAvail),
 			doOpenWarpPanel(m.repo.RepoName(), git.Worktree{Path: newWtPath, Branch: msg.branchName}, nil),
 		)
 
@@ -155,7 +161,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMsg = cleanStyle.Render("Worktree removed")
 		}
 		m.mode = modeNormal
-		return m, tea.Batch(doQuickRefresh(m.repo), doRefresh(m.repo, m.detector))
+		return m, tea.Batch(doQuickRefresh(m.repo), doRefresh(m.repo, m.detector, m.ghAvail))
 
 	case warpOpenedMsg:
 		if msg.err != nil {
@@ -179,7 +185,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.statusMsg = cleanStyle.Render("Pull complete")
 		}
-		return m, tea.Batch(doQuickRefresh(m.repo), doRefresh(m.repo, m.detector))
+		return m, tea.Batch(doQuickRefresh(m.repo), doRefresh(m.repo, m.detector, m.ghAvail))
 
 	case worktreeRepairedMsg:
 		if msg.err != nil {
@@ -189,7 +195,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.statusMsg = cleanStyle.Render("Nothing to repair")
 		}
-		return m, tea.Batch(doQuickRefresh(m.repo), doRefresh(m.repo, m.detector))
+		return m, tea.Batch(doQuickRefresh(m.repo), doRefresh(m.repo, m.detector, m.ghAvail))
 
 	case tea.KeyMsg:
 		updated, cmd := m.handleKey(msg)
@@ -420,7 +426,7 @@ func (m *Model) renderBody() string {
 	if len(m.worktrees) > 0 {
 		mainWt := m.worktrees[0]
 		agents := m.agents[mainWt.Path]
-		content := card.Render(mainWt, agents, m.prs[mainWt.Branch])
+		content := card.Render(mainWt, agents, m.prs[mainWt.Branch], m.ghAvail)
 
 		mainWidth := m.width - 4
 		if mainWidth < 40 {
@@ -462,7 +468,7 @@ func (m *Model) renderBody() string {
 		var rowIndices []int
 		for i, wt := range linked {
 			agents := m.agents[wt.Path]
-			content := card.Render(wt, agents, m.prs[wt.Branch])
+			content := card.Render(wt, agents, m.prs[wt.Branch], m.ghAvail)
 
 			globalIdx := i + 1
 			style := cardStyle.Width(cardWidth)
@@ -592,7 +598,7 @@ func doQuickRefresh(repo *git.Repository) tea.Cmd {
 	}
 }
 
-func doRefresh(repo *git.Repository, detector *agent.Detector) tea.Cmd {
+func doRefresh(repo *git.Repository, detector *agent.Detector, ghAvail github.GHAvailability) tea.Cmd {
 	return func() tea.Msg {
 		// Fetch remote refs so sync status is accurate.
 		fetchErr := repo.Fetch()
@@ -610,8 +616,19 @@ func doRefresh(repo *git.Repository, detector *agent.Detector) tea.Cmd {
 		}
 
 		agents := detector.Detect(paths)
-		prs := github.FetchPRs(repo.Root(), branches)
+		var prs github.PRResult
+		if ghAvail == github.GHAvailable {
+			prs = github.FetchPRs(repo.Root(), branches)
+		} else {
+			prs = make(github.PRResult)
+		}
 		return refreshMsg{worktrees: wts, agents: agents, prs: prs, fetchErr: fetchErr}
+	}
+}
+
+func doCheckGH() tea.Cmd {
+	return func() tea.Msg {
+		return ghCheckMsg{avail: github.CheckGH()}
 	}
 }
 

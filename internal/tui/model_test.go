@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 
 	"github.com/mdelapenya/gwaim/internal/agent"
 	"github.com/mdelapenya/gwaim/internal/git"
+	"github.com/mdelapenya/gwaim/internal/github"
 )
 
 // testModel creates a Model with pre-populated worktrees (no repo/detector needed for unit tests).
@@ -405,5 +407,42 @@ func TestKeyMap(t *testing.T) {
 	}
 	if !key.Matches(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}, km.Delete) {
 		t.Error("d should match Delete")
+	}
+}
+
+func TestRenderBody_GHNotFoundShowsIndicator(t *testing.T) {
+	m := testModel(2)
+	m.width = 120
+	m.height = 40
+	m.ghAvail = github.GHNotFound
+
+	body := m.renderBody()
+
+	if !strings.Contains(body, "gh not installed") {
+		t.Error("expected 'gh not installed' indicator in card body when gh CLI is not found")
+	}
+}
+
+func TestRenderBody_GHNotAuthenticatedShowsIndicator(t *testing.T) {
+	m := testModel(2)
+	m.width = 120
+	m.height = 40
+	m.ghAvail = github.GHNotAuthenticated
+
+	body := m.renderBody()
+
+	if !strings.Contains(body, "gh not authenticated") {
+		t.Error("expected 'gh not authenticated' indicator in card body")
+	}
+}
+
+func TestGhCheckMsg_SetsGhAvail(t *testing.T) {
+	m := testModel(2)
+
+	updated, _ := m.Update(ghCheckMsg{avail: github.GHNotFound})
+	model := updated.(Model)
+
+	if model.ghAvail != github.GHNotFound {
+		t.Errorf("expected ghAvail = GHNotFound, got %v", model.ghAvail)
 	}
 }

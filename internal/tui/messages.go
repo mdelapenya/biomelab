@@ -49,3 +49,8 @@ type worktreeRepairedMsg struct {
 
 // tickMsg triggers a periodic refresh.
 type tickMsg struct{}
+
+// ghCheckMsg carries the result of the gh CLI pre-flight check.
+type ghCheckMsg struct {
+	avail github.GHAvailability
+}
