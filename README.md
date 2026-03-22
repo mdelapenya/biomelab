@@ -51,6 +51,36 @@ On macOS, the terminal is auto-detected from the `TERM_PROGRAM` environment vari
 
 ## Installation
 
+### Pre-built binaries
+
+Download a pre-built binary from the [latest release](https://github.com/mdelapenya/gwaim/releases/latest):
+
+```bash
+# macOS (Apple Silicon)
+curl -L https://github.com/mdelapenya/gwaim/releases/latest/download/gwaim_darwin_arm64.tar.gz | tar xz
+sudo mv gwaim /usr/local/bin/
+
+# macOS (Intel)
+curl -L https://github.com/mdelapenya/gwaim/releases/latest/download/gwaim_darwin_amd64.tar.gz | tar xz
+sudo mv gwaim /usr/local/bin/
+
+# Linux (amd64)
+curl -L https://github.com/mdelapenya/gwaim/releases/latest/download/gwaim_linux_amd64.tar.gz | tar xz
+sudo mv gwaim /usr/local/bin/
+
+# Linux (arm64)
+curl -L https://github.com/mdelapenya/gwaim/releases/latest/download/gwaim_linux_arm64.tar.gz | tar xz
+sudo mv gwaim /usr/local/bin/
+```
+
+On **Windows**, download the `.zip` from the [releases page](https://github.com/mdelapenya/gwaim/releases/latest) and add the extracted `gwaim.exe` to your `PATH`.
+
+> **macOS Gatekeeper note:** The pre-built binaries are not signed or notarised. On macOS, you may see a warning saying *"gwaim cannot be opened because the developer cannot be verified."* To resolve this, run:
+>
+> ```bash
+> xattr -d com.apple.quarantine /usr/local/bin/gwaim
+> ```
+
 ### Using `go install`
 
 ```
