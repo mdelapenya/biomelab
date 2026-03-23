@@ -52,6 +52,44 @@ On macOS, the terminal is auto-detected from the `TERM_PROGRAM` environment vari
 
 ## Installation
 
+### Homebrew (macOS / Linux)
+
+```bash
+brew install mdelapenya/tap/gwaim
+```
+
+### Nix
+
+Run without installing:
+
+```bash
+nix run github:mdelapenya/gwaim
+```
+
+Or add to your flake inputs:
+
+```nix
+{
+  inputs.gwaim.url = "github:mdelapenya/gwaim";
+}
+```
+
+### Debian / Ubuntu (apt)
+
+Download the `.deb` package from the [latest release](https://github.com/mdelapenya/gwaim/releases/latest) and install it:
+
+```bash
+sudo dpkg -i gwaim_*.deb
+```
+
+### Fedora / RHEL (dnf)
+
+Download the `.rpm` package from the [latest release](https://github.com/mdelapenya/gwaim/releases/latest) and install it:
+
+```bash
+sudo rpm -i gwaim_*.rpm
+```
+
 ### Pre-built binaries
 
 Download a pre-built binary from the [latest release](https://github.com/mdelapenya/gwaim/releases/latest):
