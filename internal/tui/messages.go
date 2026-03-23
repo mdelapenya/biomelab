@@ -11,6 +11,7 @@ type refreshMsg struct {
 	worktrees []git.Worktree
 	agents    agent.DetectionResult
 	prs       github.PRResult
+	hasPRs    bool // true only when a network refresh attempted PR lookup
 	err       error
 	fetchErr  error
 }
@@ -54,8 +55,11 @@ type worktreeRepairedMsg struct {
 	err    error
 }
 
-// tickMsg triggers a periodic refresh.
+// tickMsg triggers a network refresh (fetch + PRs).
 type tickMsg struct{}
+
+// localTickMsg triggers a local-only refresh (dirty status + agent detection, no network).
+type localTickMsg struct{}
 
 // ghCheckMsg carries the result of the gh CLI pre-flight check.
 type ghCheckMsg struct {

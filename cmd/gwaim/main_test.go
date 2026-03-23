@@ -26,7 +26,7 @@ func TestResolveRefreshInterval_EnvFallback(t *testing.T) {
 func TestResolveRefreshInterval_Default(t *testing.T) {
 	t.Setenv("GWAIM_REFRESH", "")
 	got := resolveRefreshInterval(0)
-	if got != tui.DefaultRefreshInterval {
-		t.Errorf("got %v, want %v (default)", got, tui.DefaultRefreshInterval)
+	if got != tui.DefaultNetworkRefreshInterval {
+		t.Errorf("got %v, want %v (default)", got, tui.DefaultNetworkRefreshInterval)
 	}
 }

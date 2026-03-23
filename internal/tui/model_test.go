@@ -26,7 +26,7 @@ func testModel(n int) Model {
 		keys:            defaultKeyMap(),
 		agents:          make(agent.DetectionResult),
 		textInput:       ti,
-		refreshInterval: DefaultRefreshInterval,
+		refreshInterval: DefaultNetworkRefreshInterval,
 	}
 	for i := range n {
 		wt := git.Worktree{
@@ -501,8 +501,8 @@ func TestColumns(t *testing.T) {
 
 func TestNew_DefaultRefreshInterval(t *testing.T) {
 	m := New(nil, nil, 0)
-	if m.refreshInterval != DefaultRefreshInterval {
-		t.Errorf("refreshInterval = %v, want %v", m.refreshInterval, DefaultRefreshInterval)
+	if m.refreshInterval != DefaultNetworkRefreshInterval {
+		t.Errorf("refreshInterval = %v, want %v", m.refreshInterval, DefaultNetworkRefreshInterval)
 	}
 }
 
@@ -553,3 +553,49 @@ func TestRenderBody_GHNotAuthenticatedShowsIndicator(t *testing.T) {
 	}
 }
 
+func TestLocalRefreshMsg_PreservesPRs(t *testing.T) {
+	// A local refresh (hasPRs=false) must not wipe PR data set by a prior network refresh.
+	m := testModel(2)
+	branch := m.worktrees[0].Branch
+	m.prs = github.PRResult{branch: &github.PRInfo{Number: 7, Title: "my PR"}}
+
+	// Simulate a local refresh arriving with no PR data.
+	updated, _ := m.Update(refreshMsg{
+		worktrees: m.worktrees,
+		agents:    m.agents,
+		hasPRs:    false,
+	})
+	model := updated.(Model)
+
+	if model.prs[branch] == nil || model.prs[branch].Number != 7 {
+		t.Error("local refresh must not overwrite existing PR data")
+	}
+}
+
+func TestNetworkRefreshMsg_UpdatesPRs(t *testing.T) {
+	// A network refresh (hasPRs=true) must update the PR map.
+	m := testModel(2)
+	branch := m.worktrees[0].Branch
+	m.prs = github.PRResult{branch: &github.PRInfo{Number: 7, Title: "old"}}
+
+	newPRs := github.PRResult{branch: &github.PRInfo{Number: 42, Title: "new"}}
+	updated, _ := m.Update(refreshMsg{
+		worktrees: m.worktrees,
+		agents:    m.agents,
+		prs:       newPRs,
+		hasPRs:    true,
+	})
+	model := updated.(Model)
+
+	if model.prs[branch] == nil || model.prs[branch].Number != 42 {
+		t.Errorf("network refresh must update PR data, got %v", model.prs[branch])
+	}
+}
+
+func TestLocalTickMsg_SchedulesNextLocalTick(t *testing.T) {
+	m := testModel(2)
+	_, cmd := m.Update(localTickMsg{})
+	if cmd == nil {
+		t.Error("localTickMsg handler must return a command (next localTick + localRefresh)")
+	}
+}

@@ -21,8 +21,17 @@ import (
 	"github.com/mdelapenya/gwaim/internal/warp"
 )
 
-// DefaultRefreshInterval is the default dashboard refresh interval.
-const DefaultRefreshInterval = 3 * time.Second
+// DefaultNetworkRefreshInterval is the default interval for network operations
+// (git fetch + PR lookups). Controlled by --refresh / GWAIM_REFRESH.
+const DefaultNetworkRefreshInterval = 30 * time.Second
+
+// LocalRefreshInterval is the fixed interval for local state refreshes
+// (dirty status, agent detection). Not user-configurable.
+const LocalRefreshInterval = 5 * time.Second
+
+// DefaultRefreshInterval is kept for backwards compatibility.
+// Deprecated: use DefaultNetworkRefreshInterval.
+const DefaultRefreshInterval = DefaultNetworkRefreshInterval
 
 type mode int
 
@@ -64,8 +73,9 @@ type zone struct {
 	x, y, w, h    int
 }
 
-// New creates a new TUI model. The refreshInterval controls how often the
-// dashboard refreshes data. Pass 0 to use DefaultRefreshInterval.
+// New creates a new TUI model. refreshInterval controls how often network
+// operations (fetch + PR lookups) run. Pass 0 to use DefaultNetworkRefreshInterval.
+// Local state (dirty status, agents) always refreshes every LocalRefreshInterval.
 func New(repo *git.Repository, detector *agent.Detector, refreshInterval time.Duration) Model {
 	ti := textinput.New()
 	ti.Placeholder = "branch-name"
@@ -73,7 +83,7 @@ func New(repo *git.Repository, detector *agent.Detector, refreshInterval time.Du
 	ti.Width = 30
 
 	if refreshInterval <= 0 {
-		refreshInterval = DefaultRefreshInterval
+		refreshInterval = DefaultNetworkRefreshInterval
 	}
 
 	return Model{
@@ -87,10 +97,17 @@ func New(repo *git.Repository, detector *agent.Detector, refreshInterval time.Du
 }
 
 func (m Model) Init() tea.Cmd {
-	// Fast initial load: just worktrees, no fetch/agents/PRs.
-	// Full refresh runs right after via doTick.
+	// Fast initial load: branch names only, no dirty/agents/network.
+	// Local refresh (dirty + agents) and network refresh (fetch + PRs) follow immediately.
 	// gh pre-flight runs once at startup.
-	return tea.Batch(doCheckGH(), doQuickRefresh(m.repo), doRefresh(m.repo, m.detector, m.ghAvail), m.doTick())
+	return tea.Batch(
+		doCheckGH(),
+		doQuickRefresh(m.repo),
+		doLocalRefresh(m.repo, m.detector),
+		doNetworkRefresh(m.repo, m.detector, m.ghAvail),
+		m.doLocalTick(),
+		m.doTick(),
+	)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -119,7 +136,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
-		return m, tea.Batch(doRefresh(m.repo, m.detector, m.ghAvail), m.doTick())
+		return m, tea.Batch(doNetworkRefresh(m.repo, m.detector, m.ghAvail), m.doTick())
+
+	case localTickMsg:
+		return m, tea.Batch(doLocalRefresh(m.repo, m.detector), m.doLocalTick())
 
 	case refreshMsg:
 		if msg.err != nil {
@@ -127,7 +147,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.worktrees = msg.worktrees
 			m.agents = msg.agents
-			m.prs = msg.prs
+			if msg.hasPRs {
+				m.prs = msg.prs
+			}
 			m.err = nil
 		}
 		if msg.fetchErr != nil {
@@ -143,7 +165,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.statusMsg = errorStyle.Render("Error: " + msg.err.Error())
 			m.mode = modeNormal
-			return m, tea.Batch(doQuickRefresh(m.repo), doRefresh(m.repo, m.detector, m.ghAvail))
+			return m, tea.Batch(doQuickRefresh(m.repo), doLocalRefresh(m.repo, m.detector))
 		}
 		m.statusMsg = cleanStyle.Render("Worktree created — opening panel...")
 		m.mode = modeNormal
@@ -151,7 +173,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		newWtPath := filepath.Join(m.repo.Root(), ".gwaim-worktrees", msg.branchName)
 		return m, tea.Batch(
 			doQuickRefresh(m.repo),
-			doRefresh(m.repo, m.detector, m.ghAvail),
+			doLocalRefresh(m.repo, m.detector),
 			doOpenWarpPanel(m.repo.RepoName(), git.Worktree{Path: newWtPath, Branch: msg.branchName}, nil),
 		)
 
@@ -159,13 +181,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.statusMsg = errorStyle.Render("Error: " + msg.err.Error())
 			m.mode = modeNormal
-			return m, tea.Batch(doQuickRefresh(m.repo), doRefresh(m.repo, m.detector, m.ghAvail))
+			return m, tea.Batch(doQuickRefresh(m.repo), doLocalRefresh(m.repo, m.detector))
 		}
 		m.statusMsg = cleanStyle.Render("PR fetched — opening panel...")
 		m.mode = modeNormal
+		// Trigger a network refresh so the new worktree's PR badge appears immediately.
 		return m, tea.Batch(
 			doQuickRefresh(m.repo),
-			doRefresh(m.repo, m.detector, m.ghAvail),
+			doNetworkRefresh(m.repo, m.detector, m.ghAvail),
 			doOpenWarpPanel(m.repo.RepoName(), git.Worktree{Path: msg.wtPath, Branch: msg.branchName}, nil),
 		)
 
@@ -176,7 +199,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMsg = cleanStyle.Render("Worktree removed")
 		}
 		m.mode = modeNormal
-		return m, tea.Batch(doQuickRefresh(m.repo), doRefresh(m.repo, m.detector, m.ghAvail))
+		return m, tea.Batch(doQuickRefresh(m.repo), doLocalRefresh(m.repo, m.detector))
 
 	case warpOpenedMsg:
 		if msg.err != nil {
@@ -200,7 +223,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.statusMsg = cleanStyle.Render("Pull complete")
 		}
-		return m, tea.Batch(doQuickRefresh(m.repo), doRefresh(m.repo, m.detector, m.ghAvail))
+		// Pull changes local state only; sync status will update on next network tick.
+		return m, tea.Batch(doQuickRefresh(m.repo), doLocalRefresh(m.repo, m.detector))
 
 	case worktreeRepairedMsg:
 		if msg.err != nil {
@@ -210,7 +234,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.statusMsg = cleanStyle.Render("Nothing to repair")
 		}
-		return m, tea.Batch(doQuickRefresh(m.repo), doRefresh(m.repo, m.detector, m.ghAvail))
+		return m, tea.Batch(doQuickRefresh(m.repo), doLocalRefresh(m.repo, m.detector))
 
 	case tea.KeyMsg:
 		updated, cmd := m.handleKey(msg)
@@ -608,7 +632,7 @@ func (m Model) View() string {
 	if m.mouseOn {
 		mouseLabel = "m mouse:on"
 	}
-	refreshLabel := fmt.Sprintf("refresh:%s", m.refreshInterval)
+	refreshLabel := fmt.Sprintf("local:%s net:%s", LocalRefreshInterval, m.refreshInterval)
 	help := helpStyle.Render("←→↑↓ navigate • ↵ open tab • e editor • p pull • r repair • c create • f fetch PR • d delete • " + mouseLabel + " • " + refreshLabel + " • q quit")
 
 	if m.ready {
@@ -657,9 +681,27 @@ func doQuickRefresh(repo *git.Repository) tea.Cmd {
 	}
 }
 
-func doRefresh(repo *git.Repository, detector *agent.Detector, ghAvail github.GHAvailability) tea.Cmd {
+// doLocalRefresh reads dirty status and detects agents — no network I/O.
+// Fires every LocalRefreshInterval and after any state-modifying operation.
+func doLocalRefresh(repo *git.Repository, detector *agent.Detector) tea.Cmd {
 	return func() tea.Msg {
-		// Fetch remote refs so sync status is accurate.
+		wts, err := repo.ListWorktrees()
+		if err != nil {
+			return refreshMsg{err: err}
+		}
+		paths := make([]string, len(wts))
+		for i, wt := range wts {
+			paths[i] = wt.Path
+		}
+		agents := detector.Detect(paths)
+		return refreshMsg{worktrees: wts, agents: agents}
+	}
+}
+
+// doNetworkRefresh fetches remote refs and looks up PR status.
+// Fires every refreshInterval (controlled by --refresh / GWAIM_REFRESH).
+func doNetworkRefresh(repo *git.Repository, detector *agent.Detector, ghAvail github.GHAvailability) tea.Cmd {
+	return func() tea.Msg {
 		fetchErr := repo.Fetch()
 
 		wts, err := repo.ListWorktrees()
@@ -681,7 +723,7 @@ func doRefresh(repo *git.Repository, detector *agent.Detector, ghAvail github.GH
 		} else {
 			prs = make(github.PRResult)
 		}
-		return refreshMsg{worktrees: wts, agents: agents, prs: prs, fetchErr: fetchErr}
+		return refreshMsg{worktrees: wts, agents: agents, prs: prs, hasPRs: true, fetchErr: fetchErr}
 	}
 }
 
@@ -694,6 +736,12 @@ func doCheckGH() tea.Cmd {
 func (m Model) doTick() tea.Cmd {
 	return tea.Tick(m.refreshInterval, func(_ time.Time) tea.Msg {
 		return tickMsg{}
+	})
+}
+
+func (m Model) doLocalTick() tea.Cmd {
+	return tea.Tick(LocalRefreshInterval, func(_ time.Time) tea.Msg {
+		return localTickMsg{}
 	})
 }
 

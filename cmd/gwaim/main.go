@@ -15,8 +15,8 @@ import (
 
 func main() {
 	var refreshFlag time.Duration
-	flag.DurationVar(&refreshFlag, "refresh", 0, "Dashboard refresh interval (e.g. 5s, 500ms)")
-	flag.DurationVar(&refreshFlag, "r", 0, "Dashboard refresh interval (shorthand)")
+	flag.DurationVar(&refreshFlag, "refresh", 0, "Network refresh interval: how often to fetch from remote and look up PRs (e.g. 30s, 1m). Local state refreshes every 5s regardless.")
+	flag.DurationVar(&refreshFlag, "r", 0, "Network refresh interval (shorthand)")
 	flag.Parse()
 
 	refreshInterval := resolveRefreshInterval(refreshFlag)
@@ -63,5 +63,5 @@ func resolveRefreshInterval(flagVal time.Duration) time.Duration {
 		}
 		return d
 	}
-	return tui.DefaultRefreshInterval
+	return tui.DefaultNetworkRefreshInterval
 }
