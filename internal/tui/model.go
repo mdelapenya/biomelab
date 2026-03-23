@@ -163,11 +163,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.statusMsg = cleanStyle.Render("PR fetched — opening panel...")
 		m.mode = modeNormal
-		newWtPath := filepath.Join(m.repo.Root(), ".gwaim-worktrees", msg.branchName)
 		return m, tea.Batch(
 			doQuickRefresh(m.repo),
 			doRefresh(m.repo, m.detector, m.ghAvail),
-			doOpenWarpPanel(m.repo.RepoName(), git.Worktree{Path: newWtPath, Branch: msg.branchName}, nil),
+			doOpenWarpPanel(m.repo.RepoName(), git.Worktree{Path: msg.wtPath, Branch: msg.branchName}, nil),
 		)
 
 	case worktreeRemovedMsg:
@@ -725,7 +724,7 @@ func doFetchPR(repo *git.Repository, input string) tea.Cmd {
 			return prFetchedMsg{err: err}
 		}
 
-		// Use the PR's head branch name as the worktree branch.
+		// Use the PR's head branch name as the local branch.
 		branchName := headBranch
 
 		// Determine remote URL for fork PRs.
@@ -734,8 +733,8 @@ func doFetchPR(repo *git.Repository, input string) tea.Cmd {
 			remoteURL = "https://github.com/" + ref.Repo + ".git"
 		}
 
-		err = repo.FetchPR(ref.Number, branchName, remoteURL)
-		return prFetchedMsg{branchName: branchName, err: err}
+		wtPath, err := repo.FetchPR(ref.Number, branchName, remoteURL)
+		return prFetchedMsg{branchName: branchName, wtPath: wtPath, err: err}
 	}
 }
 
