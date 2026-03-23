@@ -510,7 +510,7 @@ func (r *Repository) FetchPR(prNumber int, branchName, remoteURL string) error {
 		RefSpecs: []config.RefSpec{refSpec},
 	}
 	if remoteURL != "" {
-		opts.RemoteName = "" // clear default
+		opts.RemoteURL = remoteURL
 	}
 
 	err := r.repo.FetchContext(ctx, opts)
