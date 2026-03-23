@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os/exec"
 	"strings"
-	"sync"
 )
 
 // GitHubProvider fetches PR information using the gh CLI.
@@ -24,31 +23,7 @@ func (g *GitHubProvider) CheckCLI() CLIAvailability {
 
 // FetchPRs looks up open PRs for the given branch names using gh.
 func (g *GitHubProvider) FetchPRs(repoDir string, branches []string) PRResult {
-	result := make(PRResult)
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 4) // limit concurrency
-
-	for _, branch := range branches {
-		if branch == "" {
-			continue
-		}
-		wg.Add(1)
-		go func(br string) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
-			pr := fetchGitHubPR(repoDir, br)
-			if pr != nil {
-				mu.Lock()
-				result[br] = pr
-				mu.Unlock()
-			}
-		}(branch)
-	}
-	wg.Wait()
-	return result
+	return fetchPRsConcurrent(repoDir, branches, fetchGitHubPR)
 }
 
 // Name returns "GitHub".

@@ -121,8 +121,8 @@ func TestNewProvider(t *testing.T) {
 	}{
 		{"github", "git@github.com:o/r.git", "GitHub", ProviderGitHub},
 		{"gitlab", "git@gitlab.com:o/r.git", "GitLab", ProviderGitLab},
-		{"unknown defaults to github", "git@custom.host:o/r.git", "GitHub", ProviderGitHub},
-		{"bitbucket defaults to github", "git@bitbucket.org:o/r.git", "GitHub", ProviderGitHub},
+		{"unknown is unsupported", "git@custom.host:o/r.git", "Unknown", ProviderUnknown},
+		{"bitbucket is unsupported", "git@bitbucket.org:o/r.git", "Unknown", ProviderUnknown},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

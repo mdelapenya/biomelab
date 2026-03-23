@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os/exec"
 	"strings"
-	"sync"
 )
 
 // GitLabProvider fetches MR information using the glab CLI.
@@ -24,31 +23,7 @@ func (g *GitLabProvider) CheckCLI() CLIAvailability {
 
 // FetchPRs looks up open MRs for the given branch names using glab.
 func (g *GitLabProvider) FetchPRs(repoDir string, branches []string) PRResult {
-	result := make(PRResult)
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 4)
-
-	for _, branch := range branches {
-		if branch == "" {
-			continue
-		}
-		wg.Add(1)
-		go func(br string) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
-			mr := fetchGitLabMR(repoDir, br)
-			if mr != nil {
-				mu.Lock()
-				result[br] = mr
-				mu.Unlock()
-			}
-		}(branch)
-	}
-	wg.Wait()
-	return result
+	return fetchPRsConcurrent(repoDir, branches, fetchGitLabMR)
 }
 
 // Name returns "GitLab".

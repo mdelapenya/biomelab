@@ -1,6 +1,9 @@
 package provider
 
-import "strings"
+import (
+	"strings"
+	"sync"
+)
 
 // Provider represents a git hosting provider.
 type Provider int
@@ -88,7 +91,7 @@ type PRProvider interface {
 }
 
 // NewProvider creates the appropriate PRProvider for the given remote URL.
-// Falls back to a GitHub provider if the provider cannot be determined.
+// Returns an UnsupportedProvider for unrecognized hosting platforms.
 func NewProvider(remoteURL string) PRProvider {
 	p := DetectProvider(remoteURL)
 	switch p {
@@ -97,8 +100,7 @@ func NewProvider(remoteURL string) PRProvider {
 	case ProviderGitLab:
 		return &GitLabProvider{}
 	default:
-		// Unknown providers (including Bitbucket) default to GitHub behavior (most common case).
-		return &GitHubProvider{}
+		return NewUnsupportedProvider(p)
 	}
 }
 
@@ -114,4 +116,64 @@ func StatusIcon(status string) string {
 	default:
 		return ""
 	}
+}
+
+// UnsupportedProvider is a no-op provider for hosting platforms without CLI support.
+type UnsupportedProvider struct {
+	provider Provider
+}
+
+// NewUnsupportedProvider creates a provider that always returns CLIUnsupportedProvider.
+func NewUnsupportedProvider(p Provider) *UnsupportedProvider {
+	return &UnsupportedProvider{provider: p}
+}
+
+// CheckCLI always returns CLIUnsupportedProvider.
+func (u *UnsupportedProvider) CheckCLI() CLIAvailability {
+	return CLIUnsupportedProvider
+}
+
+// FetchPRs always returns an empty result.
+func (u *UnsupportedProvider) FetchPRs(_ string, _ []string) PRResult {
+	return make(PRResult)
+}
+
+// Name returns the provider name.
+func (u *UnsupportedProvider) Name() string {
+	return u.provider.String()
+}
+
+// Provider returns the provider type.
+func (u *UnsupportedProvider) Provider() Provider {
+	return u.provider
+}
+
+// fetchPRsConcurrent fetches PR/MR info for multiple branches concurrently,
+// using the provided fetch function for each branch. Limits concurrency to 4.
+func fetchPRsConcurrent(repoDir string, branches []string, fetchFn func(repoDir, branch string) *PRInfo) PRResult {
+	result := make(PRResult)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 4)
+
+	for _, branch := range branches {
+		if branch == "" {
+			continue
+		}
+		wg.Add(1)
+		go func(br string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			pr := fetchFn(repoDir, br)
+			if pr != nil {
+				mu.Lock()
+				result[br] = pr
+				mu.Unlock()
+			}
+		}(branch)
+	}
+	wg.Wait()
+	return result
 }
