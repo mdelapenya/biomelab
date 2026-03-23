@@ -599,3 +599,111 @@ func TestLocalTickMsg_SchedulesNextLocalTick(t *testing.T) {
 		t.Error("localTickMsg handler must return a command (next localTick + localRefresh)")
 	}
 }
+
+func TestRefreshFlash_LocalSetsAndClears(t *testing.T) {
+	m := testModel(2)
+
+	// A local-sourced refreshMsg sets localFlash and returns a revert cmd.
+	updated, cmd := m.Update(refreshMsg{
+		source:    refreshSourceLocal,
+		worktrees: m.worktrees,
+		agents:    m.agents,
+	})
+	model := updated.(Model)
+
+	if !model.localFlash {
+		t.Error("localFlash should be true after local refreshMsg")
+	}
+	if model.netFlash {
+		t.Error("netFlash should not be set by a local refresh")
+	}
+	if cmd == nil {
+		t.Error("expected a flash-revert command after local refresh")
+	}
+	if model.lastLocalRefresh.IsZero() {
+		t.Error("lastLocalRefresh should be set after local refresh")
+	}
+
+	// localFlashDoneMsg clears the flag.
+	updated, _ = model.Update(localFlashDoneMsg{})
+	model = updated.(Model)
+	if model.localFlash {
+		t.Error("localFlash should be false after localFlashDoneMsg")
+	}
+}
+
+func TestRefreshFlash_NetworkSetsAndClears(t *testing.T) {
+	m := testModel(2)
+
+	updated, cmd := m.Update(refreshMsg{
+		source:    refreshSourceNetwork,
+		worktrees: m.worktrees,
+		agents:    m.agents,
+		hasPRs:    true,
+	})
+	model := updated.(Model)
+
+	if !model.netFlash {
+		t.Error("netFlash should be true after network refreshMsg")
+	}
+	if model.localFlash {
+		t.Error("localFlash should not be set by a network refresh")
+	}
+	if cmd == nil {
+		t.Error("expected a flash-revert command after network refresh")
+	}
+	if model.lastNetworkRefresh.IsZero() {
+		t.Error("lastNetworkRefresh should be set after network refresh")
+	}
+
+	updated, _ = model.Update(netFlashDoneMsg{})
+	model = updated.(Model)
+	if model.netFlash {
+		t.Error("netFlash should be false after netFlashDoneMsg")
+	}
+}
+
+func TestRefreshFlash_QuickRefreshNoFlash(t *testing.T) {
+	m := testModel(2)
+
+	updated, cmd := m.Update(refreshMsg{
+		source:    refreshSourceQuick,
+		worktrees: m.worktrees,
+		agents:    m.agents,
+	})
+	model := updated.(Model)
+
+	if model.localFlash || model.netFlash {
+		t.Error("quick refresh must not trigger any flash")
+	}
+	if cmd != nil {
+		t.Error("quick refresh must not return a flash-revert command")
+	}
+}
+
+func TestRenderHeader_ShowsTimestamps(t *testing.T) {
+	m := testModel(2)
+	m.width = 120
+
+	title := "gwaim - Git Worktree Agent Manager"
+
+	// Before any refresh — shows dashes.
+	header := m.renderHeader(title)
+	if !strings.Contains(header, "local: —") {
+		t.Errorf("expected '—' for unset local timestamp, got: %s", header)
+	}
+
+	// After a local refresh — shows a time.
+	m.lastLocalRefresh = time.Date(2026, 3, 23, 12, 34, 56, 0, time.UTC)
+	header = m.renderHeader(title)
+	if !strings.Contains(header, "local: 12:34:56") {
+		t.Errorf("expected local timestamp in header, got: %s", header)
+	}
+
+	// Flash replaces the time with ✓.
+	m.localFlash = true
+	header = m.renderHeader(title)
+	if !strings.Contains(header, "local: ✓") {
+		t.Errorf("expected ✓ flash in header, got: %s", header)
+	}
+}

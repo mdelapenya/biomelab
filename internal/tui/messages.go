@@ -6,8 +6,18 @@ import (
 	"github.com/mdelapenya/gwaim/internal/github"
 )
 
+// refreshSource identifies which refresh path produced a refreshMsg.
+type refreshSource int
+
+const (
+	refreshSourceQuick   refreshSource = iota // fast branch-only load, no flash
+	refreshSourceLocal                        // periodic local refresh (dirty + agents)
+	refreshSourceNetwork                      // periodic network refresh (fetch + PRs)
+)
+
 // refreshMsg carries updated worktree and agent data.
 type refreshMsg struct {
+	source    refreshSource
 	worktrees []git.Worktree
 	agents    agent.DetectionResult
 	prs       github.PRResult
@@ -60,6 +70,12 @@ type tickMsg struct{}
 
 // localTickMsg triggers a local-only refresh (dirty status + agent detection, no network).
 type localTickMsg struct{}
+
+// localFlashDoneMsg clears the local-refresh ✓ indicator after its display window.
+type localFlashDoneMsg struct{}
+
+// netFlashDoneMsg clears the network-refresh ✓ indicator after its display window.
+type netFlashDoneMsg struct{}
 
 // ghCheckMsg carries the result of the gh CLI pre-flight check.
 type ghCheckMsg struct {

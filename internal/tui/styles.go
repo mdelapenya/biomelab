@@ -38,4 +38,6 @@ var (
 	inputPromptStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
 
 	confirmStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+
+	refreshTimestampStyle = lipgloss.NewStyle().Faint(true)
 )

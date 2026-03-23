@@ -66,6 +66,10 @@ type Model struct {
 	mouseOn         bool // default true, toggled with 'm'
 	deleteConfirmed bool // true after user types 'y' in confirm-delete mode
 	refreshInterval time.Duration
+	localFlash        bool      // true while showing ✓ after a local refresh
+	netFlash          bool      // true while showing ✓ after a network refresh
+	lastLocalRefresh  time.Time // time of last completed local refresh
+	lastNetworkRefresh time.Time // time of last completed network refresh
 }
 
 type zone struct {
@@ -115,7 +119,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		headerHeight := 2 // title + margin
+		headerHeight := 3 // title + last-update line + margin
 		footerHeight := 2 // help bar + margin
 		vpHeight := m.height - headerHeight - footerHeight
 		if vpHeight < 1 {
@@ -158,6 +162,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.cursor >= len(m.worktrees) && len(m.worktrees) > 0 {
 			m.cursor = len(m.worktrees) - 1
 		}
+		// Update timestamps and trigger ✓ flash for periodic refreshes.
+		var flashCmd tea.Cmd
+		switch msg.source {
+		case refreshSourceLocal:
+			m.lastLocalRefresh = time.Now()
+			m.localFlash = true
+			flashCmd = tea.Tick(time.Second, func(_ time.Time) tea.Msg { return localFlashDoneMsg{} })
+		case refreshSourceNetwork:
+			m.lastNetworkRefresh = time.Now()
+			m.netFlash = true
+			flashCmd = tea.Tick(time.Second, func(_ time.Time) tea.Msg { return netFlashDoneMsg{} })
+		}
+		m.syncViewport()
+		return m, flashCmd
+
+	case localFlashDoneMsg:
+		m.localFlash = false
+		m.syncViewport()
+		return m, nil
+
+	case netFlashDoneMsg:
+		m.netFlash = false
 		m.syncViewport()
 		return m, nil
 
@@ -627,19 +653,43 @@ func (m Model) View() string {
 		return titleStyle.Render("gwaim") + "\n\nLoading worktrees...\n"
 	}
 
-	header := titleStyle.Render("gwaim - Git Worktree Agent Manager")
+	title := titleStyle.Render("gwaim - Git Worktree Agent Manager")
+	header := m.renderHeader(title)
+
 	mouseLabel := "m mouse:off"
 	if m.mouseOn {
 		mouseLabel = "m mouse:on"
 	}
-	refreshLabel := fmt.Sprintf("local:%s net:%s", LocalRefreshInterval, m.refreshInterval)
-	help := helpStyle.Render("←→↑↓ navigate • ↵ open tab • e editor • p pull • r repair • c create • f fetch PR • d delete • " + mouseLabel + " • " + refreshLabel + " • q quit")
+	help := helpStyle.Render("←→↑↓ navigate • ↵ open tab • e editor • p pull • r repair • c create • f fetch PR • d delete • " + mouseLabel + " • q quit")
 
 	if m.ready {
 		return header + "\n" + m.viewport.View() + "\n" + help
 	}
 
 	return header + "\n" + m.renderBody() + "\n" + help
+}
+
+// renderHeader builds the two-line header: title, then last-update timestamps below it.
+func (m Model) renderHeader(title string) string {
+	localTime := "—"
+	if !m.lastLocalRefresh.IsZero() {
+		localTime = m.lastLocalRefresh.Format("15:04:05")
+	}
+	if m.localFlash {
+		localTime = "✓"
+	}
+	netTime := "—"
+	if !m.lastNetworkRefresh.IsZero() {
+		netTime = m.lastNetworkRefresh.Format("15:04:05")
+	}
+	if m.netFlash {
+		netTime = "✓"
+	}
+	status := refreshTimestampStyle.Render(
+		fmt.Sprintf("Last Update: local: %s (%s)   net: %s (%s)",
+			localTime, LocalRefreshInterval, netTime, m.refreshInterval),
+	)
+	return title + "\n" + status
 }
 
 func (m Model) columns() int {
@@ -677,7 +727,7 @@ func doQuickRefresh(repo *git.Repository) tea.Cmd {
 		if err != nil {
 			return refreshMsg{err: err}
 		}
-		return refreshMsg{worktrees: wts, agents: agent.DetectionResult{}, prs: github.PRResult{}}
+		return refreshMsg{source: refreshSourceQuick, worktrees: wts, agents: agent.DetectionResult{}, prs: github.PRResult{}}
 	}
 }
 
@@ -694,7 +744,7 @@ func doLocalRefresh(repo *git.Repository, detector *agent.Detector) tea.Cmd {
 			paths[i] = wt.Path
 		}
 		agents := detector.Detect(paths)
-		return refreshMsg{worktrees: wts, agents: agents}
+		return refreshMsg{source: refreshSourceLocal, worktrees: wts, agents: agents}
 	}
 }
 
@@ -723,7 +773,7 @@ func doNetworkRefresh(repo *git.Repository, detector *agent.Detector, ghAvail gi
 		} else {
 			prs = make(github.PRResult)
 		}
-		return refreshMsg{worktrees: wts, agents: agents, prs: prs, hasPRs: true, fetchErr: fetchErr}
+		return refreshMsg{source: refreshSourceNetwork, worktrees: wts, agents: agents, prs: prs, hasPRs: true, fetchErr: fetchErr}
 	}
 }
 
