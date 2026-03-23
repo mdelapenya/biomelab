@@ -12,6 +12,7 @@
 - **Create worktrees** -- Press `c` from the main card to create a new linked worktree. A branch name prompt appears under the main card. After creation, a new terminal tab opens automatically in the worktree directory.
 - **Delete worktrees** -- Press `d` on any linked worktree to delete it. A two-step confirmation prompt shows what will happen: press `y` to arm, then `Enter` to confirm. The worktree directory is removed, the branch is deleted, and stale metadata is pruned. The main worktree cannot be deleted.
 - **Pull** -- Press `p` to pull from the remote. Uses go-git with credentials resolved from your configured git credential helpers (osxkeychain, gh auth, etc.).
+- **Fetch PR into worktree** -- Press `f` from the main card to fetch a pull request into a new linked worktree. A prompt accepts a plain PR number (`123`) or a fork reference (`owner/repo#123`). gwaim validates the PR via `gh`, fetches the head branch, and creates a worktree for it. The branch ref is preserved exactly (e.g., `ralph/issue-19`), while the directory name is sanitized to be filesystem-safe.
 - **Repair worktrees** -- Press `r` from the main card to run `git worktree repair`, which fixes broken links between the main worktree and linked worktrees (e.g., after a worktree directory was moved manually). The status bar shows which worktrees were repaired, or "Nothing to repair" if all links are healthy.
 - **Open in terminal** -- Press `Enter` to open the selected worktree in a new terminal tab. If an agent is running in the worktree, the agent command is executed automatically. The first `Enter` creates a tab named after the repo (e.g., `docker/sandboxes`); subsequent presses add split panels to that same tab.
 - **Mouse support** -- Press `m` to toggle mouse mode. When enabled, click on cards to select them. When disabled (default), normal text selection works for copying paths, branch names, etc.
@@ -152,6 +153,7 @@ The current refresh interval is shown in the help bar at the bottom of the scree
 | `down` / `j`    | Move cursor down (main goes to first linked card)                 |
 | `Enter`          | Open selected worktree in a new terminal tab/panel                |
 | `c`              | Create a new worktree (only from the main card)                   |
+| `f`              | Fetch a PR into a new worktree (only from the main card; accepts `123` or `owner/repo#123`) |
 | `d`              | Delete the selected linked worktree (y + Enter to confirm)        |
 | `e`              | Open the selected worktree in an editor (`$GWAIM_EDITOR` or `code`) |
 | `p`              | Pull from remote (fetches and merges into main branch)            |
@@ -188,8 +190,8 @@ gwaim is structured into the following internal packages:
 - **`cmd/gwaim`** -- Entry point. Opens the repository, creates the agent detector, and starts the Bubbletea program.
 - **`internal/git`** -- Git operations using [go-git v6](https://github.com/go-git/go-git). Handles repository opening, worktree listing (main + linked), creation, removal, repair, pruning, pull, fetch, and sync status computation. Uses the `x/plumbing/worktree` extension for linked worktree management. Credentials are resolved via `git credential fill`. Repair shells out to `git worktree repair` (go-git v6 has no repair API).
 - **`internal/agent`** -- Detects coding agent processes using [gopsutil](https://github.com/shirou/gopsutil). Enumerates all processes, filters by known agent patterns, resolves their CWDs, and matches them to worktree paths. Reports PID, process state, and start time.
-- **`internal/github`** -- Fetches pull request information for branches using `gh pr view`. Runs lookups concurrently (up to 4 at a time). Extracts PR number, title, state, draft status, and CI check rollup.
-- **`internal/tui`** -- The Bubbletea TUI model. Manages the viewport, card grid layout, hierarchical navigation, input modes (normal, create, confirm-delete), mouse toggle, periodic refresh, and zone-based click detection.
+- **`internal/github`** -- Fetches pull request information for branches using `gh pr view`. Runs lookups concurrently (up to 4 at a time). Extracts PR number, title, state, draft status, and CI check rollup. Also provides `ParsePRRef` (parses `"123"` or `"owner/repo#123"`) and `ValidatePR` (confirms a PR exists via `gh` and returns its head branch) for the fetch-PR flow.
+- **`internal/tui`** -- The Bubbletea TUI model. Manages the viewport, card grid layout, hierarchical navigation, input modes (normal, create, fetch-PR, confirm-delete), mouse toggle, periodic refresh, and zone-based click detection.
 - **`internal/tui/card`** -- Pure render function that produces card content for a single worktree. Displays branch, path, PR status, agent info, dirty status, and sync status using lipgloss styles.
 - **`internal/warp`** -- Terminal tab/panel management. Creates named repo tabs and split panels. Supports Warp, iTerm, Terminal.app on macOS; gnome-terminal, konsole, xfce4-terminal on Linux.
 
