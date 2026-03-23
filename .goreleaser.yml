@@ -27,6 +27,29 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+brews:
+  - name: gwaim
+    repository:
+      owner: mdelapenya
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: https://github.com/mdelapenya/gwaim
+    description: "Git Worktree AI Manager — a terminal dashboard for git worktrees and coding agents"
+    license: MIT
+    install: |
+      bin.install "gwaim"
+
+nfpms:
+  - package_name: gwaim
+    homepage: https://github.com/mdelapenya/gwaim
+    description: "Git Worktree AI Manager — a terminal dashboard for git worktrees and coding agents"
+    license: MIT
+    maintainer: Manuel de la Peña <manuel@mdelapenya.dev>
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/bin
+
 release:
   github:
     owner: mdelapenya

@@ -1,0 +1,42 @@
+{
+  description = "gwaim — Git Worktree AI Manager";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
+  };
+
+  outputs = { self, nixpkgs, flake-utils }:
+    flake-utils.lib.eachDefaultSystem (system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+      in
+      {
+        packages.default = pkgs.buildGoModule {
+          pname = "gwaim";
+          version = "unstable-${self.shortRev or self.dirtyShortRev or "unknown"}";
+
+          src = self;
+
+          # To update: run `nix build` and replace with the hash from the error message.
+          vendorHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+
+          subPackages = [ "cmd/gwaim" ];
+
+          meta = with pkgs.lib; {
+            description = "Git Worktree AI Manager — a terminal dashboard for git worktrees and coding agents";
+            homepage = "https://github.com/mdelapenya/gwaim";
+            license = licenses.mit;
+            mainProgram = "gwaim";
+          };
+        };
+
+        devShells.default = pkgs.mkShell {
+          buildInputs = with pkgs; [
+            go
+            go-task
+            golangci-lint
+          ];
+        };
+      });
+}
