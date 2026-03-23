@@ -103,6 +103,79 @@ func TestRollupStatus_FailureTakesPrecedenceOverPending(t *testing.T) {
 	}
 }
 
+func TestParsePRRef(t *testing.T) {
+	t.Run("plain number", func(t *testing.T) {
+		ref, err := ParsePRRef("123")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if ref.Number != 123 {
+			t.Errorf("Number = %d, want 123", ref.Number)
+		}
+		if ref.Repo != "" {
+			t.Errorf("Repo = %q, want empty", ref.Repo)
+		}
+	})
+
+	t.Run("fork format owner/repo#number", func(t *testing.T) {
+		ref, err := ParsePRRef("mdelapenya/repo#42")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if ref.Number != 42 {
+			t.Errorf("Number = %d, want 42", ref.Number)
+		}
+		if ref.Repo != "mdelapenya/repo" {
+			t.Errorf("Repo = %q, want mdelapenya/repo", ref.Repo)
+		}
+	})
+
+	t.Run("trims surrounding whitespace", func(t *testing.T) {
+		ref, err := ParsePRRef("  456  ")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if ref.Number != 456 {
+			t.Errorf("Number = %d, want 456", ref.Number)
+		}
+	})
+
+	t.Run("empty input returns error", func(t *testing.T) {
+		_, err := ParsePRRef("")
+		if err == nil {
+			t.Error("expected error for empty input")
+		}
+	})
+
+	t.Run("non-numeric input returns error", func(t *testing.T) {
+		_, err := ParsePRRef("abc")
+		if err == nil {
+			t.Error("expected error for non-numeric input")
+		}
+	})
+
+	t.Run("non-numeric fork PR number returns error", func(t *testing.T) {
+		_, err := ParsePRRef("owner/repo#abc")
+		if err == nil {
+			t.Error("expected error for non-numeric PR number in fork format")
+		}
+	})
+
+	t.Run("repo without slash returns error", func(t *testing.T) {
+		_, err := ParsePRRef("repo#123")
+		if err == nil {
+			t.Error("expected error for repo without slash")
+		}
+	})
+
+	t.Run("zero PR number returns error", func(t *testing.T) {
+		_, err := ParsePRRef("0")
+		if err == nil {
+			t.Error("expected error for zero PR number")
+		}
+	})
+}
+
 func TestStatusIcon(t *testing.T) {
 	cases := []struct {
 		status string

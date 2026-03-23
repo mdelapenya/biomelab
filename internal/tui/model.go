@@ -29,6 +29,7 @@ type mode int
 const (
 	modeNormal mode = iota
 	modeCreate
+	modeFetchPR
 	modeConfirmDelete
 )
 
@@ -154,6 +155,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			doOpenWarpPanel(m.repo.RepoName(), git.Worktree{Path: newWtPath, Branch: msg.branchName}, nil),
 		)
 
+	case prFetchedMsg:
+		if msg.err != nil {
+			m.statusMsg = errorStyle.Render("Error: " + msg.err.Error())
+			m.mode = modeNormal
+			return m, tea.Batch(doQuickRefresh(m.repo), doRefresh(m.repo, m.detector, m.ghAvail))
+		}
+		m.statusMsg = cleanStyle.Render("PR fetched — opening panel...")
+		m.mode = modeNormal
+		return m, tea.Batch(
+			doQuickRefresh(m.repo),
+			doRefresh(m.repo, m.detector, m.ghAvail),
+			doOpenWarpPanel(m.repo.RepoName(), git.Worktree{Path: msg.wtPath, Branch: msg.branchName}, nil),
+		)
+
 	case worktreeRemovedMsg:
 		if msg.err != nil {
 			m.statusMsg = errorStyle.Render("Error: " + msg.err.Error())
@@ -221,7 +236,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	if m.mode == modeCreate {
+	if m.mode == modeCreate || m.mode == modeFetchPR {
 		var cmd tea.Cmd
 		m.textInput, cmd = m.textInput.Update(msg)
 		return m, cmd
@@ -242,6 +257,28 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.mode = modeNormal
 			return m, doCreateWorktree(m.repo, name)
+		case key.Matches(msg, key.NewBinding(key.WithKeys("esc"))):
+			m.mode = modeNormal
+			return m, nil
+		default:
+			var cmd tea.Cmd
+			m.textInput, cmd = m.textInput.Update(msg)
+			return m, cmd
+		}
+	}
+
+	// Handle fetch PR mode input.
+	if m.mode == modeFetchPR {
+		switch {
+		case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
+			input := strings.TrimSpace(m.textInput.Value())
+			if input == "" {
+				m.mode = modeNormal
+				return m, nil
+			}
+			m.mode = modeNormal
+			m.statusMsg = cleanStyle.Render("Fetching PR...")
+			return m, doFetchPR(m.repo, input)
 		case key.Matches(msg, key.NewBinding(key.WithKeys("esc"))):
 			m.mode = modeNormal
 			return m, nil
@@ -362,6 +399,22 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.mode = modeCreate
 		m.textInput.Reset()
+		m.textInput.Placeholder = "branch-name"
+		m.textInput.Focus()
+		m.statusMsg = ""
+		return m, m.textInput.Cursor.BlinkCmd()
+
+	case key.Matches(msg, m.keys.FetchPR):
+		if m.cursor != 0 {
+			return m, nil // fetch PR only from main worktree
+		}
+		if m.ghAvail != github.GHAvailable {
+			m.statusMsg = errorStyle.Render("gh CLI required for PR fetch")
+			return m, nil
+		}
+		m.mode = modeFetchPR
+		m.textInput.Reset()
+		m.textInput.Placeholder = "PR number or owner/repo#number"
 		m.textInput.Focus()
 		m.statusMsg = ""
 		return m, m.textInput.Cursor.BlinkCmd()
@@ -448,6 +501,12 @@ func (m *Model) renderBody() string {
 
 		if m.mode == modeCreate {
 			body.WriteString(inputPromptStyle.Render("  New branch name: "))
+			body.WriteString(m.textInput.View())
+			body.WriteString("\n")
+			currentY += 2
+		}
+		if m.mode == modeFetchPR {
+			body.WriteString(inputPromptStyle.Render("  Fetch PR: "))
 			body.WriteString(m.textInput.View())
 			body.WriteString("\n")
 			currentY += 2
@@ -550,7 +609,7 @@ func (m Model) View() string {
 		mouseLabel = "m mouse:on"
 	}
 	refreshLabel := fmt.Sprintf("refresh:%s", m.refreshInterval)
-	help := helpStyle.Render("←→↑↓ navigate • ↵ open tab • e editor • p pull • r repair • c create • d delete • " + mouseLabel + " • " + refreshLabel + " • q quit")
+	help := helpStyle.Render("←→↑↓ navigate • ↵ open tab • e editor • p pull • r repair • c create • f fetch PR • d delete • " + mouseLabel + " • " + refreshLabel + " • q quit")
 
 	if m.ready {
 		return header + "\n" + m.viewport.View() + "\n" + help
@@ -649,6 +708,33 @@ func doCreateWorktree(repo *git.Repository, branchName string) tea.Cmd {
 	return func() tea.Msg {
 		err := repo.CreateWorktree(branchName)
 		return worktreeCreatedMsg{branchName: branchName, err: err}
+	}
+}
+
+func doFetchPR(repo *git.Repository, input string) tea.Cmd {
+	return func() tea.Msg {
+		ref, err := github.ParsePRRef(input)
+		if err != nil {
+			return prFetchedMsg{err: err}
+		}
+
+		// Validate the PR exists via gh CLI.
+		headBranch, err := github.ValidatePR(repo.Root(), ref)
+		if err != nil {
+			return prFetchedMsg{err: err}
+		}
+
+		// Use the PR's head branch name as the local branch.
+		branchName := headBranch
+
+		// Determine remote URL for fork PRs.
+		remoteURL := ""
+		if ref.Repo != "" {
+			remoteURL = "https://github.com/" + ref.Repo + ".git"
+		}
+
+		wtPath, err := repo.FetchPR(ref.Number, branchName, remoteURL)
+		return prFetchedMsg{branchName: branchName, wtPath: wtPath, err: err}
 	}
 }
 

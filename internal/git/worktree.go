@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-git/go-billy/v6/osfs"
 	gogit "github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	githttp "github.com/go-git/go-git/v6/plumbing/transport/http"
 	xworktree "github.com/go-git/go-git/v6/x/plumbing/worktree"
@@ -400,13 +401,21 @@ func (r *Repository) worktreesDir() string {
 	return filepath.Join(r.repoRoot, ".gwaim-worktrees")
 }
 
+// sanitizeWorktreeName replaces path separators with dashes so the name is safe
+// to use as a directory entry in .git/worktrees/ and as a branch name.
+// go-git's worktree.Add rejects names that contain slashes.
+func sanitizeWorktreeName(name string) string {
+	return strings.ReplaceAll(name, "/", "-")
+}
+
 // CreateWorktree creates a new linked worktree with a new branch.
 func (r *Repository) CreateWorktree(branchName string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	wtPath := filepath.Join(r.worktreesDir(), branchName)
+	safe := sanitizeWorktreeName(branchName)
+	wtPath := filepath.Join(r.worktreesDir(), safe)
 	wtFS := osfs.New(wtPath)
-	return r.wt.Add(wtFS, branchName)
+	return r.wt.Add(wtFS, safe)
 }
 
 // Pull fetches from the remote and merges into the main worktree's current branch.
@@ -486,6 +495,66 @@ func (r *Repository) resolveCredentials() (*githttp.BasicAuth, error) {
 	}
 
 	return credentialFill(urls[0])
+}
+
+// FetchPR fetches a GitHub pull request's head ref and creates a worktree for it.
+// The PR ref (refs/pull/<N>/head) is fetched to a local branch named branchName.
+// If remoteURL is non-empty, it is used as the fetch URL (for fork PRs);
+// otherwise the default origin remote is used.
+// Returns the path of the created worktree.
+func (r *Repository) FetchPR(prNumber int, branchName, remoteURL string) (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if err := r.reopen(); err != nil {
+		return "", err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Fetch refs/pull/<N>/head to refs/heads/<branchName>.
+	// Keep the original branch name (slashes allowed in git refs).
+	refSpec := config.RefSpec(fmt.Sprintf("+refs/pull/%d/head:refs/heads/%s", prNumber, branchName))
+	opts := &gogit.FetchOptions{
+		RefSpecs: []config.RefSpec{refSpec},
+	}
+	if remoteURL != "" {
+		opts.RemoteURL = remoteURL
+	}
+
+	err := r.repo.FetchContext(ctx, opts)
+	if err != nil && err != gogit.NoErrAlreadyUpToDate {
+		if isAuthError(err) {
+			auth, credErr := r.resolveCredentials()
+			if credErr != nil {
+				return "", fmt.Errorf("fetch PR auth: %w", credErr)
+			}
+			opts.Auth = auth
+			err = r.repo.FetchContext(ctx, opts)
+		}
+		if err != nil && err != gogit.NoErrAlreadyUpToDate {
+			return "", fmt.Errorf("fetch PR ref: %w", err)
+		}
+	}
+
+	// Create the worktree using the git CLI.
+	// We sanitize slashes from the branch name only for the directory path;
+	// the local branch ref itself keeps the original name (e.g. "ralph/issue-19").
+	// git worktree add derives the .git/worktrees/<name> key from the directory
+	// basename, so no slashes end up there either.
+	if err := os.MkdirAll(r.worktreesDir(), 0o755); err != nil {
+		return "", fmt.Errorf("create worktrees dir: %w", err)
+	}
+	safe := sanitizeWorktreeName(branchName)
+	wtPath := filepath.Join(r.worktreesDir(), safe)
+	cmd := exec.Command("git", "worktree", "add", wtPath, branchName)
+	cmd.Dir = r.repoRoot
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("create worktree: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+
+	return wtPath, nil
 }
 
 // RemoveWorktree fully removes a linked worktree: removes the worktree directory,

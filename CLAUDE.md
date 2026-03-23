@@ -28,7 +28,7 @@ internal/
   git/credential.go         Git credential helper protocol (git credential fill)
   agent/agents.go           Agent kind registry (claude, kiro, copilot, codex, opencode, gemini)
   agent/detect.go           Process detection via gopsutil
-  github/pr.go              PR lookup via gh CLI
+  github/pr.go              PR lookup via gh CLI; ParsePRRef/ValidatePR for fetch-PR flow
   tui/model.go              Bubbletea model: Init/Update/View, refresh, navigation, modes
   tui/keymap.go             Key bindings
   tui/styles.go             Lipgloss styles
@@ -48,7 +48,11 @@ docs/
 
 ## Architecture decisions
 
-**No shelling out to git** for git operations. The exceptions are `git credential fill` in `internal/git/credential.go` (credential helper protocol, because go-git has no built-in credential helper support) and `git worktree repair` in `internal/git/worktree.go` (because go-git v6 has no repair API).
+**No shelling out to git** for git operations. The exceptions are `git credential fill` in `internal/git/credential.go` (credential helper protocol, because go-git has no built-in credential helper support), `git worktree repair` in `internal/git/worktree.go` (because go-git v6 has no repair API), and `git worktree add` in `FetchPR` (shells out to add the worktree with a sanitized directory name while preserving the original branch ref).
+
+**FetchPR directory naming**: The directory basename is sanitized (slashes → dashes) so `.git/worktrees/<key>` is safe, but the local branch ref keeps its original name (e.g., `ralph/issue-19` stays `ralph/issue-19`, not `ralph-issue-19`). `FetchPR` returns `(wtPath string, err error)` so the TUI uses the actual path rather than re-deriving it.
+
+**Fork PR fetches**: `FetchPR` sets `FetchOptions.RemoteURL` directly (not `RemoteName`) to pull from a fork's clone URL. `ParsePRRef` accepts `"123"` (current repo) or `"owner/repo#123"` (fork). `ValidatePR` shells out to `gh pr view` to confirm the PR exists and return its head branch.
 
 **go-git v6 worktree limitations**: `linkedRepo.Head()` returns the shared (main) HEAD, not the per-worktree HEAD. We read `.git/worktrees/<name>/HEAD` directly from the filesystem for linked worktrees. Similarly, worktree paths come from `.git/worktrees/<name>/gitdir`.
 
@@ -62,10 +66,11 @@ docs/
 
 ## TUI model state machine
 
-Modes: `modeNormal`, `modeCreate`, `modeConfirmDelete`
+Modes: `modeNormal`, `modeCreate`, `modeFetchPR`, `modeConfirmDelete`
 
-- `modeNormal` -- Arrow keys navigate, `c`/`d`/`e`/`p`/`r`/`m`/`Enter`/`q` trigger actions.
+- `modeNormal` -- Arrow keys navigate, `c`/`d`/`e`/`f`/`p`/`r`/`m`/`Enter`/`q` trigger actions.
 - `modeCreate` -- Text input active. `Enter` confirms, `Esc` cancels. Only accessible from main card (cursor == 0).
+- `modeFetchPR` -- Text input active. Accepts `"123"` or `"owner/repo#123"`. `Enter` validates via `gh` and fetches; `Esc` or empty input cancels. Only accessible from main card.
 - `modeConfirmDelete` -- Two-step: `y` arms the deletion, then `Enter` confirms. `Esc` or any other key cancels. Not available on main worktree.
 
 Cursor 0 = main worktree. Cursor 1+ = linked worktrees. Left/right only work in linked grid. Up from first linked row goes to main. Down from main goes to first linked.

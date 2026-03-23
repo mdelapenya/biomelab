@@ -2,6 +2,7 @@ package github
 
 import (
 	"encoding/json"
+	"fmt"
 	"os/exec"
 	"strings"
 	"sync"
@@ -146,6 +147,89 @@ func rollupStatus(checks []struct {
 		return "pending"
 	}
 	return "success"
+}
+
+// PRRef holds the information needed to fetch a PR into a worktree.
+type PRRef struct {
+	Number int    // PR number
+	Repo   string // "owner/repo" (empty = current repo)
+}
+
+// ParsePRRef parses a PR reference string. Accepted formats:
+//   - "123"              → PR #123 in the current repo
+//   - "owner/repo#123"   → PR #123 in the given fork
+func ParsePRRef(input string) (PRRef, error) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return PRRef{}, fmt.Errorf("empty PR reference")
+	}
+
+	if idx := strings.LastIndex(input, "#"); idx > 0 {
+		// Fork format: owner/repo#123
+		repo := input[:idx]
+		numStr := input[idx+1:]
+		n, err := parsePositiveInt(numStr)
+		if err != nil {
+			return PRRef{}, fmt.Errorf("invalid PR number %q: %w", numStr, err)
+		}
+		if !strings.Contains(repo, "/") {
+			return PRRef{}, fmt.Errorf("invalid repo format %q: expected owner/repo", repo)
+		}
+		return PRRef{Number: n, Repo: repo}, nil
+	}
+
+	// Plain number.
+	n, err := parsePositiveInt(input)
+	if err != nil {
+		return PRRef{}, fmt.Errorf("invalid PR number %q: %w", input, err)
+	}
+	return PRRef{Number: n}, nil
+}
+
+func parsePositiveInt(s string) (int, error) {
+	n := 0
+	if s == "" {
+		return 0, fmt.Errorf("empty string")
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0, fmt.Errorf("not a number")
+		}
+		n = n*10 + int(c-'0')
+	}
+	if n <= 0 {
+		return 0, fmt.Errorf("must be positive")
+	}
+	return n, nil
+}
+
+// ValidatePR checks that a PR exists using the gh CLI.
+// repoDir is the local repo directory (used as working dir for gh).
+// Returns the PR head branch name if the PR is valid.
+func ValidatePR(repoDir string, ref PRRef) (string, error) {
+	args := []string{"pr", "view", fmt.Sprintf("%d", ref.Number),
+		"--json", "number,headRefName",
+	}
+	if ref.Repo != "" {
+		args = append(args, "--repo", ref.Repo)
+	}
+
+	cmd := exec.Command("gh", args...)
+	cmd.Dir = repoDir
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("PR #%d not found", ref.Number)
+	}
+
+	var raw struct {
+		Number     int    `json:"number"`
+		HeadRefName string `json:"headRefName"`
+	}
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return "", fmt.Errorf("failed to parse PR info: %w", err)
+	}
+
+	return raw.HeadRefName, nil
 }
 
 // StatusIcon returns a colored icon for the check status.

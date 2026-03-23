@@ -1,8 +1,11 @@
 package git
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/go-git/go-billy/v6/osfs"
@@ -10,6 +13,18 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 	xworktree "github.com/go-git/go-git/v6/x/plumbing/worktree"
 )
+
+// runGit runs a git command in dir, failing the test on error.
+func runGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
 
 // setupTestRepo creates a temporary git repository with an initial commit.
 func setupTestRepo(t *testing.T) (string, *gogit.Repository) {
@@ -379,5 +394,112 @@ func TestRepoRoot(t *testing.T) {
 	if root != dir {
 		t.Errorf("got root %q, want %q", root, dir)
 	}
+}
+
+func TestSanitizeWorktreeName(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"main", "main"},
+		{"feature-foo", "feature-foo"},
+		{"ralph/issue-19", "ralph-issue-19"},
+		{"org/repo/deep", "org-repo-deep"},
+		{"no-slash", "no-slash"},
+	}
+	for _, tt := range tests {
+		got := sanitizeWorktreeName(tt.input)
+		if got != tt.want {
+			t.Errorf("sanitizeWorktreeName(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+// setupRemoteWithPRRef creates a bare-ish git repo that advertises a
+// refs/pull/<prNumber>/head ref, which is how GitHub exposes PR heads.
+// Returns the path to the remote repo.
+func setupRemoteWithPRRef(t *testing.T, prNumber int) string {
+	t.Helper()
+
+	remoteDir := t.TempDir()
+	runGit(t, remoteDir, "init", "-b", "main")
+	runGit(t, remoteDir, "-c", "user.email=test@test.com", "-c", "user.name=Test",
+		"commit", "--allow-empty", "-m", "base commit")
+	// Create a PR head ref (simulating GitHub's refs/pull/<N>/head).
+	runGit(t, remoteDir, "update-ref",
+		fmt.Sprintf("refs/pull/%d/head", prNumber), "HEAD")
+	return remoteDir
+}
+
+func TestFetchPR_SlashedBranchName(t *testing.T) {
+	t.Run("worktree dir is sanitized, branch ref preserves original name", func(t *testing.T) {
+		remoteDir := setupRemoteWithPRRef(t, 19)
+
+		mainDir := t.TempDir()
+		runGit(t, mainDir, "init", "-b", "main")
+		runGit(t, mainDir, "-c", "user.email=test@test.com", "-c", "user.name=Test",
+			"commit", "--allow-empty", "-m", "initial commit")
+		runGit(t, mainDir, "remote", "add", "origin", remoteDir)
+
+		repo, err := OpenRepository(mainDir)
+		if err != nil {
+			t.Fatalf("OpenRepository: %v", err)
+		}
+
+		branchName := "ralph/issue-19"
+		// Pass remoteDir as remoteURL to simulate fetching from a fork.
+		wtPath, err := repo.FetchPR(19, branchName, remoteDir)
+		if err != nil {
+			t.Fatalf("FetchPR: %v", err)
+		}
+
+		// Worktree path must use the sanitized directory name.
+		wantPath := filepath.Join(mainDir, ".gwaim-worktrees", "ralph-issue-19")
+		if wtPath != wantPath {
+			t.Errorf("wtPath = %q, want %q", wtPath, wantPath)
+		}
+
+		// Worktree directory must exist on disk.
+		if _, err := os.Stat(wtPath); os.IsNotExist(err) {
+			t.Error("worktree directory was not created")
+		}
+
+		// The worktree's HEAD must reference the original branch name (with slash).
+		headFile := filepath.Join(mainDir, ".git", "worktrees", "ralph-issue-19", "HEAD")
+		data, err := os.ReadFile(headFile)
+		if err != nil {
+			t.Fatalf("read worktree HEAD: %v", err)
+		}
+		if !strings.Contains(string(data), "refs/heads/ralph/issue-19") {
+			t.Errorf("expected HEAD to reference refs/heads/ralph/issue-19, got: %s", strings.TrimSpace(string(data)))
+		}
+	})
+
+	t.Run("no collision when sanitized name differs from existing branch", func(t *testing.T) {
+		remoteDir := setupRemoteWithPRRef(t, 42)
+
+		mainDir := t.TempDir()
+		runGit(t, mainDir, "init", "-b", "main")
+		runGit(t, mainDir, "-c", "user.email=test@test.com", "-c", "user.name=Test",
+			"commit", "--allow-empty", "-m", "initial commit")
+		runGit(t, mainDir, "remote", "add", "origin", remoteDir)
+		// Pre-create a local branch named with a dash (what used to collide).
+		runGit(t, mainDir, "branch", "ralph-issue-42")
+
+		repo, err := OpenRepository(mainDir)
+		if err != nil {
+			t.Fatalf("OpenRepository: %v", err)
+		}
+
+		// ralph/issue-42 (slash) should NOT collide with ralph-issue-42 (dash).
+		wtPath, err := repo.FetchPR(42, "ralph/issue-42", remoteDir)
+		if err != nil {
+			t.Fatalf("FetchPR: %v", err)
+		}
+
+		if _, err := os.Stat(wtPath); os.IsNotExist(err) {
+			t.Error("worktree directory was not created")
+		}
+	})
 }
 

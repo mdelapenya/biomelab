@@ -3,18 +3,19 @@ package tui
 import "github.com/charmbracelet/bubbles/key"
 
 type keyMap struct {
-	Left   key.Binding
-	Right  key.Binding
-	Up     key.Binding
-	Down   key.Binding
-	Create key.Binding
-	Delete key.Binding
-	Pull   key.Binding
-	Repair key.Binding
-	Editor key.Binding
-	Mouse  key.Binding
-	Enter  key.Binding
-	Quit   key.Binding
+	Left     key.Binding
+	Right    key.Binding
+	Up       key.Binding
+	Down     key.Binding
+	Create   key.Binding
+	FetchPR  key.Binding
+	Delete   key.Binding
+	Pull     key.Binding
+	Repair   key.Binding
+	Editor   key.Binding
+	Mouse    key.Binding
+	Enter    key.Binding
+	Quit     key.Binding
 }
 
 func defaultKeyMap() keyMap {
@@ -38,6 +39,10 @@ func defaultKeyMap() keyMap {
 		Create: key.NewBinding(
 			key.WithKeys("c"),
 			key.WithHelp("c", "create"),
+		),
+		FetchPR: key.NewBinding(
+			key.WithKeys("f"),
+			key.WithHelp("f", "fetch PR"),
 		),
 		Delete: key.NewBinding(
 			key.WithKeys("d"),
