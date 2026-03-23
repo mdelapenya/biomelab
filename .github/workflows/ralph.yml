@@ -51,7 +51,7 @@ jobs:
         with:
           token: ${{ secrets.GH_PAT_TOKEN }}
 
-      - uses: mdelapenya/claude-ralph-github-action@d5b56ef50014baefc7cfcab9cd8c2bae84b6920b # v0
+      - uses: mdelapenya/claude-ralph-github-action@0fa8d4af0f205ae7588a30da557062d0fd38f7a4 # v0.6.0
         timeout-minutes: 60
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
