@@ -17,18 +17,22 @@ builds:
         goarch: arm64
 
 archives:
-  - format: tar.gz
+  - formats:
+      - tar.gz
     name_template: >-
       {{ .ProjectName }}_{{ .Os }}_{{ .Arch }}
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
 
 checksum:
   name_template: "checksums.txt"
 
-brews:
+homebrew_casks:
   - name: gwaim
+    binaries:
+      - gwaim
     repository:
       owner: mdelapenya
       name: homebrew-tap
@@ -36,8 +40,6 @@ brews:
     homepage: https://github.com/mdelapenya/gwaim
     description: "Git Worktree AI Manager — a terminal dashboard for git worktrees and coding agents"
     license: MIT
-    install: |
-      bin.install "gwaim"
 
 nfpms:
   - package_name: gwaim
