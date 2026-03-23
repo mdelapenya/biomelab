@@ -8,7 +8,7 @@ import (
 
 	"github.com/mdelapenya/gwaim/internal/agent"
 	"github.com/mdelapenya/gwaim/internal/git"
-	"github.com/mdelapenya/gwaim/internal/github"
+	"github.com/mdelapenya/gwaim/internal/provider"
 )
 
 var (
@@ -33,7 +33,7 @@ var (
 	ciFailStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 	ciPendStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 
-	ghUnavailStyle = lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("214"))
+	cliUnavailStyle = lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("214"))
 
 	syncUpToDateStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	syncNeedSyncStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
@@ -42,7 +42,7 @@ var (
 )
 
 // Render produces the content for a single worktree card.
-func Render(wt git.Worktree, agents []agent.Info, pr *github.PRInfo, ghAvail github.GHAvailability) string {
+func Render(wt git.Worktree, agents []agent.Info, pr *provider.PRInfo, cliAvail provider.CLIAvailability, prov provider.Provider) string {
 	var b strings.Builder
 
 	// Branch line
@@ -60,16 +60,26 @@ func Render(wt git.Worktree, agents []agent.Info, pr *github.PRInfo, ghAvail git
 	b.WriteString(pathStyle.Render(wt.Path))
 	b.WriteString("\n\n")
 
-	// PR status
+	// PR/MR status
+	prLabel := "PR"
+	if prov == provider.ProviderGitLab {
+		prLabel = "MR"
+	}
+
 	switch {
 	case pr != nil:
-		b.WriteString(renderPR(pr))
+		b.WriteString(renderPR(pr, prLabel))
 		b.WriteString("\n")
-	case ghAvail == github.GHNotFound:
-		b.WriteString(ghUnavailStyle.Render("gh not installed — install gh CLI"))
+	case cliAvail == provider.CLIUnsupportedProvider:
+		b.WriteString(cliUnavailStyle.Render(fmt.Sprintf("%s status: %s not yet supported", prLabel, prov.String())))
 		b.WriteString("\n")
-	case ghAvail == github.GHNotAuthenticated:
-		b.WriteString(ghUnavailStyle.Render("gh not authenticated — run: gh auth login"))
+	case cliAvail == provider.CLINotFound:
+		cliName := cliNameForProvider(prov)
+		b.WriteString(cliUnavailStyle.Render(fmt.Sprintf("%s not installed — install %s CLI", cliName, cliName)))
+		b.WriteString("\n")
+	case cliAvail == provider.CLINotAuthenticated:
+		cliName := cliNameForProvider(prov)
+		b.WriteString(cliUnavailStyle.Render(fmt.Sprintf("%s not authenticated — run: %s auth login", cliName, cliName)))
 		b.WriteString("\n")
 	}
 
@@ -113,7 +123,7 @@ func Render(wt git.Worktree, agents []agent.Info, pr *github.PRInfo, ghAvail git
 	return b.String()
 }
 
-func renderPR(pr *github.PRInfo) string {
+func renderPR(pr *provider.PRInfo, label string) string {
 	title := truncate(pr.Title, 30)
 	num := fmt.Sprintf("#%d", pr.Number)
 
@@ -131,11 +141,11 @@ func renderPR(pr *github.PRInfo) string {
 		style = prStyle
 	}
 
-	line := style.Render(fmt.Sprintf("PR %s %s (%s)", num, title, stateLabel))
+	line := style.Render(fmt.Sprintf("%s %s %s (%s)", label, num, title, stateLabel))
 
 	// CI status
 	if pr.CheckStatus != "" {
-		icon := github.StatusIcon(pr.CheckStatus)
+		icon := provider.StatusIcon(pr.CheckStatus)
 		switch pr.CheckStatus {
 		case "success":
 			line += " " + ciSuccessStyle.Render(icon)
@@ -147,6 +157,18 @@ func renderPR(pr *github.PRInfo) string {
 	}
 
 	return line
+}
+
+// cliNameForProvider returns the CLI tool name for a given provider.
+func cliNameForProvider(p provider.Provider) string {
+	switch p {
+	case provider.ProviderGitHub:
+		return "gh"
+	case provider.ProviderGitLab:
+		return "glab"
+	default:
+		return "cli"
+	}
 }
 
 func truncate(s string, max int) string {

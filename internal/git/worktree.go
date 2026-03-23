@@ -90,16 +90,25 @@ func (r *Repository) reopen() error {
 	return nil
 }
 
-// RepoName returns the "owner/repo" name derived from the origin remote URL.
-// Falls back to the directory name if no remote is configured.
-func (r *Repository) RepoName() string {
+// OriginURL returns the first URL of the first remote (typically origin).
+// Returns an empty string if no remote is configured.
+func (r *Repository) OriginURL() string {
 	remotes, err := r.repo.Remotes()
 	if err == nil && len(remotes) > 0 {
 		urls := remotes[0].Config().URLs
 		if len(urls) > 0 {
-			if name := parseRepoName(urls[0]); name != "" {
-				return name
-			}
+			return urls[0]
+		}
+	}
+	return ""
+}
+
+// RepoName returns the "owner/repo" name derived from the origin remote URL.
+// Falls back to the directory name if no remote is configured.
+func (r *Repository) RepoName() string {
+	if url := r.OriginURL(); url != "" {
+		if name := parseRepoName(url); name != "" {
+			return name
 		}
 	}
 	return filepath.Base(r.repoRoot)

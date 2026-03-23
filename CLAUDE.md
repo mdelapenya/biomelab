@@ -28,7 +28,11 @@ internal/
   git/credential.go         Git credential helper protocol (git credential fill)
   agent/agents.go           Agent kind registry (claude, kiro, copilot, codex, opencode, gemini)
   agent/detect.go           Process detection via gopsutil
-  github/pr.go              PR lookup via gh CLI; ParsePRRef/ValidatePR for fetch-PR flow
+  github/pr.go              GitHub-specific PR helpers (ParsePRRef, ValidatePR for fetch-PR flow)
+  provider/provider.go      PRProvider interface, provider detection, shared types
+  provider/github.go        GitHub PR lookup via gh CLI
+  provider/gitlab.go        GitLab MR lookup via glab CLI
+  provider/unsupported.go   Fallback for unsupported providers
   tui/model.go              Bubbletea model: Init/Update/View, refresh, navigation, modes
   tui/keymap.go             Key bindings
   tui/styles.go             Lipgloss styles

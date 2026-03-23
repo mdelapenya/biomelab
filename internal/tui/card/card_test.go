@@ -6,7 +6,7 @@ import (
 
 	"github.com/mdelapenya/gwaim/internal/agent"
 	"github.com/mdelapenya/gwaim/internal/git"
-	"github.com/mdelapenya/gwaim/internal/github"
+	"github.com/mdelapenya/gwaim/internal/provider"
 )
 
 func TestRender_CleanNoAgent(t *testing.T) {
@@ -16,7 +16,7 @@ func TestRender_CleanNoAgent(t *testing.T) {
 		IsMain: true,
 	}
 
-	got := Render(wt, nil, nil, github.GHAvailable)
+	got := Render(wt, nil, nil, provider.CLIAvailable, provider.ProviderGitHub)
 
 	if !strings.Contains(got, "main") {
 		t.Error("expected branch name in output")
@@ -39,7 +39,7 @@ func TestRender_DirtyWithAgent(t *testing.T) {
 		{Kind: agent.Claude, PID: "12345"},
 	}
 
-	got := Render(wt, agents, nil, github.GHAvailable)
+	got := Render(wt, agents, nil, provider.CLIAvailable, provider.ProviderGitHub)
 
 	if !strings.Contains(got, "feature-auth") {
 		t.Error("expected branch name in output")
@@ -65,7 +65,7 @@ func TestRender_MultipleAgents(t *testing.T) {
 		{Kind: agent.Copilot, PID: "200"},
 	}
 
-	got := Render(wt, agents, nil, github.GHAvailable)
+	got := Render(wt, agents, nil, provider.CLIAvailable, provider.ProviderGitHub)
 
 	if !strings.Contains(got, "claude") {
 		t.Error("expected claude in output")
@@ -82,7 +82,7 @@ func TestRender_DetachedHead(t *testing.T) {
 		Detached: true,
 	}
 
-	got := Render(wt, nil, nil, github.GHAvailable)
+	got := Render(wt, nil, nil, provider.CLIAvailable, provider.ProviderGitHub)
 
 	if !strings.Contains(got, "detached") {
 		t.Error("expected 'detached' in output")
@@ -94,14 +94,14 @@ func TestRender_WithPR(t *testing.T) {
 		Path:   "/tmp/feature",
 		Branch: "feature-x",
 	}
-	pr := &github.PRInfo{
+	pr := &provider.PRInfo{
 		Number:      42,
 		Title:       "Add feature X",
 		State:       "open",
 		CheckStatus: "success",
 	}
 
-	got := Render(wt, nil, pr, github.GHAvailable)
+	got := Render(wt, nil, pr, provider.CLIAvailable, provider.ProviderGitHub)
 
 	if !strings.Contains(got, "#42") {
 		t.Error("expected PR number in output")
@@ -112,6 +112,9 @@ func TestRender_WithPR(t *testing.T) {
 	if !strings.Contains(got, "open") {
 		t.Error("expected PR state in output")
 	}
+	if !strings.Contains(got, "PR") {
+		t.Error("expected PR label in output")
+	}
 }
 
 func TestRender_WithDraftPR(t *testing.T) {
@@ -119,7 +122,7 @@ func TestRender_WithDraftPR(t *testing.T) {
 		Path:   "/tmp/wip",
 		Branch: "wip-branch",
 	}
-	pr := &github.PRInfo{
+	pr := &provider.PRInfo{
 		Number:      99,
 		Title:       "WIP: something",
 		State:       "open",
@@ -127,7 +130,7 @@ func TestRender_WithDraftPR(t *testing.T) {
 		CheckStatus: "pending",
 	}
 
-	got := Render(wt, nil, pr, github.GHAvailable)
+	got := Render(wt, nil, pr, provider.CLIAvailable, provider.ProviderGitHub)
 
 	if !strings.Contains(got, "draft") {
 		t.Error("expected 'draft' state in output")
@@ -137,13 +140,13 @@ func TestRender_WithDraftPR(t *testing.T) {
 	}
 }
 
-func TestRender_GHNotFound(t *testing.T) {
+func TestRender_CLINotFound(t *testing.T) {
 	wt := git.Worktree{
 		Path:   "/tmp/feature",
 		Branch: "feature-x",
 	}
 
-	got := Render(wt, nil, nil, github.GHNotFound)
+	got := Render(wt, nil, nil, provider.CLINotFound, provider.ProviderGitHub)
 
 	if !strings.Contains(got, "gh not installed") {
 		t.Error("expected 'gh not installed' message")
@@ -153,13 +156,13 @@ func TestRender_GHNotFound(t *testing.T) {
 	}
 }
 
-func TestRender_GHNotAuthenticated(t *testing.T) {
+func TestRender_CLINotAuthenticated(t *testing.T) {
 	wt := git.Worktree{
 		Path:   "/tmp/feature",
 		Branch: "feature-x",
 	}
 
-	got := Render(wt, nil, nil, github.GHNotAuthenticated)
+	got := Render(wt, nil, nil, provider.CLINotAuthenticated, provider.ProviderGitHub)
 
 	if !strings.Contains(got, "gh not authenticated") {
 		t.Error("expected 'gh not authenticated' message")
@@ -169,24 +172,90 @@ func TestRender_GHNotAuthenticated(t *testing.T) {
 	}
 }
 
-func TestRender_PRTakesPrecedenceOverGHStatus(t *testing.T) {
+func TestRender_PRTakesPrecedenceOverCLIStatus(t *testing.T) {
 	wt := git.Worktree{
 		Path:   "/tmp/feature",
 		Branch: "feature-x",
 	}
-	pr := &github.PRInfo{
+	pr := &provider.PRInfo{
 		Number: 7,
 		Title:  "Fix bug",
 		State:  "open",
 	}
 
-	// Even with GHNotAuthenticated, if we somehow have a PR, show it.
-	got := Render(wt, nil, pr, github.GHNotAuthenticated)
+	// Even with CLINotAuthenticated, if we somehow have a PR, show it.
+	got := Render(wt, nil, pr, provider.CLINotAuthenticated, provider.ProviderGitHub)
 
 	if !strings.Contains(got, "#7") {
 		t.Error("expected PR number in output")
 	}
 	if strings.Contains(got, "gh not authenticated") {
 		t.Error("should not show auth message when PR data is available")
+	}
+}
+
+func TestRender_UnsupportedProvider_ShowsMessage(t *testing.T) {
+	wt := git.Worktree{
+		Path:   "/tmp/feature",
+		Branch: "feature-x",
+	}
+
+	got := Render(wt, nil, nil, provider.CLIUnsupportedProvider, provider.ProviderUnknown)
+
+	if !strings.Contains(got, "not yet supported") {
+		t.Error("expected 'not yet supported' message, got: " + got)
+	}
+}
+
+func TestRender_GitLabProvider_UsesMRLabel(t *testing.T) {
+	wt := git.Worktree{
+		Path:   "/tmp/feature",
+		Branch: "feature-x",
+	}
+	mr := &provider.PRInfo{
+		Number: 42,
+		Title:  "Add feature X",
+		State:  "open",
+	}
+
+	got := Render(wt, nil, mr, provider.CLIAvailable, provider.ProviderGitLab)
+
+	if !strings.Contains(got, "MR") {
+		t.Error("expected MR label for GitLab provider")
+	}
+	if !strings.Contains(got, "#42") {
+		t.Error("expected MR number in output")
+	}
+}
+
+func TestRender_GitLabNotFound(t *testing.T) {
+	wt := git.Worktree{
+		Path:   "/tmp/feature",
+		Branch: "feature-x",
+	}
+
+	got := Render(wt, nil, nil, provider.CLINotFound, provider.ProviderGitLab)
+
+	if !strings.Contains(got, "glab not installed") {
+		t.Error("expected 'glab not installed' message, got: " + got)
+	}
+	if !strings.Contains(got, "install glab CLI") {
+		t.Error("expected install instruction for glab")
+	}
+}
+
+func TestRender_GitLabNotAuthenticated(t *testing.T) {
+	wt := git.Worktree{
+		Path:   "/tmp/feature",
+		Branch: "feature-x",
+	}
+
+	got := Render(wt, nil, nil, provider.CLINotAuthenticated, provider.ProviderGitLab)
+
+	if !strings.Contains(got, "glab not authenticated") {
+		t.Error("expected 'glab not authenticated' message, got: " + got)
+	}
+	if !strings.Contains(got, "glab auth login") {
+		t.Error("expected auth login instruction for glab")
 	}
 }

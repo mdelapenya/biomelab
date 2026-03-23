@@ -7,7 +7,7 @@
 - **Hierarchical layout** -- The main worktree sits at the top (double-bordered card), with linked worktrees displayed in a responsive grid below.
 - **Worktree cards** -- Each card shows: branch name, path, dirty/clean status, sync status (ahead/behind/diverged/up-to-date), active agents, and PR info.
 - **Agent detection** -- Automatically detects coding agents (Claude, Kiro, Copilot, Codex, OpenCode, Gemini) running in each worktree by scanning system processes with gopsutil. Shows PID, process state, and start time.
-- **PR status** -- Fetches pull request information and CI check status for each branch using the `gh` CLI. Shows PR number, title, state (open/draft/merged/closed), and CI result (pass/fail/pending).
+- **PR/MR status** -- Fetches pull request (GitHub) or merge request (GitLab) information and CI check status for each branch. Shows PR/MR number, title, state (open/draft/merged/closed), and CI result (pass/fail/pending). The hosting provider is auto-detected from the origin remote URL.
 - **Sync status** -- Compares each branch against its remote tracking branch (`origin/<branch>`) and shows whether it is up-to-date, ahead, behind, or diverged. Runs `git fetch` on every refresh cycle to keep remote refs current.
 - **Create worktrees** -- Press `c` from the main card to create a new linked worktree. A branch name prompt appears under the main card. After creation, a new terminal tab opens automatically in the worktree directory.
 - **Delete worktrees** -- Press `d` on any linked worktree to delete it. A two-step confirmation prompt shows what will happen: press `y` to arm, then `Enter` to confirm. The worktree directory is removed, the branch is deleted, and stale metadata is pruned. The main worktree cannot be deleted.
@@ -21,7 +21,8 @@
 ## Requirements
 
 - **Go 1.25+** -- Required to build from source.
-- **gh CLI** -- The [GitHub CLI](https://cli.github.com/) is required for pull request and CI status information. Install it and authenticate with `gh auth login`.
+- **gh CLI** (GitHub) -- The [GitHub CLI](https://cli.github.com/) is required for pull request and CI status information on GitHub-hosted repositories. Install it and authenticate with `gh auth login`.
+- **glab CLI** (GitLab) -- The [GitLab CLI](https://gitlab.com/gitlab-org/cli) is required for merge request and CI pipeline status on GitLab-hosted repositories. Install it and authenticate with `glab auth login`.
 - **git** -- Required on the host for credential helper resolution (`git credential fill`) and worktree repair (`git worktree repair`). All other git operations use go-git natively.
 - **Global gitignore** -- gwaim creates worktrees in a `.gwaim-worktrees/` directory at the repository root. You must add this to your global gitignore so it is not tracked by any repository:
 
@@ -34,6 +35,20 @@
   ```bash
   echo ".gwaim-worktrees" >> "$(git config --global core.excludesFile)"
   ```
+
+## Supported providers
+
+gwaim auto-detects the hosting provider from the origin remote URL and adapts its PR/MR status display accordingly.
+
+| Provider       | CLI tool | PR/MR status | CI status | Notes                                          |
+|----------------|----------|--------------|-----------|-------------------------------------------------|
+| **GitHub**     | `gh`     | Supported    | Supported | Full support via `gh pr view`                   |
+| **GitLab**     | `glab`   | Supported    | Supported | MR status via `glab mr view`, pipeline status   |
+| **Other/Unknown** | --    | Not yet      | Not yet   | Falls back to GitHub CLI behavior               |
+
+Self-hosted instances are detected via hostname patterns (e.g., `gitlab.mycompany.com` is detected as GitLab).
+
+When a provider's CLI tool is not installed or not authenticated, the card shows a clear message explaining what to install or configure, rather than blank fields.
 
 ## Terminal support
 
@@ -228,7 +243,8 @@ gwaim is structured into the following internal packages:
 - **`cmd/gwaim`** -- Entry point. Opens the repository, creates the agent detector, and starts the Bubbletea program.
 - **`internal/git`** -- Git operations using [go-git v6](https://github.com/go-git/go-git). Handles repository opening, worktree listing (main + linked), creation, removal, repair, pruning, pull, fetch, and sync status computation. Uses the `x/plumbing/worktree` extension for linked worktree management. Credentials are resolved via `git credential fill`. Repair shells out to `git worktree repair` (go-git v6 has no repair API).
 - **`internal/agent`** -- Detects coding agent processes using [gopsutil](https://github.com/shirou/gopsutil). Enumerates all processes, filters by known agent patterns, resolves their CWDs, and matches them to worktree paths. Reports PID, process state, and start time.
-- **`internal/github`** -- Fetches pull request information for branches using `gh pr view`. Runs lookups concurrently (up to 4 at a time). Extracts PR number, title, state, draft status, and CI check rollup. Also provides `ParsePRRef` (parses `"123"` or `"owner/repo#123"`) and `ValidatePR` (confirms a PR exists via `gh` and returns its head branch) for the fetch-PR flow.
+- **`internal/provider`** -- Multi-provider PR/MR abstraction. Defines a `PRProvider` interface and auto-detects the hosting provider (GitHub, GitLab) from the origin remote URL. Includes `GitHubProvider` (via `gh` CLI), `GitLabProvider` (via `glab` CLI), and `UnsupportedProvider` (graceful fallback for unknown hosts). Runs lookups concurrently (up to 4 at a time). Extracts PR/MR number, title, state, draft status, and CI check/pipeline status.
+- **`internal/github`** -- GitHub-specific PR helpers: `ParsePRRef` (parses `"123"` or `"owner/repo#123"`) and `ValidatePR` (confirms a PR exists via `gh` and returns its head branch) for the fetch-PR flow.
 - **`internal/tui`** -- The Bubbletea TUI model. Manages the viewport, card grid layout, hierarchical navigation, input modes (normal, create, fetch-PR, confirm-delete), mouse toggle, periodic refresh, and zone-based click detection.
 - **`internal/tui/card`** -- Pure render function that produces card content for a single worktree. Displays branch, path, PR status, agent info, dirty status, and sync status using lipgloss styles.
 - **`internal/warp`** -- Terminal tab/panel management. Creates named repo tabs and split panels. Supports Warp, iTerm, Terminal.app on macOS; gnome-terminal, konsole, xfce4-terminal on Linux.
