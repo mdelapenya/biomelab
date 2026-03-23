@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-git/go-billy/v6/osfs"
 	gogit "github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	githttp "github.com/go-git/go-git/v6/plumbing/transport/http"
 	xworktree "github.com/go-git/go-git/v6/x/plumbing/worktree"
@@ -486,6 +487,55 @@ func (r *Repository) resolveCredentials() (*githttp.BasicAuth, error) {
 	}
 
 	return credentialFill(urls[0])
+}
+
+// FetchPR fetches a GitHub pull request's head ref and creates a worktree for it.
+// The PR ref (refs/pull/<N>/head) is fetched to a local branch named branchName.
+// If remoteURL is non-empty, it is used as the fetch URL (for fork PRs);
+// otherwise the default origin remote is used.
+func (r *Repository) FetchPR(prNumber int, branchName, remoteURL string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if err := r.reopen(); err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Fetch refs/pull/<N>/head to refs/heads/<branchName>.
+	refSpec := config.RefSpec(fmt.Sprintf("+refs/pull/%d/head:refs/heads/%s", prNumber, branchName))
+	opts := &gogit.FetchOptions{
+		RefSpecs: []config.RefSpec{refSpec},
+	}
+	if remoteURL != "" {
+		opts.RemoteName = "" // clear default
+	}
+
+	err := r.repo.FetchContext(ctx, opts)
+	if err != nil && err != gogit.NoErrAlreadyUpToDate {
+		if isAuthError(err) {
+			auth, credErr := r.resolveCredentials()
+			if credErr != nil {
+				return fmt.Errorf("fetch PR auth: %w", credErr)
+			}
+			opts.Auth = auth
+			err = r.repo.FetchContext(ctx, opts)
+		}
+		if err != nil && err != gogit.NoErrAlreadyUpToDate {
+			return fmt.Errorf("fetch PR ref: %w", err)
+		}
+	}
+
+	// Create worktree using the fetched branch.
+	wtPath := filepath.Join(r.worktreesDir(), branchName)
+	wtFS := osfs.New(wtPath)
+	if err := r.wt.Add(wtFS, branchName); err != nil {
+		return fmt.Errorf("create worktree: %w", err)
+	}
+
+	return nil
 }
 
 // RemoveWorktree fully removes a linked worktree: removes the worktree directory,

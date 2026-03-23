@@ -103,6 +103,77 @@ func TestRollupStatus_FailureTakesPrecedenceOverPending(t *testing.T) {
 	}
 }
 
+func TestParsePRRef_PlainNumber(t *testing.T) {
+	ref, err := ParsePRRef("123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ref.Number != 123 {
+		t.Errorf("Number = %d, want 123", ref.Number)
+	}
+	if ref.Repo != "" {
+		t.Errorf("Repo = %q, want empty", ref.Repo)
+	}
+}
+
+func TestParsePRRef_ForkFormat(t *testing.T) {
+	ref, err := ParsePRRef("mdelapenya/repo#42")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ref.Number != 42 {
+		t.Errorf("Number = %d, want 42", ref.Number)
+	}
+	if ref.Repo != "mdelapenya/repo" {
+		t.Errorf("Repo = %q, want mdelapenya/repo", ref.Repo)
+	}
+}
+
+func TestParsePRRef_WithWhitespace(t *testing.T) {
+	ref, err := ParsePRRef("  456  ")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ref.Number != 456 {
+		t.Errorf("Number = %d, want 456", ref.Number)
+	}
+}
+
+func TestParsePRRef_Empty(t *testing.T) {
+	_, err := ParsePRRef("")
+	if err == nil {
+		t.Error("expected error for empty input")
+	}
+}
+
+func TestParsePRRef_InvalidNumber(t *testing.T) {
+	_, err := ParsePRRef("abc")
+	if err == nil {
+		t.Error("expected error for non-numeric input")
+	}
+}
+
+func TestParsePRRef_InvalidForkNumber(t *testing.T) {
+	_, err := ParsePRRef("owner/repo#abc")
+	if err == nil {
+		t.Error("expected error for non-numeric PR number in fork format")
+	}
+}
+
+func TestParsePRRef_MissingSlashInRepo(t *testing.T) {
+	_, err := ParsePRRef("repo#123")
+	if err == nil {
+		t.Error("expected error for repo without slash")
+	}
+}
+
+func TestParsePRRef_Zero(t *testing.T) {
+	_, err := ParsePRRef("0")
+	if err == nil {
+		t.Error("expected error for zero PR number")
+	}
+}
+
 func TestStatusIcon(t *testing.T) {
 	cases := []struct {
 		status string

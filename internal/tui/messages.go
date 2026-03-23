@@ -26,6 +26,12 @@ type worktreeRemovedMsg struct {
 	err error
 }
 
+// prFetchedMsg is sent after a PR has been fetched into a new worktree.
+type prFetchedMsg struct {
+	branchName string
+	err        error
+}
+
 // warpOpenedMsg is sent after attempting to open a Warp panel.
 type warpOpenedMsg struct {
 	err error
