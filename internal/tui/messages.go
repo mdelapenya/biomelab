@@ -3,7 +3,7 @@ package tui
 import (
 	"github.com/mdelapenya/gwaim/internal/agent"
 	"github.com/mdelapenya/gwaim/internal/git"
-	"github.com/mdelapenya/gwaim/internal/github"
+	"github.com/mdelapenya/gwaim/internal/provider"
 )
 
 // refreshSource identifies which refresh path produced a refreshMsg.
@@ -20,7 +20,7 @@ type refreshMsg struct {
 	source    refreshSource
 	worktrees []git.Worktree
 	agents    agent.DetectionResult
-	prs       github.PRResult
+	prs       provider.PRResult
 	hasPRs    bool // true only when a network refresh attempted PR lookup
 	err       error
 	fetchErr  error
@@ -77,7 +77,7 @@ type localFlashDoneMsg struct{}
 // netFlashDoneMsg clears the network-refresh ✓ indicator after its display window.
 type netFlashDoneMsg struct{}
 
-// ghCheckMsg carries the result of the gh CLI pre-flight check.
-type ghCheckMsg struct {
-	avail github.GHAvailability
+// cliCheckMsg carries the result of the CLI pre-flight check.
+type cliCheckMsg struct {
+	avail provider.CLIAvailability
 }

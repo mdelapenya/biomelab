@@ -12,7 +12,7 @@ import (
 
 	"github.com/mdelapenya/gwaim/internal/agent"
 	"github.com/mdelapenya/gwaim/internal/git"
-	"github.com/mdelapenya/gwaim/internal/github"
+	"github.com/mdelapenya/gwaim/internal/provider"
 )
 
 // testModel creates a Model with pre-populated worktrees (no repo/detector needed for unit tests).
@@ -27,6 +27,7 @@ func testModel(n int) Model {
 		agents:          make(agent.DetectionResult),
 		textInput:       ti,
 		refreshInterval: DefaultNetworkRefreshInterval,
+		prProv:          &provider.GitHubProvider{},
 	}
 	for i := range n {
 		wt := git.Worktree{
@@ -345,7 +346,7 @@ func TestUpdate(t *testing.T) {
 
 	t.Run("f key enters fetch PR mode", func(t *testing.T) {
 		m := testModel(2)
-		m.ghAvail = github.GHAvailable
+		m.cliAvail = provider.CLIAvailable
 
 		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}}
 		updated, _ := m.Update(msg)
@@ -359,7 +360,7 @@ func TestUpdate(t *testing.T) {
 	t.Run("fetch PR blocked from non-main worktree", func(t *testing.T) {
 		m := testModel(2)
 		m.cursor = 1
-		m.ghAvail = github.GHAvailable
+		m.cliAvail = provider.CLIAvailable
 
 		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}}
 		updated, _ := m.Update(msg)
@@ -373,7 +374,7 @@ func TestUpdate(t *testing.T) {
 	t.Run("fetch PR blocked without gh CLI", func(t *testing.T) {
 		m := testModel(2)
 		m.cursor = 0
-		m.ghAvail = github.GHNotFound
+		m.cliAvail = provider.CLINotFound
 
 		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}}
 		updated, _ := m.Update(msg)
@@ -446,14 +447,14 @@ func TestUpdate(t *testing.T) {
 		}
 	})
 
-	t.Run("gh check msg sets gh availability", func(t *testing.T) {
+	t.Run("cli check msg sets cli availability", func(t *testing.T) {
 		m := testModel(2)
 
-		updated, _ := m.Update(ghCheckMsg{avail: github.GHNotFound})
+		updated, _ := m.Update(cliCheckMsg{avail: provider.CLINotFound})
 		model := updated.(Model)
 
-		if model.ghAvail != github.GHNotFound {
-			t.Errorf("expected ghAvail = GHNotFound, got %v", model.ghAvail)
+		if model.cliAvail != provider.CLINotFound {
+			t.Errorf("expected cliAvail = CLINotFound, got %v", model.cliAvail)
 		}
 	})
 }
@@ -527,11 +528,11 @@ func TestKeyMap(t *testing.T) {
 	}
 }
 
-func TestRenderBody_GHNotFoundShowsIndicator(t *testing.T) {
+func TestRenderBody_CLINotFoundShowsIndicator(t *testing.T) {
 	m := testModel(2)
 	m.width = 120
 	m.height = 40
-	m.ghAvail = github.GHNotFound
+	m.cliAvail = provider.CLINotFound
 
 	body := m.renderBody()
 
@@ -540,11 +541,11 @@ func TestRenderBody_GHNotFoundShowsIndicator(t *testing.T) {
 	}
 }
 
-func TestRenderBody_GHNotAuthenticatedShowsIndicator(t *testing.T) {
+func TestRenderBody_CLINotAuthenticatedShowsIndicator(t *testing.T) {
 	m := testModel(2)
 	m.width = 120
 	m.height = 40
-	m.ghAvail = github.GHNotAuthenticated
+	m.cliAvail = provider.CLINotAuthenticated
 
 	body := m.renderBody()
 
@@ -553,11 +554,25 @@ func TestRenderBody_GHNotAuthenticatedShowsIndicator(t *testing.T) {
 	}
 }
 
+func TestRenderBody_UnsupportedProviderShowsMessage(t *testing.T) {
+	m := testModel(2)
+	m.width = 120
+	m.height = 40
+	m.cliAvail = provider.CLIUnsupportedProvider
+	m.prProv = provider.NewUnsupportedProvider(provider.ProviderUnknown)
+
+	body := m.renderBody()
+
+	if !strings.Contains(body, "not yet supported") {
+		t.Error("expected 'not yet supported' in card body, got: " + body)
+	}
+}
+
 func TestLocalRefreshMsg_PreservesPRs(t *testing.T) {
 	// A local refresh (hasPRs=false) must not wipe PR data set by a prior network refresh.
 	m := testModel(2)
 	branch := m.worktrees[0].Branch
-	m.prs = github.PRResult{branch: &github.PRInfo{Number: 7, Title: "my PR"}}
+	m.prs = provider.PRResult{branch: &provider.PRInfo{Number: 7, Title: "my PR"}}
 
 	// Simulate a local refresh arriving with no PR data.
 	updated, _ := m.Update(refreshMsg{
@@ -576,9 +591,9 @@ func TestNetworkRefreshMsg_UpdatesPRs(t *testing.T) {
 	// A network refresh (hasPRs=true) must update the PR map.
 	m := testModel(2)
 	branch := m.worktrees[0].Branch
-	m.prs = github.PRResult{branch: &github.PRInfo{Number: 7, Title: "old"}}
+	m.prs = provider.PRResult{branch: &provider.PRInfo{Number: 7, Title: "old"}}
 
-	newPRs := github.PRResult{branch: &github.PRInfo{Number: 42, Title: "new"}}
+	newPRs := provider.PRResult{branch: &provider.PRInfo{Number: 42, Title: "new"}}
 	updated, _ := m.Update(refreshMsg{
 		worktrees: m.worktrees,
 		agents:    m.agents,

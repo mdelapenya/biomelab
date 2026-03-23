@@ -17,6 +17,7 @@ import (
 	"github.com/mdelapenya/gwaim/internal/agent"
 	"github.com/mdelapenya/gwaim/internal/git"
 	"github.com/mdelapenya/gwaim/internal/github"
+	"github.com/mdelapenya/gwaim/internal/provider"
 	"github.com/mdelapenya/gwaim/internal/tui/card"
 	"github.com/mdelapenya/gwaim/internal/warp"
 )
@@ -48,8 +49,9 @@ type Model struct {
 	detector  *agent.Detector
 	worktrees []git.Worktree
 	agents    agent.DetectionResult
-	prs       github.PRResult
-	ghAvail   github.GHAvailability
+	prs       provider.PRResult
+	cliAvail  provider.CLIAvailability
+	prProv    provider.PRProvider
 	cursor    int
 	width     int
 	height    int
@@ -90,6 +92,14 @@ func New(repo *git.Repository, detector *agent.Detector, refreshInterval time.Du
 		refreshInterval = DefaultNetworkRefreshInterval
 	}
 
+	// Detect the hosting provider from the origin URL.
+	var prProv provider.PRProvider
+	if repo != nil {
+		prProv = provider.NewProvider(repo.OriginURL())
+	} else {
+		prProv = &provider.GitHubProvider{} // default for tests
+	}
+
 	return Model{
 		repo:            repo,
 		detector:        detector,
@@ -97,18 +107,19 @@ func New(repo *git.Repository, detector *agent.Detector, refreshInterval time.Du
 		textInput:       ti,
 		mouseOn:         true,
 		refreshInterval: refreshInterval,
+		prProv:          prProv,
 	}
 }
 
 func (m Model) Init() tea.Cmd {
 	// Fast initial load: branch names only, no dirty/agents/network.
 	// Local refresh (dirty + agents) and network refresh (fetch + PRs) follow immediately.
-	// gh pre-flight runs once at startup.
+	// CLI pre-flight runs once at startup.
 	return tea.Batch(
-		doCheckGH(),
+		doCheckCLI(m.prProv),
 		doQuickRefresh(m.repo),
 		doLocalRefresh(m.repo, m.detector),
-		doNetworkRefresh(m.repo, m.detector, m.ghAvail),
+		doNetworkRefresh(m.repo, m.detector, m.prProv, m.cliAvail),
 		m.doLocalTick(),
 		m.doTick(),
 	)
@@ -135,12 +146,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.syncViewport()
 		return m, nil
 
-	case ghCheckMsg:
-		m.ghAvail = msg.avail
+	case cliCheckMsg:
+		m.cliAvail = msg.avail
 		return m, nil
 
 	case tickMsg:
-		return m, tea.Batch(doNetworkRefresh(m.repo, m.detector, m.ghAvail), m.doTick())
+		return m, tea.Batch(doNetworkRefresh(m.repo, m.detector, m.prProv, m.cliAvail), m.doTick())
 
 	case localTickMsg:
 		return m, tea.Batch(doLocalRefresh(m.repo, m.detector), m.doLocalTick())
@@ -214,7 +225,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Trigger a network refresh so the new worktree's PR badge appears immediately.
 		return m, tea.Batch(
 			doQuickRefresh(m.repo),
-			doNetworkRefresh(m.repo, m.detector, m.ghAvail),
+			doNetworkRefresh(m.repo, m.detector, m.prProv, m.cliAvail),
 			doOpenWarpPanel(m.repo.RepoName(), git.Worktree{Path: msg.wtPath, Branch: msg.branchName}, nil),
 		)
 
@@ -458,8 +469,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.cursor != 0 {
 			return m, nil // fetch PR only from main worktree
 		}
-		if m.ghAvail != github.GHAvailable {
-			m.statusMsg = errorStyle.Render("gh CLI required for PR fetch")
+		if m.cliAvail != provider.CLIAvailable {
+			m.statusMsg = errorStyle.Render("CLI tool required for PR fetch")
 			return m, nil
 		}
 		m.mode = modeFetchPR
@@ -526,10 +537,12 @@ func (m *Model) renderBody() string {
 	}
 	cardWidth := m.cardWidth(cols)
 
+	prov := m.providerType()
+
 	if len(m.worktrees) > 0 {
 		mainWt := m.worktrees[0]
 		agents := m.agents[mainWt.Path]
-		content := card.Render(mainWt, agents, m.prs[mainWt.Branch], m.ghAvail)
+		content := card.Render(mainWt, agents, m.prs[mainWt.Branch], m.cliAvail, prov)
 
 		mainWidth := m.width - 4
 		if mainWidth < 40 {
@@ -577,7 +590,7 @@ func (m *Model) renderBody() string {
 		var rowIndices []int
 		for i, wt := range linked {
 			agents := m.agents[wt.Path]
-			content := card.Render(wt, agents, m.prs[wt.Branch], m.ghAvail)
+			content := card.Render(wt, agents, m.prs[wt.Branch], m.cliAvail, prov)
 
 			globalIdx := i + 1
 			style := cardStyle.Width(cardWidth)
@@ -692,6 +705,14 @@ func (m Model) renderHeader(title string) string {
 	return title + "\n" + status
 }
 
+// providerType returns the provider type from the PRProvider.
+func (m Model) providerType() provider.Provider {
+	if m.prProv != nil {
+		return m.prProv.Provider()
+	}
+	return provider.ProviderGitHub
+}
+
 func (m Model) columns() int {
 	if m.width == 0 {
 		return 2
@@ -727,7 +748,7 @@ func doQuickRefresh(repo *git.Repository) tea.Cmd {
 		if err != nil {
 			return refreshMsg{err: err}
 		}
-		return refreshMsg{source: refreshSourceQuick, worktrees: wts, agents: agent.DetectionResult{}, prs: github.PRResult{}}
+		return refreshMsg{source: refreshSourceQuick, worktrees: wts, agents: agent.DetectionResult{}, prs: provider.PRResult{}}
 	}
 }
 
@@ -750,7 +771,7 @@ func doLocalRefresh(repo *git.Repository, detector *agent.Detector) tea.Cmd {
 
 // doNetworkRefresh fetches remote refs and looks up PR status.
 // Fires every refreshInterval (controlled by --refresh / GWAIM_REFRESH).
-func doNetworkRefresh(repo *git.Repository, detector *agent.Detector, ghAvail github.GHAvailability) tea.Cmd {
+func doNetworkRefresh(repo *git.Repository, detector *agent.Detector, prProv provider.PRProvider, cliAvail provider.CLIAvailability) tea.Cmd {
 	return func() tea.Msg {
 		fetchErr := repo.Fetch()
 
@@ -767,19 +788,19 @@ func doNetworkRefresh(repo *git.Repository, detector *agent.Detector, ghAvail gi
 		}
 
 		agents := detector.Detect(paths)
-		var prs github.PRResult
-		if ghAvail == github.GHAvailable {
-			prs = github.FetchPRs(repo.Root(), branches)
+		var prs provider.PRResult
+		if cliAvail == provider.CLIAvailable {
+			prs = prProv.FetchPRs(repo.Root(), branches)
 		} else {
-			prs = make(github.PRResult)
+			prs = make(provider.PRResult)
 		}
 		return refreshMsg{source: refreshSourceNetwork, worktrees: wts, agents: agents, prs: prs, hasPRs: true, fetchErr: fetchErr}
 	}
 }
 
-func doCheckGH() tea.Cmd {
+func doCheckCLI(prProv provider.PRProvider) tea.Cmd {
 	return func() tea.Msg {
-		return ghCheckMsg{avail: github.CheckGH()}
+		return cliCheckMsg{avail: prProv.CheckCLI()}
 	}
 }
 
