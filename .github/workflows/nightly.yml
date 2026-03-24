@@ -51,11 +51,13 @@ jobs:
         uses: mikefarah/yq@5a7e72a743649b1b3a47d1a1d8214f3453173c51 # v4.52.4
 
       - name: Generate nightly goreleaser config
+        env:
+          NIGHTLY_TAG: ${{ steps.nightly.outputs.tag }}
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
           cp .goreleaser.yml .goreleaser.nightly.yml
           yq -i '.archives[0].name_template = "{{ .ProjectName }}_nightly_{{ .Os }}_{{ .Arch }}"' .goreleaser.nightly.yml
-          yq -i ".builds[0].ldflags = [\"-s -w -X main.version=nightly-${SHORT_SHA}\"]" .goreleaser.nightly.yml
+          yq -i ".builds[0].ldflags = [\"-s -w -X main.version=${NIGHTLY_TAG#v}-${SHORT_SHA}\"]" .goreleaser.nightly.yml
           yq -i '.homebrew_casks[0].name = "gwaim-nightly"' .goreleaser.nightly.yml
           yq -i '.homebrew_casks[0].description = "Git Worktree AI Manager (nightly) — a terminal dashboard for git worktrees and coding agents"' .goreleaser.nightly.yml
           yq -i '.homebrew_casks[0].binary = "gwaim"' .goreleaser.nightly.yml
