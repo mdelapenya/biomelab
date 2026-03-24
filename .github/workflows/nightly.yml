@@ -25,18 +25,27 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Compute nightly tag
+        id: nightly
+        run: |
+          BASE=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo "v0.0.0")
+          echo "tag=${BASE}-nightly" >> "$GITHUB_OUTPUT"
+
       - name: Delete existing nightly tag and release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NIGHTLY_TAG: ${{ steps.nightly.outputs.tag }}
         run: |
-          gh release delete nightly --yes --cleanup-tag || true
-          git tag -d nightly 2>/dev/null || true
-          git push origin :refs/tags/nightly 2>/dev/null || true
+          gh release delete "${NIGHTLY_TAG}" --yes --cleanup-tag || true
+          git tag -d "${NIGHTLY_TAG}" 2>/dev/null || true
+          git push origin ":refs/tags/${NIGHTLY_TAG}" 2>/dev/null || true
 
       - name: Create nightly tag
+        env:
+          NIGHTLY_TAG: ${{ steps.nightly.outputs.tag }}
         run: |
-          git tag nightly
-          git push origin nightly
+          git tag "${NIGHTLY_TAG}"
+          git push origin "${NIGHTLY_TAG}"
 
       - name: Install yq
         uses: mikefarah/yq@5a7e72a743649b1b3a47d1a1d8214f3453173c51 # v4.52.4
