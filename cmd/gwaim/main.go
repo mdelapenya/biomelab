@@ -13,11 +13,21 @@ import (
 	"github.com/mdelapenya/gwaim/internal/tui"
 )
 
+var version = "dev"
+
 func main() {
+	var versionFlag bool
 	var refreshFlag time.Duration
+	flag.BoolVar(&versionFlag, "version", false, "Print version and exit")
+	flag.BoolVar(&versionFlag, "v", false, "Print version and exit (shorthand)")
 	flag.DurationVar(&refreshFlag, "refresh", 0, "Network refresh interval: how often to fetch from remote and look up PRs (e.g. 30s, 1m). Local state refreshes every 5s regardless.")
 	flag.DurationVar(&refreshFlag, "r", 0, "Network refresh interval (shorthand)")
 	flag.Parse()
+
+	if versionFlag {
+		fmt.Println("gwaim", version)
+		return
+	}
 
 	refreshInterval := resolveRefreshInterval(refreshFlag)
 

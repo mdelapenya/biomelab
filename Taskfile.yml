@@ -6,6 +6,9 @@ vars:
   GO:
     sh: eval "$(gvm {{.GO_VERSION}})" && which go
   BIN: bin/gwaim
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
+  LDFLAGS: -s -w -X main.version={{.VERSION}}
 
 tasks:
   setup:
@@ -19,7 +22,7 @@ tasks:
     desc: Build the gwaim binary
     deps: [setup]
     cmds:
-      - '{{.GO}} build -o {{.BIN}} ./cmd/gwaim'
+      - '{{.GO}} build -ldflags "{{.LDFLAGS}}" -o {{.BIN}} ./cmd/gwaim'
     sources:
       - '**/*.go'
     generates:
@@ -41,7 +44,7 @@ tasks:
     desc: Install gwaim to $GOPATH/bin
     deps: [setup]
     cmds:
-      - '{{.GO}} install ./cmd/gwaim'
+      - '{{.GO}} install -ldflags "{{.LDFLAGS}}" ./cmd/gwaim'
 
   lint:
     desc: Run golangci-lint v2
