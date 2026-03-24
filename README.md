@@ -73,6 +73,28 @@ On macOS, the terminal is auto-detected from the `TERM_PROGRAM` environment vari
 brew install mdelapenya/tap/gwaim
 ```
 
+### Nightly builds (edge)
+
+Nightly builds are published automatically from `main` after every successful CI run. They let you test the latest changes before a stable release.
+
+**Homebrew (macOS / Linux):**
+
+```bash
+brew install --cask mdelapenya/tap/gwaim-nightly
+```
+
+The nightly cask installs the same `gwaim` binary — the version string identifies it (e.g., `gwaim 0.1.0-nightly-750de2a`). It conflicts with the stable `gwaim` formula, so only one can be installed at a time.
+
+To update to the latest nightly (the cask version is fixed, so `brew upgrade` won't detect changes):
+
+```bash
+brew reinstall --cask mdelapenya/tap/gwaim-nightly
+```
+
+**Pre-built binaries:**
+
+Download from the [releases page](https://github.com/mdelapenya/gwaim/releases) — look for the pre-release tagged `v<version>-nightly`. The archive names include `_nightly_` (e.g., `gwaim_nightly_darwin_arm64.tar.gz`).
+
 ### Nix
 
 Run without installing:
