@@ -1,0 +1,63 @@
+name: Nightly
+
+on:
+  workflow_run:
+    # workflows field matches by workflow name (the name: field in ci.yml, which is "CI").
+    workflows: ["CI"]
+    branches: [main]
+    types: [completed]
+
+permissions:
+  contents: write
+
+jobs:
+  nightly:
+    name: Nightly Build
+    # types: [completed] fires for both success and failure, so we need this to gate on CI passing.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Delete existing nightly tag and release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete nightly --yes --cleanup-tag || true
+          git tag -d nightly 2>/dev/null || true
+          git push origin :refs/tags/nightly 2>/dev/null || true
+
+      - name: Create nightly tag
+        run: |
+          git tag nightly
+          git push origin nightly
+
+      - name: Install yq
+        uses: mikefarah/yq@5a7e72a743649b1b3a47d1a1d8214f3453173c51 # v4.52.4
+
+      - name: Generate nightly goreleaser config
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          cp .goreleaser.yml .goreleaser.nightly.yml
+          yq -i '.archives[0].name_template = "{{ .ProjectName }}_nightly_{{ .Os }}_{{ .Arch }}"' .goreleaser.nightly.yml
+          yq -i ".builds[0].ldflags = [\"-s -w -X main.version=nightly-${SHORT_SHA}\"]" .goreleaser.nightly.yml
+          yq -i '.homebrew_casks[0].name = "gwaim-nightly"' .goreleaser.nightly.yml
+          yq -i '.homebrew_casks[0].description = "Git Worktree AI Manager (nightly) — a terminal dashboard for git worktrees and coding agents"' .goreleaser.nightly.yml
+          yq -i '.homebrew_casks[0].conflicts = [{"cask": "gwaim"}]' .goreleaser.nightly.yml
+          yq -i '.release.prerelease = true' .goreleaser.nightly.yml
+          yq -i '.release.make_latest = false' .goreleaser.nightly.yml
+          yq -i ".release.name_template = \"Nightly Build (${SHORT_SHA})\"" .goreleaser.nightly.yml
+
+      - uses: goreleaser/goreleaser-action@9ed2f89a662bf1735a48bc8557fd212fa902bebf # v6.3.0
+        with:
+          version: latest
+          args: release --clean -f .goreleaser.nightly.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
