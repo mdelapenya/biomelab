@@ -58,6 +58,7 @@ jobs:
           yq -i ".builds[0].ldflags = [\"-s -w -X main.version=nightly-${SHORT_SHA}\"]" .goreleaser.nightly.yml
           yq -i '.homebrew_casks[0].name = "gwaim-nightly"' .goreleaser.nightly.yml
           yq -i '.homebrew_casks[0].description = "Git Worktree AI Manager (nightly) — a terminal dashboard for git worktrees and coding agents"' .goreleaser.nightly.yml
+          yq -i '.homebrew_casks[0].binary = "gwaim"' .goreleaser.nightly.yml
           yq -i '.homebrew_casks[0].conflicts = [{"cask": "gwaim"}]' .goreleaser.nightly.yml
           yq -i '.release.prerelease = true' .goreleaser.nightly.yml
           yq -i '.release.make_latest = false' .goreleaser.nightly.yml
