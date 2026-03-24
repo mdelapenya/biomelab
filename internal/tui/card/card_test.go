@@ -75,6 +75,26 @@ func TestRender_MultipleAgents(t *testing.T) {
 	}
 }
 
+func TestRender_SubAgent(t *testing.T) {
+	wt := git.Worktree{
+		Path:   "/tmp/work",
+		Branch: "feature",
+	}
+	agents := []agent.Info{
+		{Kind: agent.Claude, PID: "100"},
+		{Kind: agent.Claude, PID: "200", IsSubAgent: true},
+	}
+
+	got := Render(wt, agents, nil, provider.CLIAvailable, provider.ProviderGitHub)
+
+	if !strings.Contains(got, "↳") {
+		t.Error("expected subagent indent marker '↳' in output")
+	}
+	if strings.Count(got, "●") != 1 {
+		t.Errorf("expected exactly 1 top-level bullet, got %d", strings.Count(got, "●"))
+	}
+}
+
 func TestRender_DetachedHead(t *testing.T) {
 	wt := git.Worktree{
 		Path:     "/tmp/detached",
