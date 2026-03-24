@@ -33,8 +33,6 @@ checksum:
 
 homebrew_casks:
   - name: gwaim
-    binaries:
-      - gwaim
     repository:
       owner: mdelapenya
       name: homebrew-tap
