@@ -56,7 +56,7 @@ jobs:
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
           cp .goreleaser.yml .goreleaser.nightly.yml
-          yq -i '.archives[0].name_template = "{{ .ProjectName }}_nightly_{{ .Os }}_{{ .Arch }}"' .goreleaser.nightly.yml
+          yq -i '.archives[0].name_template = "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"' .goreleaser.nightly.yml
           yq -i ".builds[0].ldflags = [\"-s -w -X main.version=${NIGHTLY_TAG#v}-${SHORT_SHA}\"]" .goreleaser.nightly.yml
           yq -i '.homebrew_casks[0].name = "gwaim-nightly"' .goreleaser.nightly.yml
           yq -i '.homebrew_casks[0].description = "Git Worktree AI Manager (nightly) — a terminal dashboard for git worktrees and coding agents"' .goreleaser.nightly.yml
@@ -85,9 +85,11 @@ jobs:
           VERSION="${NIGHTLY_TAG#v}"
           CASK_FILE=$(find dist -name "gwaim-nightly.rb" | head -1)
 
-          # GoReleaser mangles the version when the cask name differs from the project name.
-          # Replace the wrong version with the correct one derived from the tag.
-          sed -i "s/version \".*\"/version \"${VERSION}\"/" "${CASK_FILE}"
+          # GoReleaser mangles the version when the cask name differs from the project name,
+          # appending an extra "-nightly" suffix everywhere (version field, URLs, filenames).
+          # Replace all occurrences of the mangled version with the correct one.
+          MANGLED="${VERSION}-nightly"
+          sed -i "s/${MANGLED}/${VERSION}/g" "${CASK_FILE}"
 
           cd "$(mktemp -d)"
           git clone "https://x-access-token:${HOMEBREW_TAP_GITHUB_TOKEN}@github.com/mdelapenya/homebrew-tap.git" .
