@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -132,25 +133,23 @@ func (d *Detector) Detect(worktreePaths []string) DetectionResult {
 		}
 	}
 
-	// Deduplicate parent-child pairs: when a CLI agent (e.g. copilot) spawns a
-	// child with the same name and CWD, drop the child and keep the parent.
+	// Identify parent-child pairs: when a CLI agent spawns a child with the
+	// same name, mark the child as a subagent instead of dropping it.
 	// Independent sessions of the same agent kind are preserved.
 	agentPIDs := make(map[int32]string, len(agents)) // PID → normalized kind name
 	for _, a := range agents {
 		agentPIDs[a.PID] = a.Name
 	}
-	var deduped []ProcessInfo
+	subAgentPIDs := make(map[int32]bool, len(agents))
 	for _, a := range agents {
-		// Skip if the parent is also an agent of the same kind.
 		if parentKind, ok := agentPIDs[a.PPID]; ok && parentKind == a.Name {
-			continue
+			subAgentPIDs[a.PID] = true
 		}
-		deduped = append(deduped, a)
 	}
 
 	// Match to worktree paths.
 	result := make(DetectionResult)
-	for _, a := range deduped {
+	for _, a := range agents {
 		if a.Cwd == "" {
 			continue
 		}
@@ -162,13 +161,28 @@ func (d *Detector) Detect(worktreePaths []string) DetectionResult {
 					started = a.Created.Format("Mon 2 Jan 15:04:05 2006")
 				}
 				result[wtPath] = append(result[wtPath], Info{
-					Kind:    Kind(a.Name),
-					PID:     fmt.Sprintf("%d", a.PID),
-					State:   a.Status,
-					Started: started,
+					Kind:       Kind(a.Name),
+					PID:        fmt.Sprintf("%d", a.PID),
+					State:      a.Status,
+					Started:    started,
+					IsSubAgent: subAgentPIDs[a.PID],
 				})
 			}
 		}
+	}
+
+	// Sort so parents appear before subagents.
+	for wtPath, infos := range result {
+		slices.SortStableFunc(infos, func(a, b Info) int {
+			if a.IsSubAgent != b.IsSubAgent {
+				if a.IsSubAgent {
+					return 1
+				}
+				return -1
+			}
+			return 0
+		})
+		result[wtPath] = infos
 	}
 
 	return result

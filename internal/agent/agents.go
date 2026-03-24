@@ -24,10 +24,11 @@ var ProcessPatterns = map[Kind][]string{
 
 // Info holds information about a detected agent process.
 type Info struct {
-	Kind    Kind
-	PID     string
-	State   string // process state (e.g. "S", "R", "Z")
-	Started string // start date/time
+	Kind       Kind
+	PID        string
+	State      string // process state (e.g. "S", "R", "Z")
+	Started    string // start date/time
+	IsSubAgent bool   // true if this process is a child of another agent of the same kind
 }
 
 // DetectionResult maps absolute worktree paths to the agents working in them.

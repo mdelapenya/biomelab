@@ -86,10 +86,16 @@ func Render(wt git.Worktree, agents []agent.Info, pr *provider.PRInfo, cliAvail 
 	// Agent status
 	if len(agents) > 0 {
 		for _, a := range agents {
+			prefix := "● "
+			detailPrefix := "  "
+			if a.IsSubAgent {
+				prefix = "  ↳ "
+				detailPrefix = "    "
+			}
 			line := fmt.Sprintf("%s (PID %s)", string(a.Kind), a.PID)
-			b.WriteString(agentActiveStyle.Render("● " + line))
+			b.WriteString(agentActiveStyle.Render(prefix + line))
 			b.WriteString("\n")
-			detail := fmt.Sprintf("  state: %s  started: %s", a.State, a.Started)
+			detail := fmt.Sprintf("%sstate: %s  started: %s", detailPrefix, a.State, a.Started)
 			b.WriteString(agentDetailStyle.Render(detail))
 			b.WriteString("\n")
 		}

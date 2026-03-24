@@ -82,9 +82,9 @@ func TestDetect_EmptyCWDSkipped(t *testing.T) {
 	}
 }
 
-func TestDetect_ParentChildDeduped(t *testing.T) {
+func TestDetect_ParentChildSubAgent(t *testing.T) {
 	// A CLI agent spawns a child with the same name and CWD.
-	// Only the parent should be kept.
+	// Parent should not be a subagent, child should be marked as subagent.
 	lister := &mockLister{
 		procs: []ProcessInfo{
 			{PID: 100, Name: "copilot", Cwd: "/project", Status: "S"},
@@ -95,11 +95,14 @@ func TestDetect_ParentChildDeduped(t *testing.T) {
 	d := NewDetectorWithLister(lister)
 	result := d.Detect([]string{"/project"})
 
-	if len(result["/project"]) != 1 {
-		t.Errorf("expected 1 agent (parent-child deduped), got %d", len(result["/project"]))
+	if len(result["/project"]) != 2 {
+		t.Fatalf("expected 2 agents (parent + subagent), got %d", len(result["/project"]))
 	}
-	if result["/project"][0].PID != "100" {
-		t.Errorf("expected parent PID 100, got %s", result["/project"][0].PID)
+	if result["/project"][0].PID != "100" || result["/project"][0].IsSubAgent {
+		t.Errorf("expected parent PID 100 not marked as subagent")
+	}
+	if result["/project"][1].PID != "200" || !result["/project"][1].IsSubAgent {
+		t.Errorf("expected child PID 200 marked as subagent")
 	}
 }
 
@@ -191,8 +194,8 @@ func TestDetect_CmdlineNoFalsePositive(t *testing.T) {
 	}
 }
 
-func TestDetect_CmdlineParentChildDeduped(t *testing.T) {
-	// Gemini spawns two node processes (parent + child). Only parent should remain.
+func TestDetect_CmdlineParentChildSubAgent(t *testing.T) {
+	// Gemini spawns two node processes (parent + child). Child should be a subagent.
 	lister := &mockLister{
 		procs: []ProcessInfo{
 			{PID: 500, PPID: 1, Name: "node", Cmdline: "/opt/homebrew/bin/node /opt/homebrew/bin/gemini --yolo", Cwd: "/project", Status: "S"},
@@ -203,10 +206,13 @@ func TestDetect_CmdlineParentChildDeduped(t *testing.T) {
 	d := NewDetectorWithLister(lister)
 	result := d.Detect([]string{"/project"})
 
-	if len(result["/project"]) != 1 {
-		t.Errorf("expected 1 agent (parent-child deduped), got %d", len(result["/project"]))
+	if len(result["/project"]) != 2 {
+		t.Fatalf("expected 2 agents (parent + subagent), got %d", len(result["/project"]))
 	}
-	if result["/project"][0].PID != "500" {
-		t.Errorf("expected parent PID 500, got %s", result["/project"][0].PID)
+	if result["/project"][0].PID != "500" || result["/project"][0].IsSubAgent {
+		t.Errorf("expected parent PID 500 not marked as subagent")
+	}
+	if result["/project"][1].PID != "600" || !result["/project"][1].IsSubAgent {
+		t.Errorf("expected child PID 600 marked as subagent")
 	}
 }
