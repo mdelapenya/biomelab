@@ -60,6 +60,9 @@ jobs:
           yq -i '.homebrew_casks[0].description = "Git Worktree AI Manager (nightly) — a terminal dashboard for git worktrees and coding agents"' .goreleaser.nightly.yml
           yq -i '.homebrew_casks[0].binary = "gwaim"' .goreleaser.nightly.yml
           yq -i '.homebrew_casks[0].conflicts = [{"cask": "gwaim"}]' .goreleaser.nightly.yml
+          yq -i '.homebrew_casks[0].url.template = "https://github.com/mdelapenya/gwaim/releases/download/{{ .Tag }}/{{ .ArtifactName }}"' .goreleaser.nightly.yml
+          # Tell GoReleaser to generate the cask but not push it — we fix the version and push ourselves.
+          yq -i '.homebrew_casks[0].skip_upload = true' .goreleaser.nightly.yml
           yq -i '.release.prerelease = true' .goreleaser.nightly.yml
           yq -i '.release.make_latest = false' .goreleaser.nightly.yml
           yq -i ".release.name_template = \"Nightly Build (${SHORT_SHA})\"" .goreleaser.nightly.yml
@@ -71,3 +74,29 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+
+      - name: Fix and push nightly cask
+        env:
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          NIGHTLY_TAG: ${{ steps.nightly.outputs.tag }}
+        run: |
+          VERSION="${NIGHTLY_TAG#v}"
+          CASK_FILE=$(find dist -name "gwaim-nightly.rb" | head -1)
+
+          # GoReleaser mangles the version when the cask name differs from the project name.
+          # Replace the wrong version with the correct one derived from the tag.
+          sed -i "s/version \".*\"/version \"${VERSION}\"/" "${CASK_FILE}"
+
+          cd "$(mktemp -d)"
+          git clone "https://x-access-token:${HOMEBREW_TAP_GITHUB_TOKEN}@github.com/mdelapenya/homebrew-tap.git" .
+          mkdir -p Casks
+          cp "${GITHUB_WORKSPACE}/${CASK_FILE}" Casks/gwaim-nightly.rb
+          git add Casks/gwaim-nightly.rb
+          if git diff --cached --quiet; then
+            echo "No changes to cask file."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git commit -m "Update gwaim-nightly cask to ${VERSION}"
+            git push
+          fi
