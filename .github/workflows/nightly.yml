@@ -28,7 +28,7 @@ jobs:
       - name: Compute nightly tag
         id: nightly
         run: |
-          BASE=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo "v0.0.0")
+          BASE=$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-nightly*' 2>/dev/null || echo "v0.0.0")
           echo "tag=${BASE}-nightly" >> "$GITHUB_OUTPUT"
 
       - name: Delete existing nightly tag and release
