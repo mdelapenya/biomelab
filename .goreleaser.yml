@@ -5,6 +5,8 @@ builds:
     binary: gwaim
     env:
       - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
     goos:
       - linux
       - darwin
@@ -31,8 +33,6 @@ checksum:
 
 homebrew_casks:
   - name: gwaim
-    binaries:
-      - gwaim
     repository:
       owner: mdelapenya
       name: homebrew-tap
