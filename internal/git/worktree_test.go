@@ -503,3 +503,30 @@ func TestFetchPR_SlashedBranchName(t *testing.T) {
 	})
 }
 
+func TestParseRepoName(t *testing.T) {
+	tests := []struct {
+		url  string
+		want string
+	}{
+		// HTTPS
+		{"https://github.com/docker/sandboxes.git", "docker/sandboxes"},
+		{"https://github.com/mdelapenya/gwaim.git", "mdelapenya/gwaim"},
+		{"https://github.com/owner/repo", "owner/repo"},
+		{"https://gitlab.com/group/project.git", "group/project"},
+		// SSH
+		{"git@github.com:docker/sandboxes.git", "docker/sandboxes"},
+		{"git@github.com:mdelapenya/gwaim.git", "mdelapenya/gwaim"},
+		{"git@gitlab.com:group/project.git", "group/project"},
+		// Edge cases
+		{"", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.url, func(t *testing.T) {
+			got := parseRepoName(tt.url)
+			if got != tt.want {
+				t.Errorf("parseRepoName(%q) = %q, want %q", tt.url, got, tt.want)
+			}
+		})
+	}
+}
+

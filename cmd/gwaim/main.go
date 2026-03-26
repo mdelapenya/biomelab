@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/mdelapenya/gwaim/internal/agent"
+	"github.com/mdelapenya/gwaim/internal/config"
 	"github.com/mdelapenya/gwaim/internal/git"
 	"github.com/mdelapenya/gwaim/internal/tui"
 )
@@ -31,28 +32,26 @@ func main() {
 
 	refreshInterval := resolveRefreshInterval(refreshFlag)
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-
-	repoRoot, err := git.RepoRoot(cwd)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: not a git repository: %v\n", err)
-		os.Exit(1)
-	}
-
-	repo, err := git.OpenRepository(repoRoot)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-
 	detector := agent.NewDetector()
+	configPath := config.DefaultPath()
 
-	model := tui.New(repo, detector, refreshInterval)
-	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	// If we're in a git repo, auto-add it to config.
+	cwd, err := os.Getwd()
+	if err == nil {
+		repoRoot, repoErr := git.RepoRoot(cwd)
+		if repoErr == nil {
+			repo, openErr := git.OpenRepository(repoRoot)
+			if openErr == nil {
+				cfg, _ := config.Load(configPath)
+				if cfg.Add(repoRoot, repo.RepoName()) {
+					_ = config.Save(configPath, cfg)
+				}
+			}
+		}
+	}
+
+	app := tui.NewApp(configPath, detector, refreshInterval)
+	p := tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

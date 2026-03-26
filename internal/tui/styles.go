@@ -40,4 +40,12 @@ var (
 	confirmStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 
 	refreshTimestampStyle = lipgloss.NewStyle().Faint(true)
+
+	selectedRepoStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("39")) // cyan
+
+	unselectedRepoStyle = lipgloss.NewStyle().Faint(true)
+
+	repoPanelHelpStyle = lipgloss.NewStyle().Faint(true)
 )

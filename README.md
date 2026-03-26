@@ -4,6 +4,9 @@
 
 ## Features
 
+- **Multi-repo dashboard** -- Register multiple repositories and switch between them in a two-column layout. The left panel (15%) shows registered repos, the right panel (85%) shows the selected repo's worktree dashboard. Press `Tab` to switch focus between panels.
+- **Persistent config** -- Registered repos are saved to `~/.config/gwaim/repos.json` and restored on next launch. Starting gwaim inside a git repo auto-adds it.
+- **Start from anywhere** -- gwaim can launch from any directory, not just inside a git repo. If no repos are registered, an empty state guides you to add one.
 - **Hierarchical layout** -- The main worktree sits at the top (double-bordered card), with linked worktrees displayed in a responsive grid below.
 - **Worktree cards** -- Each card shows: branch name, path, dirty/clean status, sync status (ahead/behind/diverged/up-to-date), active agents, and PR info.
 - **Agent detection** -- Automatically detects coding agents (Claude, Kiro, Copilot, Codex, OpenCode, Gemini) running in each worktree by scanning system processes with gopsutil. Shows PID, process state, and start time.
@@ -181,13 +184,13 @@ task install
 
 ## Usage
 
-Run `gwaim` from anywhere inside a git repository:
+Run `gwaim` from any directory:
 
 ```
 gwaim
 ```
 
-The TUI discovers the repository root, lists all worktrees (main and linked), detects running agents, fetches remote refs, and queries PR status for each branch. Data refreshes automatically every 3 seconds.
+If started inside a git repository, it auto-adds it to the dashboard. The TUI shows a two-column layout: repo list on the left, worktree dashboard on the right. Data refreshes automatically.
 
 ### Configuring the refresh interval
 
@@ -220,6 +223,26 @@ The current refresh interval is shown in the help bar at the bottom of the scree
 
 ### Keyboard shortcuts
 
+#### App-level (always available)
+
+| Key              | Action                                                            |
+|------------------|-------------------------------------------------------------------|
+| `Tab` / `Shift+Tab` | Switch focus between repo list (left) and worktree dashboard (right) |
+| Mouse click      | Click a panel to focus it; click a repo name to select it         |
+| `q` / `Ctrl+C`  | Quit                                                              |
+
+#### Repo list (left panel focused)
+
+| Key              | Action                                                            |
+|------------------|-------------------------------------------------------------------|
+| `up` / `k`      | Select previous repo                                              |
+| `down` / `j`    | Select next repo                                                  |
+| `a`              | Add a new repository (enter path)                                 |
+| `x`              | Remove selected repository from dashboard                        |
+| `Enter`          | Switch focus to worktree dashboard                                |
+
+#### Worktree dashboard (right panel focused)
+
 | Key              | Action                                                            |
 |------------------|-------------------------------------------------------------------|
 | `left` / `h`    | Move cursor to the previous linked worktree                       |
@@ -234,7 +257,6 @@ The current refresh interval is shown in the help bar at the bottom of the scree
 | `p`              | Pull from remote (fetches and merges into main branch)            |
 | `r`              | Repair worktree links (only from the main card)                   |
 | `m`              | Toggle mouse mode on/off (default: off for text selection)        |
-| `q` / `Ctrl+C`  | Quit                                                              |
 
 ### Navigation model
 
@@ -262,22 +284,26 @@ The gwaim dashboard stays running in its own tab throughout.
 
 gwaim is structured into the following internal packages:
 
-- **`cmd/gwaim`** -- Entry point. Opens the repository, creates the agent detector, and starts the Bubbletea program.
+- **`cmd/gwaim`** -- Entry point. Loads the repo config, auto-adds the current directory's repo if applicable, creates the agent detector, and starts the Bubbletea program with the `App` model.
+- **`internal/config`** -- Persists the list of registered repositories to `~/.config/gwaim/repos.json`. Provides `Load`/`Save`/`Add`/`Remove` with atomic writes (write to `.tmp`, rename). Deduplicates by repo path.
 - **`internal/git`** -- Git operations using [go-git v6](https://github.com/go-git/go-git). Handles repository opening, worktree listing (main + linked), creation, removal, repair, pruning, pull, fetch, and sync status computation. Uses the `x/plumbing/worktree` extension for linked worktree management. Credentials are resolved via `git credential fill`. Repair shells out to `git worktree repair` (go-git v6 has no repair API).
 - **`internal/agent`** -- Detects coding agent processes using [gopsutil](https://github.com/shirou/gopsutil). Enumerates all processes, filters by known agent patterns, resolves their CWDs, and matches them to worktree paths. Reports PID, process state, and start time.
 - **`internal/provider`** -- Multi-provider PR/MR abstraction. Defines a `PRProvider` interface and auto-detects the hosting provider (GitHub, GitLab) from the origin remote URL. Includes `GitHubProvider` (via `gh` CLI), `GitLabProvider` (via `glab` CLI), and `UnsupportedProvider` (graceful fallback for unknown hosts). Runs lookups concurrently (up to 4 at a time). Extracts PR/MR number, title, state, draft status, and CI check/pipeline status.
 - **`internal/github`** -- GitHub-specific PR helpers: `ParsePRRef` (parses `"123"` or `"owner/repo#123"`) and `ValidatePR` (confirms a PR exists via `gh` and returns its head branch) for the fetch-PR flow.
-- **`internal/tui`** -- The Bubbletea TUI model. Manages the viewport, card grid layout, hierarchical navigation, input modes (normal, create, fetch-PR, confirm-delete), mouse toggle, periodic refresh, and zone-based click detection.
+- **`internal/tui`** -- Two-layer Bubbletea TUI:
+  - **`App`** (`app.go`): Top-level model managing multiple repos. Renders a two-column layout with manually-drawn borders (`buildPanels()`). Left panel shows the repo list, right panel shows the active repo's worktree dashboard. Handles focus switching (`Tab`/`Shift+Tab`/mouse click), repo add/remove, and routes async messages to the correct child by `repoPath`.
+  - **`Model`** (`model.go`): Per-repo worktree dashboard. Manages the viewport, card grid layout, hierarchical navigation, input modes (normal, create, fetch-PR, confirm-delete), mouse toggle, periodic refresh, and zone-based click detection. When embedded inside `App`, skips its own header rendering (the App renders it above both panels).
 - **`internal/tui/card`** -- Pure render function that produces card content for a single worktree. Displays branch, path, PR status, agent info, dirty status, and sync status using lipgloss styles.
 - **`internal/warp`** -- Terminal tab/panel management. Creates named repo tabs and split panels. Supports Warp, iTerm, Terminal.app on macOS; gnome-terminal, konsole, xfce4-terminal on Linux.
 
 ### Data flow
 
-1. On startup and at the configured refresh interval (default 3 seconds), gwaim runs a refresh cycle: fetch remote refs, list worktrees (with dirty and sync status), detect agents, and query PRs.
-2. The `refreshMsg` carries all results back to the Bubbletea update loop.
-3. `renderBody` produces the scrollable content and records card bounding zones for click detection.
-4. `syncViewport` pushes the rendered content into the viewport (preserving scroll position).
-5. `View` composes header + viewport + help bar.
+1. On startup, `App.Init()` loads the repo config and opens each repository. The current directory's repo is auto-added by `main.go` before launch.
+2. Each repo's `Model.Init()` starts its own refresh cycles: quick refresh (branch names), local refresh (dirty + agents every 5s), and network refresh (fetch + PRs at configurable interval).
+3. All async messages carry a `repoPath` field. `App.Update` routes each message to the matching child `Model` by path. Messages for removed repos are silently discarded.
+4. `Model.renderBody` produces the scrollable worktree card content and records card bounding zones for click detection.
+5. `Model.syncViewport` pushes the rendered content into the viewport (preserving scroll position).
+6. `App.View` composes: header (title + timestamps from active repo) + two bordered panels (repo list + dashboard) using manually-rendered border characters for pixel-perfect height matching.
 
 ## Testing
 

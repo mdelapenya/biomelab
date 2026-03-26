@@ -117,7 +117,11 @@ func (r *Repository) RepoName() string {
 // parseRepoName extracts "owner/repo" from a git remote URL.
 func parseRepoName(remoteURL string) string {
 	// Handle SSH: git@github.com:owner/repo.git
-	if idx := strings.Index(remoteURL, ":"); idx > 0 && !strings.Contains(remoteURL[:idx], "/") {
+	// SSH URLs have a colon after the host, but no "://" scheme prefix.
+	if idx := strings.Index(remoteURL, ":"); idx > 0 &&
+		!strings.Contains(remoteURL[:idx], "/") &&
+		!strings.Contains(remoteURL[:idx], "//") &&
+		(len(remoteURL) <= idx+2 || remoteURL[idx:idx+3] != "://") {
 		path := remoteURL[idx+1:]
 		path = strings.TrimSuffix(path, ".git")
 		return path
