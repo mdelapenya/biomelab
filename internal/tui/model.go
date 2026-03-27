@@ -72,6 +72,8 @@ type Model struct {
 	netFlash          bool      // true while showing ✓ after a network refresh
 	lastLocalRefresh  time.Time // time of last completed local refresh
 	lastNetworkRefresh time.Time // time of last completed network refresh
+	embedded          bool      // true when used inside App (no header in viewport calc)
+	paused            bool      // true when repo is not the active tab; ticks stop self-scheduling
 }
 
 type zone struct {
@@ -111,15 +113,72 @@ func New(repo *git.Repository, detector *agent.Detector, refreshInterval time.Du
 	}
 }
 
+// newEmbedded creates a Model that renders without its own header.
+// Used by App, which renders the header above both columns.
+func newEmbedded(repo *git.Repository, detector *agent.Detector, refreshInterval time.Duration) Model {
+	m := New(repo, detector, refreshInterval)
+	m.embedded = true
+	return m
+}
+
+// Pause stops the model's refresh tick chains. Pending ticks will fire
+// but won't re-schedule, so fetches stop after the current cycle.
+func (m Model) Pause() Model {
+	m.paused = true
+	return m
+}
+
+// Resume restarts the model's refresh tick chains and triggers an
+// immediate refresh. Call this when the repo becomes the active tab.
+func (m Model) Resume() (Model, tea.Cmd) {
+	m.paused = false
+	rp := m.repoPath()
+	return m, tea.Batch(
+		doQuickRefresh(m.repo, rp),
+		doLocalRefresh(m.repo, m.detector, rp),
+		m.doLocalTick(),
+		m.doTick(),
+	)
+}
+
+// IsNormal returns true if the model is in normal (non-modal) mode.
+func (m Model) IsNormal() bool {
+	return m.mode == modeNormal
+}
+
+// RepoPath returns the root path of the repository this model manages.
+// Returns an empty string if no repository is set (e.g., in tests).
+func (m Model) RepoPath() string {
+	if m.repo == nil {
+		return ""
+	}
+	return m.repo.Root()
+}
+
+// isStale returns true if a message's repoPath does not match this model's repo.
+// Used to discard async messages from a previously-active repo.
+func (m Model) isStale(repoPath string) bool {
+	return m.repo != nil && repoPath != "" && repoPath != m.repo.Root()
+}
+
+// repoPath returns the repo root or empty string if repo is nil.
+func (m Model) repoPath() string {
+	if m.repo != nil {
+		return m.repo.Root()
+	}
+	return ""
+}
+
 func (m Model) Init() tea.Cmd {
 	// Fast initial load: branch names only, no dirty/agents/network.
 	// Local refresh (dirty + agents) and network refresh (fetch + PRs) follow immediately.
 	// CLI pre-flight runs once at startup.
+	rp := m.repoPath()
 	return tea.Batch(
-		doCheckCLI(m.prProv),
-		doQuickRefresh(m.repo),
-		doLocalRefresh(m.repo, m.detector),
-		doNetworkRefresh(m.repo, m.detector, m.prProv, m.cliAvail),
+		doCheckCLI(m.prProv, rp),
+		doQuickRefresh(m.repo, rp),
+		doLocalRefresh(m.repo, m.detector, rp),
+		doNetworkRefresh(m.repo, m.detector, m.prProv, m.cliAvail, rp),
 		m.doLocalTick(),
 		m.doTick(),
 	)
@@ -131,7 +190,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		headerHeight := 3 // title + last-update line + margin
-		footerHeight := 2 // help bar + margin
+		if m.embedded {
+			headerHeight = 0 // App renders the header above both columns
+		}
+		footerHeight := 3 // \n separator + helpStyle MarginTop(1) + help text
 		vpHeight := m.height - headerHeight - footerHeight
 		if vpHeight < 1 {
 			vpHeight = 1
@@ -147,16 +209,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case cliCheckMsg:
+		if m.isStale(msg.repoPath) {
+			return m, nil
+		}
 		m.cliAvail = msg.avail
 		return m, nil
 
 	case tickMsg:
-		return m, tea.Batch(doNetworkRefresh(m.repo, m.detector, m.prProv, m.cliAvail), m.doTick())
+		if m.isStale(msg.repoPath) || m.paused {
+			return m, nil // don't re-schedule: breaks the tick chain
+		}
+		rp := m.repoPath()
+		return m, tea.Batch(doNetworkRefresh(m.repo, m.detector, m.prProv, m.cliAvail, rp), m.doTick())
 
 	case localTickMsg:
-		return m, tea.Batch(doLocalRefresh(m.repo, m.detector), m.doLocalTick())
+		if m.isStale(msg.repoPath) || m.paused {
+			return m, nil // don't re-schedule: breaks the tick chain
+		}
+		rp := m.repoPath()
+		return m, tea.Batch(doLocalRefresh(m.repo, m.detector, rp), m.doLocalTick())
 
 	case refreshMsg:
+		if m.isStale(msg.repoPath) {
+			return m, nil
+		}
 		if msg.err != nil {
 			m.err = msg.err
 		} else {
@@ -175,68 +251,87 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Update timestamps and trigger ✓ flash for periodic refreshes.
 		var flashCmd tea.Cmd
+		rp := msg.repoPath
 		switch msg.source {
 		case refreshSourceLocal:
 			m.lastLocalRefresh = time.Now()
 			m.localFlash = true
-			flashCmd = tea.Tick(time.Second, func(_ time.Time) tea.Msg { return localFlashDoneMsg{} })
+			flashCmd = tea.Tick(time.Second, func(_ time.Time) tea.Msg { return localFlashDoneMsg{repoPath: rp} })
 		case refreshSourceNetwork:
 			m.lastNetworkRefresh = time.Now()
 			m.netFlash = true
-			flashCmd = tea.Tick(time.Second, func(_ time.Time) tea.Msg { return netFlashDoneMsg{} })
+			flashCmd = tea.Tick(time.Second, func(_ time.Time) tea.Msg { return netFlashDoneMsg{repoPath: rp} })
 		}
 		m.syncViewport()
 		return m, flashCmd
 
 	case localFlashDoneMsg:
+		if m.isStale(msg.repoPath) {
+			return m, nil
+		}
 		m.localFlash = false
 		m.syncViewport()
 		return m, nil
 
 	case netFlashDoneMsg:
+		if m.isStale(msg.repoPath) {
+			return m, nil
+		}
 		m.netFlash = false
 		m.syncViewport()
 		return m, nil
 
 	case worktreeCreatedMsg:
+		if m.isStale(msg.repoPath) {
+			return m, nil
+		}
+		rp := m.repoPath()
 		if msg.err != nil {
 			m.statusMsg = errorStyle.Render("Error: " + msg.err.Error())
 			m.mode = modeNormal
-			return m, tea.Batch(doQuickRefresh(m.repo), doLocalRefresh(m.repo, m.detector))
+			return m, tea.Batch(doQuickRefresh(m.repo, rp), doLocalRefresh(m.repo, m.detector, rp))
 		}
 		m.statusMsg = cleanStyle.Render("Worktree created — opening panel...")
 		m.mode = modeNormal
 		// Open a Warp panel in the new worktree with the agent command.
 		newWtPath := filepath.Join(m.repo.Root(), ".gwaim-worktrees", msg.branchName)
 		return m, tea.Batch(
-			doQuickRefresh(m.repo),
-			doLocalRefresh(m.repo, m.detector),
+			doQuickRefresh(m.repo, rp),
+			doLocalRefresh(m.repo, m.detector, rp),
 			doOpenWarpPanel(m.repo.RepoName(), git.Worktree{Path: newWtPath, Branch: msg.branchName}, nil),
 		)
 
 	case prFetchedMsg:
+		if m.isStale(msg.repoPath) {
+			return m, nil
+		}
+		rp := m.repoPath()
 		if msg.err != nil {
 			m.statusMsg = errorStyle.Render("Error: " + msg.err.Error())
 			m.mode = modeNormal
-			return m, tea.Batch(doQuickRefresh(m.repo), doLocalRefresh(m.repo, m.detector))
+			return m, tea.Batch(doQuickRefresh(m.repo, rp), doLocalRefresh(m.repo, m.detector, rp))
 		}
 		m.statusMsg = cleanStyle.Render("PR fetched — opening panel...")
 		m.mode = modeNormal
 		// Trigger a network refresh so the new worktree's PR badge appears immediately.
 		return m, tea.Batch(
-			doQuickRefresh(m.repo),
-			doNetworkRefresh(m.repo, m.detector, m.prProv, m.cliAvail),
+			doQuickRefresh(m.repo, rp),
+			doNetworkRefresh(m.repo, m.detector, m.prProv, m.cliAvail, rp),
 			doOpenWarpPanel(m.repo.RepoName(), git.Worktree{Path: msg.wtPath, Branch: msg.branchName}, nil),
 		)
 
 	case worktreeRemovedMsg:
+		if m.isStale(msg.repoPath) {
+			return m, nil
+		}
+		rp := m.repoPath()
 		if msg.err != nil {
 			m.statusMsg = errorStyle.Render("Error: " + msg.err.Error())
 		} else {
 			m.statusMsg = cleanStyle.Render("Worktree removed")
 		}
 		m.mode = modeNormal
-		return m, tea.Batch(doQuickRefresh(m.repo), doLocalRefresh(m.repo, m.detector))
+		return m, tea.Batch(doQuickRefresh(m.repo, rp), doLocalRefresh(m.repo, m.detector, rp))
 
 	case warpOpenedMsg:
 		if msg.err != nil {
@@ -255,15 +350,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case pullMsg:
+		if m.isStale(msg.repoPath) {
+			return m, nil
+		}
+		rp := m.repoPath()
 		if msg.err != nil {
 			m.statusMsg = errorStyle.Render("Pull: " + msg.err.Error())
 		} else {
 			m.statusMsg = cleanStyle.Render("Pull complete")
 		}
 		// Pull changes local state only; sync status will update on next network tick.
-		return m, tea.Batch(doQuickRefresh(m.repo), doLocalRefresh(m.repo, m.detector))
+		return m, tea.Batch(doQuickRefresh(m.repo, rp), doLocalRefresh(m.repo, m.detector, rp))
 
 	case worktreeRepairedMsg:
+		if m.isStale(msg.repoPath) {
+			return m, nil
+		}
+		rp := m.repoPath()
 		if msg.err != nil {
 			m.statusMsg = errorStyle.Render("Repair: " + msg.err.Error())
 		} else if msg.output != "" {
@@ -271,7 +374,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.statusMsg = cleanStyle.Render("Nothing to repair")
 		}
-		return m, tea.Batch(doQuickRefresh(m.repo), doLocalRefresh(m.repo, m.detector))
+		return m, tea.Batch(doQuickRefresh(m.repo, rp), doLocalRefresh(m.repo, m.detector, rp))
 
 	case tea.KeyMsg:
 		updated, cmd := m.handleKey(msg)
@@ -317,7 +420,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.mode = modeNormal
-			return m, doCreateWorktree(m.repo, name)
+			return m, doCreateWorktree(m.repo, name, m.repoPath())
 		case key.Matches(msg, key.NewBinding(key.WithKeys("esc"))):
 			m.mode = modeNormal
 			return m, nil
@@ -339,7 +442,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.mode = modeNormal
 			m.statusMsg = cleanStyle.Render("Fetching PR...")
-			return m, doFetchPR(m.repo, input)
+			return m, doFetchPR(m.repo, input, m.repoPath())
 		case key.Matches(msg, key.NewBinding(key.WithKeys("esc"))):
 			m.mode = modeNormal
 			return m, nil
@@ -358,7 +461,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				wt := m.worktrees[m.cursor]
 				m.mode = modeNormal
 				m.deleteConfirmed = false
-				return m, doRemoveWorktree(m.repo, wt.Branch)
+				return m, doRemoveWorktree(m.repo, wt.Branch, m.repoPath())
 			}
 			m.mode = modeNormal
 			m.deleteConfirmed = false
@@ -436,14 +539,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.Pull):
 		m.statusMsg = cleanStyle.Render("Pulling...")
-		return m, doPull(m.repo)
+		return m, doPull(m.repo, m.repoPath())
 
 	case key.Matches(msg, m.keys.Repair):
 		if m.cursor != 0 {
 			return m, nil // repair only from main worktree
 		}
 		m.statusMsg = cleanStyle.Render("Repairing worktrees...")
-		return m, doRepairWorktrees(m.repo)
+		return m, doRepairWorktrees(m.repo, m.repoPath())
 
 	case key.Matches(msg, m.keys.Mouse):
 		m.mouseOn = !m.mouseOn
@@ -669,6 +772,20 @@ func (m Model) View() string {
 	title := titleStyle.Render("gwaim - Git Worktree Agent Manager")
 	header := m.renderHeader(title)
 
+	return header + "\n" + m.viewContent()
+}
+
+// ViewContent returns the body + help bar without the header.
+// Used by App to render the Model inside the right panel while the
+// header is displayed above both columns.
+func (m Model) ViewContent() string {
+	if len(m.worktrees) == 0 && m.err == nil {
+		return "Loading worktrees...\n"
+	}
+	return m.viewContent()
+}
+
+func (m Model) viewContent() string {
 	mouseLabel := "m mouse:off"
 	if m.mouseOn {
 		mouseLabel = "m mouse:on"
@@ -676,10 +793,16 @@ func (m Model) View() string {
 	help := helpStyle.Render("←→↑↓ navigate • ↵ open tab • e editor • p pull • r repair • c create • f fetch PR • d delete • " + mouseLabel + " • q quit")
 
 	if m.ready {
-		return header + "\n" + m.viewport.View() + "\n" + help
+		return m.viewport.View() + "\n" + help
 	}
 
-	return header + "\n" + m.renderBody() + "\n" + help
+	return m.renderBody() + "\n" + help
+}
+
+// RenderHeader builds the header line with title and last-update timestamps.
+// Public so App can render it above the two-column layout.
+func (m Model) RenderHeader(title string) string {
+	return m.renderHeader(title)
 }
 
 // renderHeader builds the two-line header: title, then last-update timestamps below it.
@@ -742,42 +865,42 @@ func (m Model) cardWidth(cols int) int {
 
 // doQuickRefresh lists worktrees with branch info only — no dirty/sync checks,
 // no fetch, no agent detection, no PR lookup. Used for instant first render.
-func doQuickRefresh(repo *git.Repository) tea.Cmd {
+func doQuickRefresh(repo *git.Repository, repoPath string) tea.Cmd {
 	return func() tea.Msg {
 		wts, err := repo.ListWorktreesQuick()
 		if err != nil {
-			return refreshMsg{err: err}
+			return refreshMsg{repoPath: repoPath, err: err}
 		}
-		return refreshMsg{source: refreshSourceQuick, worktrees: wts, agents: agent.DetectionResult{}, prs: provider.PRResult{}}
+		return refreshMsg{repoPath: repoPath, source: refreshSourceQuick, worktrees: wts, agents: agent.DetectionResult{}, prs: provider.PRResult{}}
 	}
 }
 
 // doLocalRefresh reads dirty status and detects agents — no network I/O.
 // Fires every LocalRefreshInterval and after any state-modifying operation.
-func doLocalRefresh(repo *git.Repository, detector *agent.Detector) tea.Cmd {
+func doLocalRefresh(repo *git.Repository, detector *agent.Detector, repoPath string) tea.Cmd {
 	return func() tea.Msg {
 		wts, err := repo.ListWorktrees()
 		if err != nil {
-			return refreshMsg{err: err}
+			return refreshMsg{repoPath: repoPath, err: err}
 		}
 		paths := make([]string, len(wts))
 		for i, wt := range wts {
 			paths[i] = wt.Path
 		}
 		agents := detector.Detect(paths)
-		return refreshMsg{source: refreshSourceLocal, worktrees: wts, agents: agents}
+		return refreshMsg{repoPath: repoPath, source: refreshSourceLocal, worktrees: wts, agents: agents}
 	}
 }
 
 // doNetworkRefresh fetches remote refs and looks up PR status.
 // Fires every refreshInterval (controlled by --refresh / GWAIM_REFRESH).
-func doNetworkRefresh(repo *git.Repository, detector *agent.Detector, prProv provider.PRProvider, cliAvail provider.CLIAvailability) tea.Cmd {
+func doNetworkRefresh(repo *git.Repository, detector *agent.Detector, prProv provider.PRProvider, cliAvail provider.CLIAvailability, repoPath string) tea.Cmd {
 	return func() tea.Msg {
 		fetchErr := repo.Fetch()
 
 		wts, err := repo.ListWorktrees()
 		if err != nil {
-			return refreshMsg{err: err}
+			return refreshMsg{repoPath: repoPath, err: err}
 		}
 
 		paths := make([]string, len(wts))
@@ -794,53 +917,55 @@ func doNetworkRefresh(repo *git.Repository, detector *agent.Detector, prProv pro
 		} else {
 			prs = make(provider.PRResult)
 		}
-		return refreshMsg{source: refreshSourceNetwork, worktrees: wts, agents: agents, prs: prs, hasPRs: true, fetchErr: fetchErr}
+		return refreshMsg{repoPath: repoPath, source: refreshSourceNetwork, worktrees: wts, agents: agents, prs: prs, hasPRs: true, fetchErr: fetchErr}
 	}
 }
 
-func doCheckCLI(prProv provider.PRProvider) tea.Cmd {
+func doCheckCLI(prProv provider.PRProvider, repoPath string) tea.Cmd {
 	return func() tea.Msg {
-		return cliCheckMsg{avail: prProv.CheckCLI()}
+		return cliCheckMsg{repoPath: repoPath, avail: prProv.CheckCLI()}
 	}
 }
 
 func (m Model) doTick() tea.Cmd {
+	rp := m.repoPath()
 	return tea.Tick(m.refreshInterval, func(_ time.Time) tea.Msg {
-		return tickMsg{}
+		return tickMsg{repoPath: rp}
 	})
 }
 
 func (m Model) doLocalTick() tea.Cmd {
+	rp := m.repoPath()
 	return tea.Tick(LocalRefreshInterval, func(_ time.Time) tea.Msg {
-		return localTickMsg{}
+		return localTickMsg{repoPath: rp}
 	})
 }
 
-func doPull(repo *git.Repository) tea.Cmd {
+func doPull(repo *git.Repository, repoPath string) tea.Cmd {
 	return func() tea.Msg {
 		err := repo.Pull()
-		return pullMsg{err: err}
+		return pullMsg{repoPath: repoPath, err: err}
 	}
 }
 
-func doCreateWorktree(repo *git.Repository, branchName string) tea.Cmd {
+func doCreateWorktree(repo *git.Repository, branchName, repoPath string) tea.Cmd {
 	return func() tea.Msg {
 		err := repo.CreateWorktree(branchName)
-		return worktreeCreatedMsg{branchName: branchName, err: err}
+		return worktreeCreatedMsg{repoPath: repoPath, branchName: branchName, err: err}
 	}
 }
 
-func doFetchPR(repo *git.Repository, input string) tea.Cmd {
+func doFetchPR(repo *git.Repository, input, repoPath string) tea.Cmd {
 	return func() tea.Msg {
 		ref, err := github.ParsePRRef(input)
 		if err != nil {
-			return prFetchedMsg{err: err}
+			return prFetchedMsg{repoPath: repoPath, err: err}
 		}
 
 		// Validate the PR exists via gh CLI.
 		headBranch, err := github.ValidatePR(repo.Root(), ref)
 		if err != nil {
-			return prFetchedMsg{err: err}
+			return prFetchedMsg{repoPath: repoPath, err: err}
 		}
 
 		// Use the PR's head branch name as the local branch.
@@ -853,21 +978,21 @@ func doFetchPR(repo *git.Repository, input string) tea.Cmd {
 		}
 
 		wtPath, err := repo.FetchPR(ref.Number, branchName, remoteURL)
-		return prFetchedMsg{branchName: branchName, wtPath: wtPath, err: err}
+		return prFetchedMsg{repoPath: repoPath, branchName: branchName, wtPath: wtPath, err: err}
 	}
 }
 
-func doRepairWorktrees(repo *git.Repository) tea.Cmd {
+func doRepairWorktrees(repo *git.Repository, repoPath string) tea.Cmd {
 	return func() tea.Msg {
 		output, err := repo.Repair()
-		return worktreeRepairedMsg{output: output, err: err}
+		return worktreeRepairedMsg{repoPath: repoPath, output: output, err: err}
 	}
 }
 
-func doRemoveWorktree(repo *git.Repository, name string) tea.Cmd {
+func doRemoveWorktree(repo *git.Repository, name, repoPath string) tea.Cmd {
 	return func() tea.Msg {
 		err := repo.RemoveWorktree(name)
-		return worktreeRemovedMsg{err: err}
+		return worktreeRemovedMsg{repoPath: repoPath, err: err}
 	}
 }
 

@@ -17,6 +17,7 @@ const (
 
 // refreshMsg carries updated worktree and agent data.
 type refreshMsg struct {
+	repoPath  string // identifies which repo this message belongs to
 	source    refreshSource
 	worktrees []git.Worktree
 	agents    agent.DetectionResult
@@ -28,17 +29,20 @@ type refreshMsg struct {
 
 // worktreeCreatedMsg is sent after a worktree is successfully created.
 type worktreeCreatedMsg struct {
+	repoPath   string
 	branchName string
 	err        error
 }
 
 // worktreeRemovedMsg is sent after a worktree is removed.
 type worktreeRemovedMsg struct {
-	err error
+	repoPath string
+	err      error
 }
 
 // prFetchedMsg is sent after a PR has been fetched into a new worktree.
 type prFetchedMsg struct {
+	repoPath   string
 	branchName string
 	wtPath     string // actual worktree directory (may differ from branchName if sanitized)
 	err        error
@@ -51,7 +55,8 @@ type warpOpenedMsg struct {
 
 // pullMsg is sent after a git pull completes.
 type pullMsg struct {
-	err error
+	repoPath string
+	err      error
 }
 
 // editorOpenedMsg is sent after attempting to open an editor.
@@ -61,23 +66,33 @@ type editorOpenedMsg struct {
 
 // worktreeRepairedMsg is sent after a worktree repair completes.
 type worktreeRepairedMsg struct {
-	output string // per-worktree repair details from git, empty if nothing needed repair
-	err    error
+	repoPath string
+	output   string // per-worktree repair details from git, empty if nothing needed repair
+	err      error
 }
 
 // tickMsg triggers a network refresh (fetch + PRs).
-type tickMsg struct{}
+type tickMsg struct {
+	repoPath string
+}
 
 // localTickMsg triggers a local-only refresh (dirty status + agent detection, no network).
-type localTickMsg struct{}
+type localTickMsg struct {
+	repoPath string
+}
 
 // localFlashDoneMsg clears the local-refresh ✓ indicator after its display window.
-type localFlashDoneMsg struct{}
+type localFlashDoneMsg struct {
+	repoPath string
+}
 
 // netFlashDoneMsg clears the network-refresh ✓ indicator after its display window.
-type netFlashDoneMsg struct{}
+type netFlashDoneMsg struct {
+	repoPath string
+}
 
 // cliCheckMsg carries the result of the CLI pre-flight check.
 type cliCheckMsg struct {
-	avail provider.CLIAvailability
+	repoPath string
+	avail    provider.CLIAvailability
 }
