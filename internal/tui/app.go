@@ -331,8 +331,8 @@ func (a App) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if msg.X < leftWidth {
 		// Click in left panel — focus it and select the repo at this row.
 		a.focus = focusLeft
-		// Repo list starts at: header height + 1 (panel border) + 1 ("Repos" label) + 1 (\n).
-		repoRow := msg.Y - hh - 3
+		// Repo list starts at: header height + 1 (panel border) + 1 ("Repos" label).
+		repoRow := msg.Y - hh - 2
 		if repoRow >= 0 && repoRow < len(a.repos) && repoRow != a.active {
 			return a.switchRepo(repoRow)
 		}
