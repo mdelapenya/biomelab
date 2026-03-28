@@ -790,13 +790,23 @@ func (m Model) viewContent() string {
 	if m.mouseOn {
 		mouseLabel = "m mouse:on"
 	}
-	help := helpStyle.Render("←→↑↓ navigate • ↵ open tab • e editor • p pull • r repair • c create • f fetch PR • d delete • " + mouseLabel + " • q quit")
+	helpText := "←→↑↓ navigate • ↵ open tab • e editor • p pull • r repair • c create • f fetch PR • d delete • " + mouseLabel + " • q quit"
+	help := helpStyle.MaxWidth(m.width).Render(helpText)
 
 	if m.ready {
 		return m.viewport.View() + "\n" + help
 	}
 
 	return m.renderBody() + "\n" + help
+}
+
+// ScrollState returns the viewport's scroll state for external scrollbar rendering.
+// Returns totalLines, visibleLines, yOffset.
+func (m Model) ScrollState() (int, int, int) {
+	if !m.ready {
+		return 0, 0, 0
+	}
+	return m.viewport.TotalLineCount(), m.viewport.Height, m.viewport.YOffset
 }
 
 // RenderHeader builds the header line with title and last-update timestamps.

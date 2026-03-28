@@ -460,7 +460,13 @@ func (a App) View() string {
 	leftContent := a.renderRepoList(leftWidth, contentH)
 	rightContent := a.renderDashboard(rightWidth)
 
-	columns := a.buildPanels(leftContent, rightContent, leftInner, rightInner, contentH)
+	// Get scroll state from active model for the right panel scrollbar.
+	var scrollTotal, scrollVisible, scrollOffset int
+	if a.active >= 0 && a.active < len(a.repos) {
+		scrollTotal, scrollVisible, scrollOffset = a.repos[a.active].model.ScrollState()
+	}
+
+	columns := a.buildPanels(leftContent, rightContent, leftInner, rightInner, contentH, scrollTotal, scrollVisible, scrollOffset)
 
 	// Assemble final output.
 	var b strings.Builder
@@ -618,7 +624,8 @@ func (a App) resizeActiveChild() tea.Cmd {
 // buildPanels renders two side-by-side bordered panels with manual border
 // characters. This avoids lipgloss border height bugs by controlling every
 // row explicitly. Returns exactly contentH + 2 lines (content + top/bottom).
-func (a App) buildPanels(leftContent, rightContent string, leftInner, rightInner, contentH int) string {
+// scrollTotal/scrollVisible/scrollOffset drive the right panel's scrollbar.
+func (a App) buildPanels(leftContent, rightContent string, leftInner, rightInner, contentH, scrollTotal, scrollVisible, scrollOffset int) string {
 	// Split and clamp/pad both contents to exactly contentH lines.
 	leftLines := splitClampPad(leftContent, contentH)
 	rightLines := splitClampPad(rightContent, contentH)
@@ -631,6 +638,20 @@ func (a App) buildPanels(leftContent, rightContent string, leftInner, rightInner
 	}
 	if a.focus == focusRight {
 		rbStyle = rbStyle.Foreground(lipgloss.Color("39"))
+	}
+
+	// Scrollbar geometry for the right panel's right border.
+	scrollable := scrollTotal > scrollVisible
+	thumbHeight, thumbTop := 0, 0
+	if scrollable {
+		thumbHeight = max(1, contentH*scrollVisible/scrollTotal)
+		scrollableLines := scrollTotal - scrollVisible
+		if scrollableLines > 0 {
+			thumbTop = scrollOffset * (contentH - thumbHeight) / scrollableLines
+		}
+		if thumbTop+thumbHeight > contentH {
+			thumbTop = contentH - thumbHeight
+		}
 	}
 
 	// Width-forcing style for content cells (pad short, truncate long).
@@ -648,9 +669,20 @@ func (a App) buildPanels(leftContent, rightContent string, leftInner, rightInner
 	for i := range contentH {
 		lc := leftCellStyle.Render(leftLines[i])
 		rc := rightCellStyle.Render(rightLines[i])
+
+		// Right panel right border: show scrollbar thumb or track.
+		rightBorder := rbStyle.Render("│")
+		if scrollable {
+			if i >= thumbTop && i < thumbTop+thumbHeight {
+				rightBorder = scrollThumbStyle.Render("┃")
+			} else {
+				rightBorder = scrollTrackStyle.Render("│")
+			}
+		}
+
 		rows = append(rows,
 			lbStyle.Render("│")+" "+lc+" "+lbStyle.Render("│")+
-				rbStyle.Render("│")+" "+rc+" "+rbStyle.Render("│"))
+				rbStyle.Render("│")+" "+rc+" "+rightBorder)
 	}
 
 	// Bottom border.

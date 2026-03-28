@@ -48,4 +48,7 @@ var (
 	unselectedRepoStyle = lipgloss.NewStyle().Faint(true)
 
 	repoPanelHelpStyle = lipgloss.NewStyle().Faint(true)
+
+	scrollTrackStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	scrollThumbStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
 )

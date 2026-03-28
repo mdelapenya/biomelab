@@ -500,6 +500,14 @@ func TestColumns(t *testing.T) {
 	}
 }
 
+func TestScrollState_NotReady(t *testing.T) {
+	m := testModel(3)
+	total, visible, offset := m.ScrollState()
+	if total != 0 || visible != 0 || offset != 0 {
+		t.Errorf("ScrollState() on unready model = (%d, %d, %d), want (0, 0, 0)", total, visible, offset)
+	}
+}
+
 func TestNew_DefaultRefreshInterval(t *testing.T) {
 	m := New(nil, nil, 0)
 	if m.refreshInterval != DefaultNetworkRefreshInterval {
