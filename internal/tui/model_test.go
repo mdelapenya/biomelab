@@ -536,40 +536,40 @@ func TestKeyMap(t *testing.T) {
 	}
 }
 
-func TestRenderBody_CLINotFoundShowsIndicator(t *testing.T) {
+func TestRenderFixedTop_CLINotFoundShowsIndicator(t *testing.T) {
 	m := testModel(2)
 	m.width = 120
 	m.height = 40
 	m.cliAvail = provider.CLINotFound
 
-	body := m.renderBody()
+	body := m.renderFixedTop()
 
 	if !strings.Contains(body, "gh not installed") {
 		t.Error("expected 'gh not installed' indicator in card body when gh CLI is not found")
 	}
 }
 
-func TestRenderBody_CLINotAuthenticatedShowsIndicator(t *testing.T) {
+func TestRenderFixedTop_CLINotAuthenticatedShowsIndicator(t *testing.T) {
 	m := testModel(2)
 	m.width = 120
 	m.height = 40
 	m.cliAvail = provider.CLINotAuthenticated
 
-	body := m.renderBody()
+	body := m.renderFixedTop()
 
 	if !strings.Contains(body, "gh not authenticated") {
 		t.Error("expected 'gh not authenticated' indicator in card body")
 	}
 }
 
-func TestRenderBody_UnsupportedProviderShowsMessage(t *testing.T) {
+func TestRenderFixedTop_UnsupportedProviderShowsMessage(t *testing.T) {
 	m := testModel(2)
 	m.width = 120
 	m.height = 40
 	m.cliAvail = provider.CLIUnsupportedProvider
 	m.prProv = provider.NewUnsupportedProvider(provider.ProviderUnknown)
 
-	body := m.renderBody()
+	body := m.renderFixedTop()
 
 	if !strings.Contains(body, "not yet supported") {
 		t.Error("expected 'not yet supported' in card body, got: " + body)

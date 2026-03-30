@@ -430,14 +430,8 @@ func (a App) View() string {
 		return a.renderEmptyState()
 	}
 
-	// --- Top header: title + timestamps ---
-	title := appTitleStyle.Render("gwaim - Git Worktree Agent Manager")
-	var header string
-	if a.active < len(a.repos) {
-		header = a.repos[a.active].model.RenderHeader(title)
-	} else {
-		header = title
-	}
+	// --- Top header: title only (timestamps are inside the right panel) ---
+	header := appTitleStyle.Render("gwaim - Git Worktree Agent Manager")
 
 	// --- Two-column layout with manual borders ---
 	leftWidth := a.leftPanelWidth()
@@ -573,11 +567,7 @@ func (a App) switchRepo(newIdx int) (App, tea.Cmd) {
 
 // headerHeight returns the number of visible rows the header occupies.
 func (a App) headerHeight() int {
-	title := appTitleStyle.Render("gwaim - Git Worktree Agent Manager")
-	if len(a.repos) > 0 && a.active < len(a.repos) {
-		return lipgloss.Height(a.repos[a.active].model.RenderHeader(title))
-	}
-	return lipgloss.Height(title)
+	return lipgloss.Height(appTitleStyle.Render("gwaim - Git Worktree Agent Manager"))
 }
 
 // leftPanelWidth returns the width of the repo list panel (15%, min 20).
