@@ -19,7 +19,7 @@
 - **Repair worktrees** -- Press `r` from the main card to run `git worktree repair`, which fixes broken links between the main worktree and linked worktrees (e.g., after a worktree directory was moved manually). The status bar shows which worktrees were repaired, or "Nothing to repair" if all links are healthy.
 - **Open in terminal** -- Press `Enter` to open the selected worktree in a new terminal tab. If an agent is running in the worktree, the agent command is executed automatically. The first `Enter` creates a tab named after the repo (e.g., `docker/sandboxes`); subsequent presses add split panels to that same tab.
 - **Mouse support** -- Press `m` to toggle mouse mode. When enabled, click on cards to select them. When disabled (default), normal text selection works for copying paths, branch names, etc.
-- **Scrollable viewport** -- When the terminal is too small to show all cards (e.g., after splitting panels), scroll with the mouse wheel or page up/down.
+- **Scrollable viewport** -- The main worktree card stays pinned at the top; linked worktree cards scroll independently below it. A scrollbar on the right panel border shows the current scroll position. Scroll with the mouse wheel, page up/down, or arrow keys (which auto-scroll to keep the selected card visible).
 
 ## Requirements
 
@@ -292,7 +292,7 @@ gwaim is structured into the following internal packages:
 - **`internal/github`** -- GitHub-specific PR helpers: `ParsePRRef` (parses `"123"` or `"owner/repo#123"`) and `ValidatePR` (confirms a PR exists via `gh` and returns its head branch) for the fetch-PR flow.
 - **`internal/tui`** -- Two-layer Bubbletea TUI:
   - **`App`** (`app.go`): Top-level model managing multiple repos. Renders a two-column layout with manually-drawn borders (`buildPanels()`). Left panel shows the repo list, right panel shows the active repo's worktree dashboard. Handles focus switching (`Tab`/`Shift+Tab`/mouse click), repo add/remove, and routes async messages to the correct child by `repoPath`.
-  - **`Model`** (`model.go`): Per-repo worktree dashboard. Manages the viewport, card grid layout, hierarchical navigation, input modes (normal, create, fetch-PR, confirm-delete), mouse toggle, periodic refresh, and zone-based click detection. When embedded inside `App`, skips its own header rendering (the App renders it above both panels).
+  - **`Model`** (`model.go`): Per-repo worktree dashboard. The main card is pinned at the top (`renderFixedTop`); linked worktree cards scroll in a viewport (`renderLinkedCards`). Manages card grid layout, hierarchical navigation, input modes (normal, create, fetch-PR, confirm-delete), mouse toggle, periodic refresh, and two-zone click detection. When embedded inside `App`, skips its own header rendering (the App renders it above both panels).
 - **`internal/tui/card`** -- Pure render function that produces card content for a single worktree. Displays branch, path, PR status, agent info, dirty status, and sync status using lipgloss styles.
 - **`internal/warp`** -- Terminal tab/panel management. Creates named repo tabs and split panels. Supports Warp, iTerm, Terminal.app on macOS; gnome-terminal, konsole, xfce4-terminal on Linux.
 
@@ -301,9 +301,9 @@ gwaim is structured into the following internal packages:
 1. On startup, `App.Init()` loads the repo config and opens each repository. The current directory's repo is auto-added by `main.go` before launch.
 2. Each repo's `Model.Init()` starts its own refresh cycles: quick refresh (branch names), local refresh (dirty + agents every 5s), and network refresh (fetch + PRs at configurable interval).
 3. All async messages carry a `repoPath` field. `App.Update` routes each message to the matching child `Model` by path. Messages for removed repos are silently discarded.
-4. `Model.renderBody` produces the scrollable worktree card content and records card bounding zones for click detection.
-5. `Model.syncViewport` pushes the rendered content into the viewport (preserving scroll position).
-6. `App.View` composes: header (title + timestamps from active repo) + two bordered panels (repo list + dashboard) using manually-rendered border characters for pixel-perfect height matching.
+4. `Model.renderFixedTop` produces the pinned main card section; `Model.renderLinkedCards` produces the scrollable worktree card grid. Both record card bounding zones for click detection.
+5. `Model.syncViewport` caches the fixed-top content and pushes linked cards into the viewport, dynamically sizing the viewport height.
+6. `App.View` composes: header (title only, 1 row) + two bordered panels (repo list + dashboard) using manually-rendered border characters for pixel-perfect height matching. Refresh timestamps are rendered inside the right panel by the embedded Model's `renderFixedTop`, not in the App header.
 
 ## Testing
 

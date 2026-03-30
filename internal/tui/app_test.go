@@ -32,6 +32,7 @@ func testApp(n int) App {
 		name := string(rune('a' + i))
 		path := "/tmp/repo-" + name
 		m := testModel(2)
+		m.embedded = true
 		m.worktrees[0].Path = path
 		app.repos = append(app.repos, &repoTab{
 			path:  path,
@@ -574,9 +575,9 @@ func TestAppMouseClickLeftPanel(t *testing.T) {
 	a := testApp(3)
 	a.focus = focusRight
 
-	// Repo rows start at Y = headerLines(2) + panel border(1) + section header(1) + blank(1) = 5.
-	// First repo = Y=5, second = Y=6, etc.
-	msg := tea.MouseMsg{X: 5, Y: 5, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
+	// Repo rows start at Y = headerLines(1) + panel border(1) + section header(1) = 3.
+	// First repo = Y=3, second = Y=4, etc.
+	msg := tea.MouseMsg{X: 5, Y: 3, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
 	updated, _ := a.Update(msg)
 	app := updated.(App)
 
@@ -593,8 +594,8 @@ func TestAppMouseClickLeftPanel_SelectsRepo(t *testing.T) {
 	a.focus = focusRight
 	a.active = 0
 
-	// Second repo row = Y=6.
-	msg := tea.MouseMsg{X: 5, Y: 6, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
+	// Second repo row = Y=4.
+	msg := tea.MouseMsg{X: 5, Y: 4, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
 	updated, _ := a.Update(msg)
 	app := updated.(App)
 
@@ -636,12 +637,13 @@ func TestAppViewFitsTerminalHeight(t *testing.T) {
 			len(lines), app.height)
 	}
 
-	// Header must be present on first line.
+	// Title must be present on first line.
 	if !strings.Contains(lines[0], "gwaim") {
 		t.Errorf("expected title on line 0, got %q", lines[0])
 	}
-	if len(lines) > 1 && !strings.Contains(lines[1], "Last Update") {
-		t.Errorf("expected timestamps on line 1, got %q", lines[1])
+	// Timestamps are now inside the right panel (line 1 is the top border).
+	if len(lines) > 2 && !strings.Contains(lines[2], "Last Update") {
+		t.Errorf("expected timestamps inside right panel (line 2), got %q", lines[2])
 	}
 }
 
@@ -735,5 +737,36 @@ func TestAppXKeyNoRepos(t *testing.T) {
 	// Should stay in normal mode — nothing to remove.
 	if app.mode != appModeNormal {
 		t.Errorf("mode = %d, want appModeNormal", app.mode)
+	}
+}
+
+func TestBuildPanels_ScrollbarRendered(t *testing.T) {
+	a := testApp(1)
+	a.focus = focusRight
+
+	// No scrollbar when content fits (scrollTotal <= scrollVisible).
+	out := a.buildPanels("left", "right", 10, 20, 5, 10, 10, 0)
+	lines := strings.Split(out, "\n")
+	// Content rows should use normal right border (no thumb character).
+	for i := 1; i <= 5; i++ {
+		if strings.Contains(lines[i], "┃") {
+			t.Errorf("line %d has scrollbar thumb when content fits: %q", i, lines[i])
+		}
+	}
+
+	// With scrollbar: total > visible.
+	out = a.buildPanels("left", "right", 10, 20, 10, 40, 10, 0)
+	lines = strings.Split(out, "\n")
+	thumbCount := 0
+	for i := 1; i <= 10; i++ {
+		if strings.Contains(lines[i], "┃") {
+			thumbCount++
+		}
+	}
+	if thumbCount == 0 {
+		t.Error("expected scrollbar thumb in output, got none")
+	}
+	if thumbCount >= 10 {
+		t.Errorf("thumb should be smaller than track, got %d/%d", thumbCount, 10)
 	}
 }

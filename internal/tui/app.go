@@ -331,8 +331,8 @@ func (a App) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if msg.X < leftWidth {
 		// Click in left panel — focus it and select the repo at this row.
 		a.focus = focusLeft
-		// Repo list starts at: header height + 1 (panel border) + 1 ("Repos" label) + 1 (\n).
-		repoRow := msg.Y - hh - 3
+		// Repo list starts at: header height + 1 (panel border) + 1 ("Repos" label).
+		repoRow := msg.Y - hh - 2
 		if repoRow >= 0 && repoRow < len(a.repos) && repoRow != a.active {
 			return a.switchRepo(repoRow)
 		}
@@ -430,14 +430,8 @@ func (a App) View() string {
 		return a.renderEmptyState()
 	}
 
-	// --- Top header: title + timestamps ---
-	title := appTitleStyle.Render("gwaim - Git Worktree Agent Manager")
-	var header string
-	if a.active < len(a.repos) {
-		header = a.repos[a.active].model.RenderHeader(title)
-	} else {
-		header = title
-	}
+	// --- Top header: title only (timestamps are inside the right panel) ---
+	header := appTitleStyle.Render("gwaim - Git Worktree Agent Manager")
 
 	// --- Two-column layout with manual borders ---
 	leftWidth := a.leftPanelWidth()
@@ -460,7 +454,13 @@ func (a App) View() string {
 	leftContent := a.renderRepoList(leftWidth, contentH)
 	rightContent := a.renderDashboard(rightWidth)
 
-	columns := a.buildPanels(leftContent, rightContent, leftInner, rightInner, contentH)
+	// Get scroll state from active model for the right panel scrollbar.
+	var scrollTotal, scrollVisible, scrollOffset int
+	if a.active >= 0 && a.active < len(a.repos) {
+		scrollTotal, scrollVisible, scrollOffset = a.repos[a.active].model.ScrollState()
+	}
+
+	columns := a.buildPanels(leftContent, rightContent, leftInner, rightInner, contentH, scrollTotal, scrollVisible, scrollOffset)
 
 	// Assemble final output.
 	var b strings.Builder
@@ -567,11 +567,7 @@ func (a App) switchRepo(newIdx int) (App, tea.Cmd) {
 
 // headerHeight returns the number of visible rows the header occupies.
 func (a App) headerHeight() int {
-	title := appTitleStyle.Render("gwaim - Git Worktree Agent Manager")
-	if len(a.repos) > 0 && a.active < len(a.repos) {
-		return lipgloss.Height(a.repos[a.active].model.RenderHeader(title))
-	}
-	return lipgloss.Height(title)
+	return lipgloss.Height(appTitleStyle.Render("gwaim - Git Worktree Agent Manager"))
 }
 
 // leftPanelWidth returns the width of the repo list panel (15%, min 20).
@@ -618,7 +614,8 @@ func (a App) resizeActiveChild() tea.Cmd {
 // buildPanels renders two side-by-side bordered panels with manual border
 // characters. This avoids lipgloss border height bugs by controlling every
 // row explicitly. Returns exactly contentH + 2 lines (content + top/bottom).
-func (a App) buildPanels(leftContent, rightContent string, leftInner, rightInner, contentH int) string {
+// scrollTotal/scrollVisible/scrollOffset drive the right panel's scrollbar.
+func (a App) buildPanels(leftContent, rightContent string, leftInner, rightInner, contentH, scrollTotal, scrollVisible, scrollOffset int) string {
 	// Split and clamp/pad both contents to exactly contentH lines.
 	leftLines := splitClampPad(leftContent, contentH)
 	rightLines := splitClampPad(rightContent, contentH)
@@ -631,6 +628,20 @@ func (a App) buildPanels(leftContent, rightContent string, leftInner, rightInner
 	}
 	if a.focus == focusRight {
 		rbStyle = rbStyle.Foreground(lipgloss.Color("39"))
+	}
+
+	// Scrollbar geometry for the right panel's right border.
+	scrollable := scrollTotal > scrollVisible
+	thumbHeight, thumbTop := 0, 0
+	if scrollable {
+		thumbHeight = max(1, contentH*scrollVisible/scrollTotal)
+		scrollableLines := scrollTotal - scrollVisible
+		if scrollableLines > 0 {
+			thumbTop = scrollOffset * (contentH - thumbHeight) / scrollableLines
+		}
+		if thumbTop+thumbHeight > contentH {
+			thumbTop = contentH - thumbHeight
+		}
 	}
 
 	// Width-forcing style for content cells (pad short, truncate long).
@@ -648,9 +659,20 @@ func (a App) buildPanels(leftContent, rightContent string, leftInner, rightInner
 	for i := range contentH {
 		lc := leftCellStyle.Render(leftLines[i])
 		rc := rightCellStyle.Render(rightLines[i])
+
+		// Right panel right border: show scrollbar thumb or track.
+		rightBorder := rbStyle.Render("│")
+		if scrollable {
+			if i >= thumbTop && i < thumbTop+thumbHeight {
+				rightBorder = scrollThumbStyle.Render("┃")
+			} else {
+				rightBorder = scrollTrackStyle.Render("│")
+			}
+		}
+
 		rows = append(rows,
 			lbStyle.Render("│")+" "+lc+" "+lbStyle.Render("│")+
-				rbStyle.Render("│")+" "+rc+" "+rbStyle.Render("│"))
+				rbStyle.Render("│")+" "+rc+" "+rightBorder)
 	}
 
 	// Bottom border.

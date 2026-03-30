@@ -74,6 +74,8 @@ type Model struct {
 	lastNetworkRefresh time.Time // time of last completed network refresh
 	embedded          bool      // true when used inside App (no header in viewport calc)
 	paused            bool      // true when repo is not the active tab; ticks stop self-scheduling
+	fixedTopHeight  int    // lines occupied by the fixed top section (main card + input)
+	fixedTopContent string // cached render of fixed top (set in syncViewport, read in viewContent)
 }
 
 type zone struct {
@@ -189,21 +191,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		headerHeight := 3 // title + last-update line + margin
-		if m.embedded {
-			headerHeight = 0 // App renders the header above both columns
-		}
-		footerHeight := 3 // \n separator + helpStyle MarginTop(1) + help text
-		vpHeight := m.height - headerHeight - footerHeight
-		if vpHeight < 1 {
-			vpHeight = 1
-		}
 		if !m.ready {
-			m.viewport = viewport.New(m.width, vpHeight)
+			m.viewport = viewport.New(m.width, 1) // provisional; syncViewport adjusts height
 			m.ready = true
 		} else {
 			m.viewport.Width = m.width
-			m.viewport.Height = vpHeight
 		}
 		m.syncViewport()
 		return m, nil
@@ -500,12 +492,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cursor--
 		}
 		m.statusMsg = ""
+		m.ensureCursorVisible()
 
 	case key.Matches(msg, m.keys.Right):
 		if m.cursor >= 1 && m.cursor < len(m.worktrees)-1 {
 			m.cursor++
 		}
 		m.statusMsg = ""
+		m.ensureCursorVisible()
 
 	case key.Matches(msg, m.keys.Up):
 		if m.cursor == 0 {
@@ -522,6 +516,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.statusMsg = ""
+		m.ensureCursorVisible()
 
 	case key.Matches(msg, m.keys.Down):
 		if m.cursor == 0 {
@@ -536,6 +531,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.statusMsg = ""
+		m.ensureCursorVisible()
 
 	case key.Matches(msg, m.keys.Pull):
 		m.statusMsg = cleanStyle.Render("Pulling...")
@@ -615,30 +611,44 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // syncViewport updates the viewport content from the current model state.
+// It renders both fixed-top and linked-cards sections, caching the fixed-top
+// output and feeding only linked cards into the viewport.
 func (m *Model) syncViewport() {
 	if !m.ready {
 		return
 	}
-	m.viewport.SetContent(m.renderBody())
+	m.cardZones = nil
+	m.fixedTopContent = m.renderFixedTop()
+	m.viewport.SetContent(m.renderLinkedCards())
+
+	// Dynamically size viewport: total height minus fixed top minus footer.
+	footerH := 3 // \n + helpStyle MarginTop(1) + help text
+	vpH := m.height - m.fixedTopHeight - footerH
+	if vpH < 1 {
+		vpH = 1
+	}
+	m.viewport.Height = vpH
 }
 
-// renderBody produces the scrollable body content and updates cardZones for click detection.
-func (m *Model) renderBody() string {
+// renderFixedTop renders the non-scrolling top section: error, main worktree
+// card, and create/fetchPR text input. Sets m.fixedTopHeight as a side effect.
+// Records the main card zone in m.cardZones with y relative to 0.
+func (m *Model) renderFixedTop() string {
 	var body strings.Builder
-	m.cardZones = nil
 	currentY := 0
+
+	// Refresh timestamps (shown inside the right panel when embedded).
+	if m.embedded {
+		ts := m.renderTimestamps()
+		body.WriteString(ts + "\n")
+		currentY += strings.Count(ts, "\n") + 1
+	}
 
 	if m.err != nil {
 		line := errorStyle.Render("Error: "+m.err.Error()) + "\n"
 		body.WriteString(line)
 		currentY += strings.Count(line, "\n")
 	}
-
-	cols := m.columns()
-	if cols < 1 {
-		cols = 1
-	}
-	cardWidth := m.cardWidth(cols)
 
 	prov := m.providerType()
 
@@ -678,6 +688,24 @@ func (m *Model) renderBody() string {
 			currentY += 2
 		}
 	}
+
+	m.fixedTopHeight = currentY
+	return body.String()
+}
+
+// renderLinkedCards renders the scrollable linked worktree card grid.
+// This content is placed inside the viewport. Zone y-coordinates are
+// relative to 0 (viewport-local).
+func (m *Model) renderLinkedCards() string {
+	var body strings.Builder
+	currentY := 0
+
+	cols := m.columns()
+	if cols < 1 {
+		cols = 1
+	}
+	cardWidth := m.cardWidth(cols)
+	prov := m.providerType()
 
 	var linked []git.Worktree
 	if len(m.worktrees) > 1 {
@@ -742,18 +770,41 @@ func (m Model) handleClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	x, y := msg.X, msg.Y
 
-	// Convert screen coordinates to body content coordinates.
+	// When embedded, App already adjusts Y to be panel-content-relative.
+	// When standalone, subtract the 2-line header.
 	headerLines := 2
-	scrollOffset := 0
-	if m.ready {
-		scrollOffset = m.viewport.YOffset
+	if m.embedded {
+		headerLines = 0
 	}
-	contentY := y - headerLines + scrollOffset
-	contentX := x
+	screenContentY := y - headerLines
 
-	// Hit test against recorded zones.
+	// Zone 1: Fixed top area (main card, text input).
+	if screenContentY < m.fixedTopHeight {
+		for _, z := range m.cardZones {
+			if z.idx != 0 {
+				continue
+			}
+			if x >= z.x && x < z.x+z.w &&
+				screenContentY >= z.y && screenContentY < z.y+z.h {
+				m.cursor = 0
+				m.statusMsg = ""
+				return m, nil
+			}
+		}
+		return m, nil
+	}
+
+	// Zone 2: Scrollable linked cards (viewport).
+	viewportScreenY := screenContentY - m.fixedTopHeight
+	contentY := viewportScreenY
+	if m.ready {
+		contentY += m.viewport.YOffset
+	}
 	for _, z := range m.cardZones {
-		if contentX >= z.x && contentX < z.x+z.w &&
+		if z.idx == 0 {
+			continue
+		}
+		if x >= z.x && x < z.x+z.w &&
 			contentY >= z.y && contentY < z.y+z.h {
 			m.cursor = z.idx
 			m.statusMsg = ""
@@ -762,6 +813,23 @@ func (m Model) handleClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// ensureCursorVisible scrolls the viewport so the selected linked card is visible.
+func (m *Model) ensureCursorVisible() {
+	if m.cursor == 0 || !m.ready {
+		return
+	}
+	for _, z := range m.cardZones {
+		if z.idx == m.cursor {
+			if z.y < m.viewport.YOffset {
+				m.viewport.SetYOffset(z.y)
+			} else if z.y+z.h > m.viewport.YOffset+m.viewport.Height {
+				m.viewport.SetYOffset(z.y + z.h - m.viewport.Height)
+			}
+			break
+		}
+	}
 }
 
 func (m Model) View() string {
@@ -790,13 +858,23 @@ func (m Model) viewContent() string {
 	if m.mouseOn {
 		mouseLabel = "m mouse:on"
 	}
-	help := helpStyle.Render("←→↑↓ navigate • ↵ open tab • e editor • p pull • r repair • c create • f fetch PR • d delete • " + mouseLabel + " • q quit")
+	helpText := "←→↑↓ navigate • ↵ open tab • e editor • p pull • r repair • c create • f fetch PR • d delete • " + mouseLabel + " • q quit"
+	help := helpStyle.MaxWidth(m.width).Render(helpText)
 
 	if m.ready {
-		return m.viewport.View() + "\n" + help
+		return m.fixedTopContent + m.viewport.View() + "\n" + help
 	}
 
-	return m.renderBody() + "\n" + help
+	return m.fixedTopContent + m.renderLinkedCards() + "\n" + help
+}
+
+// ScrollState returns the viewport's scroll state for external scrollbar rendering.
+// Returns totalLines, visibleLines, yOffset.
+func (m Model) ScrollState() (int, int, int) {
+	if !m.ready {
+		return 0, 0, 0
+	}
+	return m.viewport.TotalLineCount(), m.viewport.Height, m.viewport.YOffset
 }
 
 // RenderHeader builds the header line with title and last-update timestamps.
@@ -805,8 +883,8 @@ func (m Model) RenderHeader(title string) string {
 	return m.renderHeader(title)
 }
 
-// renderHeader builds the two-line header: title, then last-update timestamps below it.
-func (m Model) renderHeader(title string) string {
+// renderTimestamps returns the last-update timestamp line.
+func (m Model) renderTimestamps() string {
 	localTime := "—"
 	if !m.lastLocalRefresh.IsZero() {
 		localTime = m.lastLocalRefresh.Format("15:04:05")
@@ -821,11 +899,15 @@ func (m Model) renderHeader(title string) string {
 	if m.netFlash {
 		netTime = "✓"
 	}
-	status := refreshTimestampStyle.Render(
+	return refreshTimestampStyle.Render(
 		fmt.Sprintf("Last Update: local: %s (%s)   net: %s (%s)",
 			localTime, LocalRefreshInterval, netTime, m.refreshInterval),
 	)
-	return title + "\n" + status
+}
+
+// renderHeader builds the two-line header: title, then last-update timestamps below it.
+func (m Model) renderHeader(title string) string {
+	return title + "\n" + m.renderTimestamps()
 }
 
 // providerType returns the provider type from the PRProvider.
