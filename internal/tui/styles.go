@@ -47,6 +47,13 @@ var (
 
 	unselectedRepoStyle = lipgloss.NewStyle().Faint(true)
 
+	repoCardStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			Padding(0, 1)
+
+	selectedRepoCardStyle = repoCardStyle.
+				BorderForeground(lipgloss.Color("39")) // cyan
+
 	repoPanelHelpStyle = lipgloss.NewStyle().Faint(true)
 
 	scrollTrackStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
