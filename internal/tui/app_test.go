@@ -594,8 +594,8 @@ func TestAppMouseClickLeftPanel_SelectsRepo(t *testing.T) {
 	a.focus = focusRight
 	a.active = 0
 
-	// Second repo row = Y=4.
-	msg := tea.MouseMsg{X: 5, Y: 4, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
+	// Second repo card starts at Y=6 (header=1 + border=1 + "Repos"=1 + card0=3).
+	msg := tea.MouseMsg{X: 5, Y: 6, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
 	updated, _ := a.Update(msg)
 	app := updated.(App)
 
@@ -744,8 +744,10 @@ func TestBuildPanels_ScrollbarRendered(t *testing.T) {
 	a := testApp(1)
 	a.focus = focusRight
 
+	noScroll := panelScroll{total: 10, visible: 10, offset: 0}
+
 	// No scrollbar when content fits (scrollTotal <= scrollVisible).
-	out := a.buildPanels("left", "right", 10, 20, 5, 10, 10, 0)
+	out := a.buildPanels("left", "right", 10, 20, 5, noScroll, noScroll)
 	lines := strings.Split(out, "\n")
 	// Content rows should use normal right border (no thumb character).
 	for i := 1; i <= 5; i++ {
@@ -755,7 +757,8 @@ func TestBuildPanels_ScrollbarRendered(t *testing.T) {
 	}
 
 	// With scrollbar: total > visible.
-	out = a.buildPanels("left", "right", 10, 20, 10, 40, 10, 0)
+	hasScroll := panelScroll{total: 40, visible: 10, offset: 0}
+	out = a.buildPanels("left", "right", 10, 20, 10, noScroll, hasScroll)
 	lines = strings.Split(out, "\n")
 	thumbCount := 0
 	for i := 1; i <= 10; i++ {

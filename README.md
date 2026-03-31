@@ -4,7 +4,7 @@
 
 ## Features
 
-- **Multi-repo dashboard** -- Register multiple repositories and switch between them in a two-column layout. The left panel (15%) shows registered repos, the right panel (85%) shows the selected repo's worktree dashboard. Press `Tab` to switch focus between panels.
+- **Multi-repo dashboard** -- Register multiple repositories and switch between them in a two-column layout. The left panel (15%) shows registered repos as clickable cards with a scrollbar when the list overflows, the right panel (85%) shows the selected repo's worktree dashboard. Press `Tab` to switch focus between panels.
 - **Persistent config** -- Registered repos are saved to `~/.config/gwaim/repos.json` and restored on next launch. Starting gwaim inside a git repo auto-adds it.
 - **Start from anywhere** -- gwaim can launch from any directory, not just inside a git repo. If no repos are registered, an empty state guides you to add one.
 - **Hierarchical layout** -- The main worktree sits at the top (double-bordered card), with linked worktrees displayed in a responsive grid below.

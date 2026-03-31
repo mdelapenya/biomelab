@@ -37,19 +37,25 @@ type repoTab struct {
 	model Model  // per-repo worktree dashboard
 }
 
+// panelScroll holds scroll state for a bordered panel's scrollbar.
+type panelScroll struct {
+	total, visible, offset int
+}
+
 // App is the top-level bubbletea model that manages multiple repositories.
 type App struct {
-	repos           []*repoTab
-	active          int        // selected repo index
-	focus           focusPanel // which panel has focus
-	detector        *agent.Detector
-	configPath      string
-	width           int
-	height          int
-	mode            appMode
-	textInput       textinput.Model
-	statusMsg       string
-	refreshInterval time.Duration
+	repos            []*repoTab
+	active           int        // selected repo index
+	focus            focusPanel // which panel has focus
+	detector         *agent.Detector
+	configPath       string
+	width            int
+	height           int
+	mode             appMode
+	textInput        textinput.Model
+	statusMsg        string
+	refreshInterval  time.Duration
+	repoScrollOffset int // first visible repo card index
 }
 
 // addRepoMsg is returned after validating and opening a new repo.
@@ -311,6 +317,18 @@ func (a App) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (a App) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	// Handle scroll wheel in left panel.
+	if (msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown) &&
+		msg.X < a.leftPanelWidth() {
+		if msg.Button == tea.MouseButtonWheelUp {
+			a.repoScrollOffset--
+		} else {
+			a.repoScrollOffset++
+		}
+		a = a.clampRepoScroll()
+		return a, nil
+	}
+
 	if msg.Button != tea.MouseButtonLeft || msg.Action != tea.MouseActionPress {
 		// Forward non-click mouse events (scroll, motion) to active child.
 		if len(a.repos) > 0 && a.active < len(a.repos) {
@@ -331,10 +349,14 @@ func (a App) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if msg.X < leftWidth {
 		// Click in left panel — focus it and select the repo at this row.
 		a.focus = focusLeft
-		// Repo list starts at: header height + 1 (panel border) + 1 ("Repos" label).
-		repoRow := msg.Y - hh - 2
-		if repoRow >= 0 && repoRow < len(a.repos) && repoRow != a.active {
-			return a.switchRepo(repoRow)
+		// Repo cards start at: header height + 1 (panel border) + 1 ("Repos" label).
+		// Each card is repoCardHeight lines tall. Add scroll offset.
+		contentY := msg.Y - hh - 2
+		if contentY >= 0 {
+			cardIdx := contentY/repoCardHeight + a.repoScrollOffset
+			if cardIdx >= 0 && cardIdx < len(a.repos) && cardIdx != a.active {
+				return a.switchRepo(cardIdx)
+			}
 		}
 		return a, nil
 	}
@@ -454,13 +476,15 @@ func (a App) View() string {
 	leftContent := a.renderRepoList(leftWidth, contentH)
 	rightContent := a.renderDashboard(rightWidth)
 
-	// Get scroll state from active model for the right panel scrollbar.
-	var scrollTotal, scrollVisible, scrollOffset int
+	// Scroll state for both panels.
+	leftScroll := a.repoScrollState()
+	var rightScroll panelScroll
 	if a.active >= 0 && a.active < len(a.repos) {
-		scrollTotal, scrollVisible, scrollOffset = a.repos[a.active].model.ScrollState()
+		t, v, o := a.repos[a.active].model.ScrollState()
+		rightScroll = panelScroll{total: t, visible: v, offset: o}
 	}
 
-	columns := a.buildPanels(leftContent, rightContent, leftInner, rightInner, contentH, scrollTotal, scrollVisible, scrollOffset)
+	columns := a.buildPanels(leftContent, rightContent, leftInner, rightInner, contentH, leftScroll, rightScroll)
 
 	// Assemble final output.
 	var b strings.Builder
@@ -494,17 +518,41 @@ func (a App) renderEmptyState() string {
 	return title + body + "\n" + help
 }
 
-func (a App) renderRepoList(width, panelHeight int) string {
-	// Top section: header + repo entries.
-	var top strings.Builder
-	top.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("245")).Render("Repos"))
+// repoCardHeight is the number of lines each repo card occupies
+// (top border + content + bottom border).
+const repoCardHeight = 3
 
-	maxNameWidth := width - 6 // account for marker, padding, borders
+func (a App) renderRepoList(width, panelHeight int) string {
+	innerWidth := width - 4 // panel border + padding
+	if innerWidth < 10 {
+		innerWidth = 10
+	}
+
+	// Card content width: innerWidth minus card border(2) and card padding(2).
+	cardContentWidth := innerWidth - 4
+	// Name max: card content minus marker(2).
+	maxNameWidth := cardContentWidth - 2
 	if maxNameWidth < 5 {
 		maxNameWidth = 5
 	}
 
-	for i, rt := range a.repos {
+	// Calculate visible range based on scroll offset.
+	visibleCards := (panelHeight - 2) / repoCardHeight // -2 for header + help
+	if visibleCards < 1 {
+		visibleCards = 1
+	}
+	start := a.repoScrollOffset
+	end := start + visibleCards
+	if end > len(a.repos) {
+		end = len(a.repos)
+	}
+
+	// Top section: header + visible repo cards.
+	var parts []string
+	parts = append(parts, lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("245")).Render("Repos"))
+
+	for i := start; i < end; i++ {
+		rt := a.repos[i]
 		marker := "  "
 		if i == a.active {
 			marker = "▸ "
@@ -515,21 +563,25 @@ func (a App) renderRepoList(width, panelHeight int) string {
 			name = name[:maxNameWidth-1] + "…"
 		}
 
-		style := unselectedRepoStyle
+		nameStyle := unselectedRepoStyle
+		cs := repoCardStyle.Width(cardContentWidth)
 		if i == a.active {
-			style = selectedRepoStyle
+			nameStyle = selectedRepoStyle
+			cs = selectedRepoCardStyle.Width(cardContentWidth)
 		}
 
-		top.WriteString("\n" + marker + style.Render(name))
+		parts = append(parts, cs.Render(marker+nameStyle.Render(name)))
 	}
+
+	topContent := strings.Join(parts, "\n")
 
 	// Bottom section: help hint.
 	help := repoPanelHelpStyle.Render("[a]dd [x]rm")
 
 	// Combine top and bottom with fill space between them.
 	content := lipgloss.JoinVertical(lipgloss.Left,
-		top.String(),
-		lipgloss.NewStyle().Height(panelHeight-lipgloss.Height(top.String())-1).Render(""),
+		topContent,
+		lipgloss.NewStyle().Height(panelHeight-lipgloss.Height(topContent)-1).Render(""),
 		help,
 	)
 
@@ -559,10 +611,63 @@ func (a App) switchRepo(newIdx int) (App, tea.Cmd) {
 		a.repos[a.active].model = a.repos[a.active].model.Pause()
 	}
 	a.active = newIdx
+	a = a.ensureActiveRepoVisible()
 	// Resume new.
 	resumed, cmd := a.repos[a.active].model.Resume()
 	a.repos[a.active].model = resumed
 	return a, tea.Batch(cmd, a.resizeActiveChild())
+}
+
+// visibleRepoCards returns how many repo cards fit in the left panel.
+func (a App) visibleRepoCards() int {
+	contentH := a.height - a.headerHeight() - 2 // -2 for panel border
+	if contentH < 1 {
+		contentH = 1
+	}
+	// Subtract 2 for "Repos" header (1) + help footer (1).
+	v := (contentH - 2) / repoCardHeight
+	if v < 1 {
+		v = 1
+	}
+	return v
+}
+
+// ensureActiveRepoVisible adjusts repoScrollOffset so the active repo is visible.
+func (a App) ensureActiveRepoVisible() App {
+	visible := a.visibleRepoCards()
+	if a.active < a.repoScrollOffset {
+		a.repoScrollOffset = a.active
+	}
+	if a.active >= a.repoScrollOffset+visible {
+		a.repoScrollOffset = a.active - visible + 1
+	}
+	a = a.clampRepoScroll()
+	return a
+}
+
+// clampRepoScroll ensures repoScrollOffset is within valid bounds.
+func (a App) clampRepoScroll() App {
+	visible := a.visibleRepoCards()
+	maxOffset := len(a.repos) - visible
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if a.repoScrollOffset > maxOffset {
+		a.repoScrollOffset = maxOffset
+	}
+	if a.repoScrollOffset < 0 {
+		a.repoScrollOffset = 0
+	}
+	return a
+}
+
+// repoScrollState returns the scroll state for the left panel scrollbar.
+func (a App) repoScrollState() panelScroll {
+	return panelScroll{
+		total:   len(a.repos),
+		visible: a.visibleRepoCards(),
+		offset:  a.repoScrollOffset,
+	}
 }
 
 // headerHeight returns the number of visible rows the header occupies.
@@ -611,11 +716,29 @@ func (a App) resizeActiveChild() tea.Cmd {
 	}
 }
 
+// scrollbarGeometry computes thumb height and top position for a scrollbar.
+// Returns (thumbHeight, thumbTop, scrollable).
+func scrollbarGeometry(s panelScroll, contentH int) (int, int, bool) {
+	if s.total <= s.visible {
+		return 0, 0, false
+	}
+	thumbHeight := max(1, contentH*s.visible/s.total)
+	scrollableItems := s.total - s.visible
+	thumbTop := 0
+	if scrollableItems > 0 {
+		thumbTop = s.offset * (contentH - thumbHeight) / scrollableItems
+	}
+	if thumbTop+thumbHeight > contentH {
+		thumbTop = contentH - thumbHeight
+	}
+	return thumbHeight, thumbTop, true
+}
+
 // buildPanels renders two side-by-side bordered panels with manual border
 // characters. This avoids lipgloss border height bugs by controlling every
 // row explicitly. Returns exactly contentH + 2 lines (content + top/bottom).
-// scrollTotal/scrollVisible/scrollOffset drive the right panel's scrollbar.
-func (a App) buildPanels(leftContent, rightContent string, leftInner, rightInner, contentH, scrollTotal, scrollVisible, scrollOffset int) string {
+// leftScroll/rightScroll drive each panel's scrollbar.
+func (a App) buildPanels(leftContent, rightContent string, leftInner, rightInner, contentH int, leftScroll, rightScroll panelScroll) string {
 	// Split and clamp/pad both contents to exactly contentH lines.
 	leftLines := splitClampPad(leftContent, contentH)
 	rightLines := splitClampPad(rightContent, contentH)
@@ -630,19 +753,9 @@ func (a App) buildPanels(leftContent, rightContent string, leftInner, rightInner
 		rbStyle = rbStyle.Foreground(lipgloss.Color("39"))
 	}
 
-	// Scrollbar geometry for the right panel's right border.
-	scrollable := scrollTotal > scrollVisible
-	thumbHeight, thumbTop := 0, 0
-	if scrollable {
-		thumbHeight = max(1, contentH*scrollVisible/scrollTotal)
-		scrollableLines := scrollTotal - scrollVisible
-		if scrollableLines > 0 {
-			thumbTop = scrollOffset * (contentH - thumbHeight) / scrollableLines
-		}
-		if thumbTop+thumbHeight > contentH {
-			thumbTop = contentH - thumbHeight
-		}
-	}
+	// Scrollbar geometry for both panels.
+	lThumbH, lThumbTop, lScrollable := scrollbarGeometry(leftScroll, contentH)
+	rThumbH, rThumbTop, rScrollable := scrollbarGeometry(rightScroll, contentH)
 
 	// Width-forcing style for content cells (pad short, truncate long).
 	leftCellStyle := lipgloss.NewStyle().Width(leftInner).MaxWidth(leftInner)
@@ -660,10 +773,20 @@ func (a App) buildPanels(leftContent, rightContent string, leftInner, rightInner
 		lc := leftCellStyle.Render(leftLines[i])
 		rc := rightCellStyle.Render(rightLines[i])
 
+		// Left panel right border: show scrollbar thumb or track.
+		leftBorder := lbStyle.Render("│")
+		if lScrollable {
+			if i >= lThumbTop && i < lThumbTop+lThumbH {
+				leftBorder = scrollThumbStyle.Render("┃")
+			} else {
+				leftBorder = scrollTrackStyle.Render("│")
+			}
+		}
+
 		// Right panel right border: show scrollbar thumb or track.
 		rightBorder := rbStyle.Render("│")
-		if scrollable {
-			if i >= thumbTop && i < thumbTop+thumbHeight {
+		if rScrollable {
+			if i >= rThumbTop && i < rThumbTop+rThumbH {
 				rightBorder = scrollThumbStyle.Render("┃")
 			} else {
 				rightBorder = scrollTrackStyle.Render("│")
@@ -671,7 +794,7 @@ func (a App) buildPanels(leftContent, rightContent string, leftInner, rightInner
 		}
 
 		rows = append(rows,
-			lbStyle.Render("│")+" "+lc+" "+lbStyle.Render("│")+
+			lbStyle.Render("│")+" "+lc+" "+leftBorder+
 				rbStyle.Render("│")+" "+rc+" "+rightBorder)
 	}
 
