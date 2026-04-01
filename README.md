@@ -13,7 +13,7 @@
 - **PR/MR status** -- Fetches pull request (GitHub) or merge request (GitLab) information and CI check status for each branch. Shows PR/MR number, title, state (open/draft/merged/closed), and CI result (pass/fail/pending). The hosting provider is auto-detected from the origin remote URL.
 - **Sync status** -- Compares each branch against its remote tracking branch (`origin/<branch>`) and shows whether it is up-to-date, ahead, behind, or diverged. Runs `git fetch` on every refresh cycle to keep remote refs current.
 - **Create worktrees** -- Press `c` from the main card to create a new linked worktree. A branch name prompt appears under the main card. After creation, a new terminal tab opens automatically in the worktree directory.
-- **Delete worktrees** -- Press `d` on any linked worktree to delete it. A two-step confirmation prompt shows what will happen: press `y` to arm, then `Enter` to confirm. The worktree directory is removed, the branch is deleted, and stale metadata is pruned. The main worktree cannot be deleted.
+- **Delete worktrees** -- Press `d` on any linked worktree to delete it. A centered popup overlay shows what will happen: press `y` to arm, then `Enter` to confirm. `Esc` cancels at any point. The worktree directory is removed, the branch is deleted, and stale metadata is pruned. The main worktree cannot be deleted.
 - **Pull** -- Press `p` to pull from the remote. Uses go-git with credentials resolved from your configured git credential helpers (osxkeychain, gh auth, etc.).
 - **Fetch PR into worktree** -- Press `f` from the main card to fetch a pull request into a new linked worktree. A prompt accepts a plain PR number (`123`) or a fork reference (`owner/repo#123`). gwaim validates the PR via `gh`, fetches the head branch, and creates a worktree for it. The branch ref is preserved exactly (e.g., `ralph/issue-19`), while the directory name is sanitized to be filesystem-safe.
 - **Repair worktrees** -- Press `r` from the main card to run `git worktree repair`, which fixes broken links between the main worktree and linked worktrees (e.g., after a worktree directory was moved manually). The status bar shows which worktrees were repaired, or "Nothing to repair" if all links are healthy.
@@ -238,7 +238,7 @@ The current refresh interval is shown in the help bar at the bottom of the scree
 | `up` / `k`      | Select previous repo                                              |
 | `down` / `j`    | Select next repo                                                  |
 | `a`              | Add a new repository (enter path)                                 |
-| `x`              | Remove selected repository from dashboard                        |
+| `x`              | Remove selected repository from dashboard (popup confirmation)   |
 | `Enter`          | Switch focus to worktree dashboard                                |
 
 #### Worktree dashboard (right panel focused)

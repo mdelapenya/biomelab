@@ -832,18 +832,4 @@ func TestOverlayCenter(t *testing.T) {
 	}
 }
 
-func TestConfirmDeleteRendersPopup(t *testing.T) {
-	m := testModel(3)
-	m.cursor = 1
-	m.mode = modeConfirmDelete
-	m.width = 80
-	m.height = 24
-
-	content := m.viewContent()
-	if !strings.Contains(content, "Delete worktree") {
-		t.Errorf("viewContent in confirmDelete mode should contain popup, got:\n%s", content)
-	}
-	if !strings.Contains(content, "[y] confirm") {
-		t.Errorf("viewContent should show [y] confirm hint, got:\n%s", content)
-	}
-}
+// TestConfirmDeleteRendersPopup is in app_test.go since the popup is rendered at the App level.

@@ -806,3 +806,40 @@ func TestAppConfirmRemovePopupBlocksMouse(t *testing.T) {
 		t.Errorf("mouse click should not cancel confirmation, mode = %d", app.mode)
 	}
 }
+
+func TestAppChildModalBlocksNavigation(t *testing.T) {
+	a := testApp(2)
+	a.focus = focusRight
+	a.active = 0
+	// Put the child in confirm-delete mode.
+	a.repos[0].model.mode = modeConfirmDelete
+	a.repos[0].model.cursor = 1
+
+	// Tab should NOT switch focus — it should be forwarded to the child.
+	tabMsg := tea.KeyMsg{Type: tea.KeyTab}
+	updated, _ := a.Update(tabMsg)
+	app := updated.(App)
+	if app.focus != focusRight {
+		t.Errorf("Tab during child modal should not switch focus, got focus = %d", app.focus)
+	}
+	// The child should have exited confirm-delete (default case cancels).
+	if app.repos[0].model.mode != modeNormal {
+		t.Errorf("child mode = %d, want modeNormal after forwarded key", app.repos[0].model.mode)
+	}
+}
+
+func TestAppConfirmDeleteRendersPopup(t *testing.T) {
+	a := testApp(2)
+	a.focus = focusRight
+	a.active = 0
+	a.repos[0].model.cursor = 1
+	a.repos[0].model.mode = modeConfirmDelete
+
+	view := a.View()
+	if !strings.Contains(view, "Delete worktree") {
+		t.Errorf("App.View should contain worktree delete popup, got:\n%s", view)
+	}
+	if !strings.Contains(view, "[y] confirm") {
+		t.Errorf("App.View should show [y] confirm hint, got:\n%s", view)
+	}
+}

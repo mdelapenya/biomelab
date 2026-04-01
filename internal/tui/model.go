@@ -852,19 +852,11 @@ func (m Model) viewContent() string {
 	helpText := "←→↑↓ navigate • ↵ open tab • e editor • p pull • r repair • c create • f fetch PR • d delete • " + mouseLabel + " • q quit"
 	help := helpStyle.MaxWidth(m.width).Render(helpText)
 
-	var content string
 	if m.ready {
-		content = m.fixedTopContent + m.viewport.View() + "\n" + help
-	} else {
-		content = m.fixedTopContent + m.renderLinkedCards() + "\n" + help
+		return m.fixedTopContent + m.viewport.View() + "\n" + help
 	}
 
-	if m.mode == modeConfirmDelete {
-		popup := m.renderConfirmPopup()
-		content = overlayCenter(content, popup, m.width, m.height)
-	}
-
-	return content
+	return m.fixedTopContent + m.renderLinkedCards() + "\n" + help
 }
 
 // renderConfirmPopup renders a centered confirmation popup for worktree deletion.
@@ -884,117 +876,18 @@ func (m Model) renderConfirmPopup() string {
 	return popupStyle.Render(msg)
 }
 
-// overlayCenter composites a popup string on top of a base string, centered.
-func overlayCenter(base, popup string, width, height int) string {
-	baseLines := strings.Split(base, "\n")
-	popupLines := strings.Split(popup, "\n")
-
-	popupH := len(popupLines)
-	popupW := 0
-	for _, line := range popupLines {
-		if w := lipgloss.Width(line); w > popupW {
-			popupW = w
-		}
-	}
-
-	// Center the popup vertically and horizontally.
-	startY := max((height-popupH)/2, 0)
-	startX := max((width-popupW)/2, 0)
-
-	// Ensure base has enough lines.
-	for len(baseLines) < startY+popupH {
-		baseLines = append(baseLines, "")
-	}
-
-	for i, popupLine := range popupLines {
-		row := startY + i
-		if row >= len(baseLines) {
-			break
-		}
-		baseLine := baseLines[row]
-		baseLines[row] = overlaySingleLine(baseLine, popupLine, startX)
-	}
-
-	return strings.Join(baseLines, "\n")
+// overlayCenter renders a popup centered on a full-screen scrim that
+// replaces the base content. True transparency is not possible in terminal
+// emulators, so the scrim is a solid dark background that visually separates
+// the popup from the underlying UI.
+func overlayCenter(_, popup string, width, height int) string {
+	return lipgloss.Place(width, height,
+		lipgloss.Center, lipgloss.Center,
+		popup,
+		lipgloss.WithWhitespaceBackground(lipgloss.Color("233")),
+	)
 }
 
-// overlaySingleLine places overlay text on top of a base line at the given x offset.
-func overlaySingleLine(baseLine, overlay string, startX int) string {
-	// Work with rune slices to handle multi-byte characters,
-	// but we need to handle ANSI sequences properly.
-	// Use a simple approach: pad base to startX, then write overlay, then append rest of base.
-	baseW := lipgloss.Width(baseLine)
-	overlayW := lipgloss.Width(overlay)
-
-	var b strings.Builder
-
-	if baseW <= startX {
-		// Base is shorter than startX: pad with spaces.
-		b.WriteString(baseLine)
-		for i := baseW; i < startX; i++ {
-			b.WriteByte(' ')
-		}
-		b.WriteString(overlay)
-	} else {
-		// We need to splice the overlay into the base line.
-		// Use ANSI-aware truncation via lipgloss.
-		left := ansiTruncate(baseLine, startX)
-		b.WriteString(left)
-		// Pad if truncation produced fewer visible chars than startX.
-		leftW := lipgloss.Width(left)
-		for i := leftW; i < startX; i++ {
-			b.WriteByte(' ')
-		}
-		b.WriteString(overlay)
-
-		// Append the remainder of the base line after the overlay.
-		endX := startX + overlayW
-		if endX < baseW {
-			right := ansiCutLeft(baseLine, endX)
-			b.WriteString(right)
-		}
-	}
-
-	return b.String()
-}
-
-// ansiTruncate returns the first n visible characters of s, preserving ANSI sequences.
-func ansiTruncate(s string, n int) string {
-	return lipgloss.NewStyle().MaxWidth(n).Render(s)
-}
-
-// ansiCutLeft removes the first n visible characters from s, keeping the rest.
-func ansiCutLeft(s string, n int) string {
-	// Strip ANSI, count visible chars, then rebuild from the raw string
-	// skipping the first n visible chars.
-	var result strings.Builder
-	visible := 0
-	i := 0
-	runes := []rune(s)
-	for i < len(runes) {
-		if runes[i] == '\x1b' && i+1 < len(runes) && runes[i+1] == '[' {
-			// ANSI escape sequence: copy it through regardless.
-			j := i + 2
-			for j < len(runes) && runes[j] != 'm' {
-				j++
-			}
-			if j < len(runes) {
-				j++ // include 'm'
-			}
-			if visible >= n {
-				result.WriteString(string(runes[i:j]))
-			}
-			i = j
-			continue
-		}
-		if visible >= n {
-			result.WriteRune(runes[i])
-		}
-		visible++
-		i++
-	}
-	return result.String()
-}
 
 // ScrollState returns the viewport's scroll state for external scrollbar rendering.
 // Returns totalLines, visibleLines, yOffset.
