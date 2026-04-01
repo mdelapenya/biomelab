@@ -62,7 +62,9 @@ docs/
 
 **go-git v6 worktree limitations**: `linkedRepo.Head()` returns the shared (main) HEAD, not the per-worktree HEAD. We read `.git/worktrees/<name>/HEAD` directly from the filesystem for linked worktrees. Similarly, worktree paths come from `.git/worktrees/<name>/gitdir`.
 
-**Sync status**: Computed by comparing `refs/heads/<branch>` against `refs/remotes/origin/<branch>` using `IsAncestor` checks. A `Fetch()` runs on every refresh cycle to keep remote refs current.
+**Multi-remote support**: `Fetch()` and `Pull()` iterate over all configured remotes (e.g. origin, upstream, forks) so tracking refs stay current for every remote. Pull fetches all remotes first, then merges from origin.
+
+**Sync status**: Computed by comparing `refs/heads/<branch>` against tracking branches for "reference remotes" (`origin` and `upstream`, defined in `referenceRemotes`). The first non-up-to-date remote determines the status (ahead/behind/diverged). A `Fetch()` runs on every refresh cycle to keep remote refs current.
 
 **Terminal tab management**: The `internal/warp` package tracks which repo tabs have been opened in the current session (in-memory map). First `Enter` creates a tab, subsequent presses split within it. macOS uses System Events AppleScript for keyboard shortcuts (Cmd+T, Cmd+Shift+D). Linux uses terminal-specific CLI flags.
 

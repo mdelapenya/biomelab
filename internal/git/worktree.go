@@ -136,7 +136,9 @@ func parseRepoName(remoteURL string) string {
 }
 
 // Fetch updates remote tracking refs so sync status is accurate.
-// Uses a 15-second context timeout to cancel slow fetches cleanly.
+// It fetches from all configured remotes so that repos with multiple
+// remotes (e.g. origin, upstream) stay current.
+// Uses a 15-second context timeout per remote to cancel slow fetches cleanly.
 func (r *Repository) Fetch() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -145,30 +147,35 @@ func (r *Repository) Fetch() error {
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	opts := &gogit.FetchOptions{}
-
-	err := r.repo.FetchContext(ctx, opts)
-	if err == nil || err == gogit.NoErrAlreadyUpToDate {
-		return nil
+	remotes, err := r.repo.Remotes()
+	if err != nil {
+		return fmt.Errorf("listing remotes: %w", err)
 	}
 
-	if isAuthError(err) {
-		auth, credErr := r.resolveCredentials()
-		if credErr != nil {
-			return fmt.Errorf("fetch auth: %w", credErr)
+	var firstErr error
+	for _, remote := range remotes {
+		name := remote.Config().Name
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+
+		opts := &gogit.FetchOptions{RemoteName: name}
+		err := r.repo.FetchContext(ctx, opts)
+		if err != nil && err != gogit.NoErrAlreadyUpToDate {
+			if isAuthError(err) {
+				auth, credErr := r.resolveCredentialsForRemote(remote)
+				if credErr == nil {
+					opts.Auth = auth
+					err = r.repo.FetchContext(ctx, opts)
+				}
+			}
+			if err != nil && err != gogit.NoErrAlreadyUpToDate && firstErr == nil {
+				firstErr = fmt.Errorf("fetch %s: %w", name, err)
+			}
 		}
-		opts.Auth = auth
-		err = r.repo.FetchContext(ctx, opts)
-		if err == gogit.NoErrAlreadyUpToDate {
-			return nil
-		}
-		return err
+
+		cancel()
 	}
 
-	return err
+	return firstErr
 }
 
 // ListWorktreesQuick returns worktrees with only branch info — no dirty/sync checks.
@@ -294,7 +301,12 @@ func (r *Repository) mainWorktree() (*Worktree, error) {
 	return wt, nil
 }
 
-// syncStatus compares the local branch commit with the remote tracking branch (origin/<branch>).
+// referenceRemotes are the remote names checked for sync status.
+// Both origin and upstream are treated as reference remotes.
+var referenceRemotes = []string{"origin", "upstream"}
+
+// syncStatus compares the local branch commit with remote tracking branches.
+// It checks both origin and upstream remotes, returning the most significant status.
 func (r *Repository) syncStatus(branch string) SyncStatus {
 	if branch == "" {
 		return SyncUnknown
@@ -304,40 +316,49 @@ func (r *Repository) syncStatus(branch string) SyncStatus {
 	if err != nil {
 		return SyncUnknown
 	}
+	localHash := localRef.Hash()
 
-	remoteRef, err := r.repo.Reference(plumbing.NewRemoteReferenceName("origin", branch), true)
-	if err != nil {
+	// Check each reference remote; return the first non-trivial status found.
+	foundAny := false
+	for _, remoteName := range referenceRemotes {
+		remoteRef, err := r.repo.Reference(plumbing.NewRemoteReferenceName(remoteName, branch), true)
+		if err != nil {
+			continue
+		}
+		foundAny = true
+		remoteHash := remoteRef.Hash()
+
+		if localHash == remoteHash {
+			continue // up-to-date with this remote, check next
+		}
+
+		// Check ancestry to determine ahead/behind/diverged.
+		localCommit, err := r.repo.CommitObject(localHash)
+		if err != nil {
+			return SyncUnknown
+		}
+		remoteCommit, err := r.repo.CommitObject(remoteHash)
+		if err != nil {
+			return SyncUnknown
+		}
+
+		localIsAncestor, _ := localCommit.IsAncestor(remoteCommit)
+		remoteIsAncestor, _ := remoteCommit.IsAncestor(localCommit)
+
+		switch {
+		case remoteIsAncestor:
+			return SyncAhead
+		case localIsAncestor:
+			return SyncBehind
+		default:
+			return SyncDiverged
+		}
+	}
+
+	if !foundAny {
 		return SyncNoUpstream
 	}
-
-	localHash := localRef.Hash()
-	remoteHash := remoteRef.Hash()
-
-	if localHash == remoteHash {
-		return SyncUpToDate
-	}
-
-	// Check ancestry to determine ahead/behind/diverged.
-	localCommit, err := r.repo.CommitObject(localHash)
-	if err != nil {
-		return SyncUnknown
-	}
-	remoteCommit, err := r.repo.CommitObject(remoteHash)
-	if err != nil {
-		return SyncUnknown
-	}
-
-	localIsAncestor, _ := localCommit.IsAncestor(remoteCommit)
-	remoteIsAncestor, _ := remoteCommit.IsAncestor(localCommit)
-
-	switch {
-	case remoteIsAncestor:
-		return SyncAhead
-	case localIsAncestor:
-		return SyncBehind
-	default:
-		return SyncDiverged
-	}
+	return SyncUpToDate
 }
 
 // linkedWorktree returns info about a linked worktree by name.
@@ -431,8 +452,10 @@ func (r *Repository) CreateWorktree(branchName string) error {
 	return r.wt.Add(wtFS, safe)
 }
 
-// Pull fetches from the remote and merges into the main worktree's current branch.
-// Credentials are obtained from the user's configured git credential helpers.
+// Pull fetches from all remotes and merges into the main worktree's current branch.
+// This ensures repos with multiple remotes (e.g. origin, upstream) have all
+// tracking refs updated. Credentials are obtained from the user's configured
+// git credential helpers.
 func (r *Repository) Pull() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -441,6 +464,36 @@ func (r *Repository) Pull() error {
 		return err
 	}
 
+	// Fetch non-origin remotes first so their tracking refs are current.
+	// Origin is left to wt.Pull() which handles fetch+merge atomically.
+	remotes, err := r.repo.Remotes()
+	if err != nil {
+		return fmt.Errorf("listing remotes: %w", err)
+	}
+	for _, remote := range remotes {
+		name := remote.Config().Name
+		if name == gogit.DefaultRemoteName {
+			continue // origin will be fetched+merged by wt.Pull() below
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		fetchOpts := &gogit.FetchOptions{RemoteName: name}
+		ferr := r.repo.FetchContext(ctx, fetchOpts)
+		if ferr != nil && ferr != gogit.NoErrAlreadyUpToDate && isAuthError(ferr) {
+			auth, credErr := r.resolveCredentialsForRemote(remote)
+			if credErr == nil {
+				fetchOpts.Auth = auth
+				_ = r.repo.FetchContext(ctx, fetchOpts) // best-effort
+			}
+		}
+		cancel()
+	}
+
+	// Reopen so wt.Pull() sees fresh storer state after the non-origin fetches.
+	if err := r.reopen(); err != nil {
+		return err
+	}
+
+	// Pull from origin (fetch + merge).
 	wt, err := r.repo.Worktree()
 	if err != nil {
 		return err
@@ -501,12 +554,14 @@ func (r *Repository) resolveCredentials() (*githttp.BasicAuth, error) {
 	if err != nil || len(remotes) == 0 {
 		return nil, fmt.Errorf("no remotes configured")
 	}
+	return r.resolveCredentialsForRemote(remotes[0])
+}
 
-	urls := remotes[0].Config().URLs
+func (r *Repository) resolveCredentialsForRemote(remote *gogit.Remote) (*githttp.BasicAuth, error) {
+	urls := remote.Config().URLs
 	if len(urls) == 0 {
-		return nil, fmt.Errorf("remote has no URLs")
+		return nil, fmt.Errorf("remote %q has no URLs", remote.Config().Name)
 	}
-
 	return credentialFill(urls[0])
 }
 
