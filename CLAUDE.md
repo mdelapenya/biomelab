@@ -90,7 +90,7 @@ docs/
 
 - `appModeNormal` -- Two-panel navigation. `Tab` switches focus. Left panel: `↑↓`/`jk` navigate repos, `a` add, `x` remove. Right panel: forwards to child Model.
 - `appModeAddRepo` -- Text input for repo path. `Enter` validates and adds. `Esc` cancels.
-- `appModeConfirmRemove` -- `y` confirms removal, any other key cancels.
+- `appModeConfirmRemove` -- `y` confirms removal, any other key cancels. Renders as a centered popup overlay via `overlayCenter()` in `App.View()`. All navigation (Tab, arrows, mouse) is blocked while the popup is active.
 
 ### Per-repo modes (tui/model.go)
 
@@ -99,7 +99,7 @@ Modes: `modeNormal`, `modeCreate`, `modeFetchPR`, `modeConfirmDelete`
 - `modeNormal` -- Arrow keys navigate, `c`/`d`/`e`/`f`/`p`/`r`/`m`/`Enter`/`q` trigger actions.
 - `modeCreate` -- Text input active. `Enter` confirms, `Esc` cancels. Only accessible from main card (cursor == 0).
 - `modeFetchPR` -- Text input active. Accepts `"123"` or `"owner/repo#123"`. `Enter` validates via `gh` and fetches; `Esc` or empty input cancels. Only accessible from main card.
-- `modeConfirmDelete` -- Two-step: `y` arms the deletion, then `Enter` confirms. `Esc` or any other key cancels. Not available on main worktree.
+- `modeConfirmDelete` -- Two-step: `y` arms the deletion, then `Enter` confirms. `Esc` or any other key cancels. Not available on main worktree. Renders as a centered popup overlay via `overlayCenter()` in `viewContent()`, not in the scrollable viewport. All App-level navigation (Tab, arrows, mouse) is blocked while the popup is active — keys are forwarded directly to the child.
 
 Cursor 0 = main worktree. Cursor 1+ = linked worktrees. Left/right only work in linked grid. Up from first linked row goes to main. Down from main goes to first linked.
 
@@ -125,3 +125,4 @@ Always run `go test -race ./...` -- the TUI must be safe for concurrent `View` +
 - **`tea.WindowSizeMsg` must not be used for child resizing** — the App intercepts it and overwrites stored terminal dimensions. Use `childResizeMsg` instead.
 - **`App.Init()` is async**: repos are loaded inside a `tea.Cmd` closure and arrive via `appInitMsg`. bubbletea's `WindowSizeMsg` arrives before `appInitMsg`, so the `appInitMsg` handler must resize all children using stored dimensions.
 - Always bounds-check `a.active < len(a.repos)` before accessing `a.repos[a.active]` — repos can be removed while the active index is stale.
+- **Confirmation dialogs should use popup overlays**, not status messages appended to the viewport bottom (which scroll off-screen). Use `overlayCenter()` to composite popups on top of `viewContent()`. See `modeConfirmDelete` for the pattern. Popups are fully modal: background is dimmed, and all navigation (Tab, arrows, mouse) is blocked. When a child model enters a modal mode, `handleKeyMsg` detects `!child.IsNormal()` and forwards keys directly to the child, bypassing App-level navigation.

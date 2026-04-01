@@ -37,8 +37,6 @@ var (
 
 	inputPromptStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
 
-	confirmStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-
 	refreshTimestampStyle = lipgloss.NewStyle().Faint(true)
 
 	selectedRepoStyle = lipgloss.NewStyle().
@@ -58,4 +56,12 @@ var (
 
 	scrollTrackStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 	scrollThumbStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
+
+	popupStyle = lipgloss.NewStyle().
+			Border(lipgloss.DoubleBorder()).
+			BorderForeground(lipgloss.Color("214")).
+			BorderBackground(lipgloss.Color("234")).
+			Padding(1, 2).
+			Foreground(lipgloss.Color("214")).
+			Background(lipgloss.Color("234"))
 )

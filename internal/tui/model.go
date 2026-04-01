@@ -461,12 +461,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case key.Matches(msg, key.NewBinding(key.WithKeys("y", "Y"))):
 			m.deleteConfirmed = true
-			if m.cursor >= 0 && m.cursor < len(m.worktrees) {
-				wt := m.worktrees[m.cursor]
-				m.statusMsg = confirmStyle.Render(
-					fmt.Sprintf("Delete worktree %q? Press Enter to confirm, Esc to cancel.", wt.Branch),
-				)
-			}
 			return m, nil
 		case key.Matches(msg, key.NewBinding(key.WithKeys("esc"))):
 			m.mode = modeNormal
@@ -601,9 +595,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.mode = modeConfirmDelete
 			m.deleteConfirmed = false
-			m.statusMsg = confirmStyle.Render(
-				fmt.Sprintf("Delete worktree %q? This removes the directory, branch, and prunes metadata. (y/N)", wt.Branch),
-			)
 		}
 	}
 
@@ -867,6 +858,36 @@ func (m Model) viewContent() string {
 
 	return m.fixedTopContent + m.renderLinkedCards() + "\n" + help
 }
+
+// renderConfirmPopup renders a centered confirmation popup for worktree deletion.
+func (m Model) renderConfirmPopup() string {
+	if m.cursor < 0 || m.cursor >= len(m.worktrees) {
+		return ""
+	}
+	wt := m.worktrees[m.cursor]
+
+	var msg string
+	if m.deleteConfirmed {
+		msg = fmt.Sprintf("Delete worktree %q?\n\nPress Enter to confirm, Esc to cancel.", wt.Branch)
+	} else {
+		msg = fmt.Sprintf("Delete worktree %q?\n\nThis removes the directory, branch,\nand prunes metadata.\n\n[y] confirm  [Esc] cancel", wt.Branch)
+	}
+
+	return popupStyle.Render(msg)
+}
+
+// overlayCenter renders a popup centered on a full-screen scrim that
+// replaces the base content. True transparency is not possible in terminal
+// emulators, so the scrim is a solid dark background that visually separates
+// the popup from the underlying UI.
+func overlayCenter(_, popup string, width, height int) string {
+	return lipgloss.Place(width, height,
+		lipgloss.Center, lipgloss.Center,
+		popup,
+		lipgloss.WithWhitespaceBackground(lipgloss.Color("233")),
+	)
+}
+
 
 // ScrollState returns the viewport's scroll state for external scrollbar rendering.
 // Returns totalLines, visibleLines, yOffset.

@@ -280,6 +280,15 @@ func (a App) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Block all navigation when a modal popup is active (App or child level).
+	childModal := len(a.repos) > 0 && a.active < len(a.repos) && !a.repos[a.active].model.IsNormal()
+	if childModal {
+		// Forward directly to the child so it can handle its own modal keys.
+		updated, cmd := a.repos[a.active].model.Update(msg)
+		a.repos[a.active].model = updated.(Model)
+		return a, cmd
+	}
+
 	// Global quit.
 	if key.Matches(msg, key.NewBinding(key.WithKeys("q", "ctrl+c"))) {
 		// Only quit if child is in normal mode (so 'q' in text input doesn't quit).
@@ -317,6 +326,13 @@ func (a App) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (a App) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if a.mode != appModeNormal {
+		return a, nil
+	}
+	// Block mouse when a child model has a modal popup active.
+	if len(a.repos) > 0 && a.active < len(a.repos) && !a.repos[a.active].model.IsNormal() {
+		return a, nil
+	}
 	// Handle scroll wheel in left panel.
 	if (msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown) &&
 		msg.X < a.leftPanelWidth() {
@@ -394,9 +410,6 @@ func (a App) handleLeftPanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, key.NewBinding(key.WithKeys("x"))):
 		if len(a.repos) > 0 && a.active < len(a.repos) {
 			a.mode = appModeConfirmRemove
-			a.statusMsg = confirmStyle.Render(
-				fmt.Sprintf("Remove %q from dashboard? (y/N)", a.repos[a.active].name),
-			)
 		}
 		return a, nil
 	case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
@@ -500,7 +513,28 @@ func (a App) View() string {
 		b.WriteString(a.statusMsg)
 	}
 
-	return b.String()
+	result := b.String()
+
+	// Overlay modal popups over the full screen.
+	if a.mode == appModeConfirmRemove {
+		popup := a.renderConfirmRemovePopup()
+		result = overlayCenter(result, popup, a.width, a.height)
+	} else if a.active >= 0 && a.active < len(a.repos) && a.repos[a.active].model.mode == modeConfirmDelete {
+		popup := a.repos[a.active].model.renderConfirmPopup()
+		result = overlayCenter(result, popup, a.width, a.height)
+	}
+
+	return result
+}
+
+// renderConfirmRemovePopup renders a centered confirmation popup for repo removal.
+func (a App) renderConfirmRemovePopup() string {
+	if a.active < 0 || a.active >= len(a.repos) {
+		return ""
+	}
+	name := a.repos[a.active].name
+	msg := fmt.Sprintf("Remove %q from dashboard?\n\n[y] confirm  [any key] cancel", name)
+	return popupStyle.Render(msg)
 }
 
 func (a App) renderEmptyState() string {

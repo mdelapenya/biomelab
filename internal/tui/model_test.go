@@ -769,3 +769,67 @@ func TestRenderHeader_ShowsTimestamps(t *testing.T) {
 		t.Errorf("expected ✓ flash in header, got: %s", header)
 	}
 }
+
+func TestRenderConfirmPopup(t *testing.T) {
+	t.Run("initial prompt shows branch name and confirm hint", func(t *testing.T) {
+		m := testModel(3)
+		m.cursor = 1
+		m.mode = modeConfirmDelete
+		m.deleteConfirmed = false
+
+		popup := m.renderConfirmPopup()
+		if !strings.Contains(popup, "branch-b") {
+			t.Errorf("popup should contain branch name, got: %s", popup)
+		}
+		if !strings.Contains(popup, "[y] confirm") {
+			t.Errorf("popup should contain [y] confirm hint, got: %s", popup)
+		}
+	})
+
+	t.Run("confirmed prompt shows Enter/Esc hint", func(t *testing.T) {
+		m := testModel(3)
+		m.cursor = 1
+		m.mode = modeConfirmDelete
+		m.deleteConfirmed = true
+
+		popup := m.renderConfirmPopup()
+		if !strings.Contains(popup, "branch-b") {
+			t.Errorf("popup should contain branch name, got: %s", popup)
+		}
+		if !strings.Contains(popup, "Press Enter to confirm") {
+			t.Errorf("popup should contain Enter hint, got: %s", popup)
+		}
+	})
+
+	t.Run("popup is empty for invalid cursor", func(t *testing.T) {
+		m := testModel(2)
+		m.cursor = 5
+		m.mode = modeConfirmDelete
+
+		if popup := m.renderConfirmPopup(); popup != "" {
+			t.Errorf("popup should be empty for invalid cursor, got: %s", popup)
+		}
+	})
+}
+
+func TestOverlayCenter(t *testing.T) {
+	base := strings.Repeat("........\n", 10)
+	popup := "HELLO"
+
+	result := overlayCenter(base, popup, 8, 10)
+	lines := strings.Split(result, "\n")
+
+	// The popup should appear somewhere in the middle.
+	found := false
+	for _, line := range lines {
+		if strings.Contains(line, "HELLO") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("overlay should contain popup text, got:\n%s", result)
+	}
+}
+
+// TestConfirmDeleteRendersPopup is in app_test.go since the popup is rendered at the App level.

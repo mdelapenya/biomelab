@@ -773,3 +773,73 @@ func TestBuildPanels_ScrollbarRendered(t *testing.T) {
 		t.Errorf("thumb should be smaller than track, got %d/%d", thumbCount, 10)
 	}
 }
+
+func TestAppConfirmRemoveRendersPopup(t *testing.T) {
+	a := testApp(2)
+	a.focus = focusLeft
+	a.active = 0
+	a.mode = appModeConfirmRemove
+
+	view := a.View()
+	if !strings.Contains(view, "Remove") {
+		t.Errorf("View in confirmRemove mode should contain popup, got:\n%s", view)
+	}
+	if !strings.Contains(view, a.repos[0].name) {
+		t.Errorf("popup should contain repo name %q, got:\n%s", a.repos[0].name, view)
+	}
+	if !strings.Contains(view, "[y] confirm") {
+		t.Errorf("popup should contain [y] confirm hint, got:\n%s", view)
+	}
+}
+
+func TestAppConfirmRemovePopupBlocksMouse(t *testing.T) {
+	a := testApp(2)
+	a.focus = focusLeft
+	a.active = 0
+	a.mode = appModeConfirmRemove
+
+	// Click should be ignored during confirmation.
+	msg := tea.MouseMsg{X: 5, Y: 5, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
+	updated, _ := a.Update(msg)
+	app := updated.(App)
+	if app.mode != appModeConfirmRemove {
+		t.Errorf("mouse click should not cancel confirmation, mode = %d", app.mode)
+	}
+}
+
+func TestAppChildModalBlocksNavigation(t *testing.T) {
+	a := testApp(2)
+	a.focus = focusRight
+	a.active = 0
+	// Put the child in confirm-delete mode.
+	a.repos[0].model.mode = modeConfirmDelete
+	a.repos[0].model.cursor = 1
+
+	// Tab should NOT switch focus — it should be forwarded to the child.
+	tabMsg := tea.KeyMsg{Type: tea.KeyTab}
+	updated, _ := a.Update(tabMsg)
+	app := updated.(App)
+	if app.focus != focusRight {
+		t.Errorf("Tab during child modal should not switch focus, got focus = %d", app.focus)
+	}
+	// The child should have exited confirm-delete (default case cancels).
+	if app.repos[0].model.mode != modeNormal {
+		t.Errorf("child mode = %d, want modeNormal after forwarded key", app.repos[0].model.mode)
+	}
+}
+
+func TestAppConfirmDeleteRendersPopup(t *testing.T) {
+	a := testApp(2)
+	a.focus = focusRight
+	a.active = 0
+	a.repos[0].model.cursor = 1
+	a.repos[0].model.mode = modeConfirmDelete
+
+	view := a.View()
+	if !strings.Contains(view, "Delete worktree") {
+		t.Errorf("App.View should contain worktree delete popup, got:\n%s", view)
+	}
+	if !strings.Contains(view, "[y] confirm") {
+		t.Errorf("App.View should show [y] confirm hint, got:\n%s", view)
+	}
+}
