@@ -317,6 +317,9 @@ func (a App) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (a App) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if a.mode != appModeNormal {
+		return a, nil
+	}
 	// Handle scroll wheel in left panel.
 	if (msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown) &&
 		msg.X < a.leftPanelWidth() {
@@ -394,9 +397,6 @@ func (a App) handleLeftPanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, key.NewBinding(key.WithKeys("x"))):
 		if len(a.repos) > 0 && a.active < len(a.repos) {
 			a.mode = appModeConfirmRemove
-			a.statusMsg = confirmStyle.Render(
-				fmt.Sprintf("Remove %q from dashboard? (y/N)", a.repos[a.active].name),
-			)
 		}
 		return a, nil
 	case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
@@ -500,7 +500,24 @@ func (a App) View() string {
 		b.WriteString(a.statusMsg)
 	}
 
-	return b.String()
+	result := b.String()
+
+	if a.mode == appModeConfirmRemove {
+		popup := a.renderConfirmRemovePopup()
+		result = overlayCenter(result, popup, a.width, a.height)
+	}
+
+	return result
+}
+
+// renderConfirmRemovePopup renders a centered confirmation popup for repo removal.
+func (a App) renderConfirmRemovePopup() string {
+	if a.active < 0 || a.active >= len(a.repos) {
+		return ""
+	}
+	name := a.repos[a.active].name
+	msg := fmt.Sprintf("Remove %q from dashboard?\n\n[y] confirm  [any key] cancel", name)
+	return popupStyle.Render(msg)
 }
 
 func (a App) renderEmptyState() string {

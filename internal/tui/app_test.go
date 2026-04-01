@@ -773,3 +773,36 @@ func TestBuildPanels_ScrollbarRendered(t *testing.T) {
 		t.Errorf("thumb should be smaller than track, got %d/%d", thumbCount, 10)
 	}
 }
+
+func TestAppConfirmRemoveRendersPopup(t *testing.T) {
+	a := testApp(2)
+	a.focus = focusLeft
+	a.active = 0
+	a.mode = appModeConfirmRemove
+
+	view := a.View()
+	if !strings.Contains(view, "Remove") {
+		t.Errorf("View in confirmRemove mode should contain popup, got:\n%s", view)
+	}
+	if !strings.Contains(view, a.repos[0].name) {
+		t.Errorf("popup should contain repo name %q, got:\n%s", a.repos[0].name, view)
+	}
+	if !strings.Contains(view, "[y] confirm") {
+		t.Errorf("popup should contain [y] confirm hint, got:\n%s", view)
+	}
+}
+
+func TestAppConfirmRemovePopupBlocksMouse(t *testing.T) {
+	a := testApp(2)
+	a.focus = focusLeft
+	a.active = 0
+	a.mode = appModeConfirmRemove
+
+	// Click should be ignored during confirmation.
+	msg := tea.MouseMsg{X: 5, Y: 5, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
+	updated, _ := a.Update(msg)
+	app := updated.(App)
+	if app.mode != appModeConfirmRemove {
+		t.Errorf("mouse click should not cancel confirmation, mode = %d", app.mode)
+	}
+}
