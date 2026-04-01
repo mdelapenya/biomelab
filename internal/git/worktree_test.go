@@ -503,6 +503,133 @@ func TestFetchPR_SlashedBranchName(t *testing.T) {
 	})
 }
 
+// setupRepoWithMultipleRemotes creates a local repo with two remotes ("origin" and "upstream")
+// that share a common history. Origin is the initial repo, upstream is cloned from origin,
+// and local is cloned from origin with upstream added as a second remote.
+func setupRepoWithMultipleRemotes(t *testing.T, branchName string) (localDir string, originDir string, upstreamDir string) {
+	t.Helper()
+
+	// Create origin remote repo with an initial commit.
+	originDir = t.TempDir()
+	runGit(t, originDir, "init", "-b", branchName)
+	runGit(t, originDir, "-c", "user.email=test@test.com", "-c", "user.name=Test",
+		"commit", "--allow-empty", "-m", "initial commit")
+
+	// Create upstream by cloning origin (shared history).
+	upstreamDir = t.TempDir()
+	runGit(t, upstreamDir, "clone", originDir, ".")
+
+	// Create local repo cloned from origin, then add upstream.
+	localDir = t.TempDir()
+	runGit(t, localDir, "clone", originDir, ".")
+	runGit(t, localDir, "remote", "add", "upstream", upstreamDir)
+	runGit(t, localDir, "fetch", "upstream")
+
+	return localDir, originDir, upstreamDir
+}
+
+func TestFetch_MultipleRemotes(t *testing.T) {
+	branchName := "main"
+	localDir, originDir, upstreamDir := setupRepoWithMultipleRemotes(t, branchName)
+
+	// Add a commit to origin.
+	runGit(t, originDir, "-c", "user.email=test@test.com", "-c", "user.name=Test",
+		"commit", "--allow-empty", "-m", "origin second commit")
+
+	// Add a commit to upstream.
+	runGit(t, upstreamDir, "-c", "user.email=test@test.com", "-c", "user.name=Test",
+		"commit", "--allow-empty", "-m", "upstream second commit")
+
+	repo, err := OpenRepository(localDir)
+	if err != nil {
+		t.Fatalf("OpenRepository: %v", err)
+	}
+
+	// Record remote refs before fetch.
+	originBefore := runGit(t, localDir, "rev-parse", "refs/remotes/origin/"+branchName)
+	upstreamBefore := runGit(t, localDir, "rev-parse", "refs/remotes/upstream/"+branchName)
+
+	if err := repo.Fetch(); err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+
+	// After fetch, both remote tracking refs should be updated.
+	originAfter := runGit(t, localDir, "rev-parse", "refs/remotes/origin/"+branchName)
+	upstreamAfter := runGit(t, localDir, "rev-parse", "refs/remotes/upstream/"+branchName)
+
+	if originAfter == originBefore {
+		t.Error("origin tracking ref was not updated by Fetch")
+	}
+	if upstreamAfter == upstreamBefore {
+		t.Error("upstream tracking ref was not updated by Fetch")
+	}
+}
+
+func TestSyncStatus_ChecksUpstream(t *testing.T) {
+	branchName := "main"
+	localDir, _, upstreamDir := setupRepoWithMultipleRemotes(t, branchName)
+
+	// Add a commit to upstream but not origin.
+	runGit(t, upstreamDir, "-c", "user.email=test@test.com", "-c", "user.name=Test",
+		"commit", "--allow-empty", "-m", "upstream ahead commit")
+
+	// Fetch upstream so the tracking ref is updated.
+	runGit(t, localDir, "fetch", "upstream")
+
+	repo, err := OpenRepository(localDir)
+	if err != nil {
+		t.Fatalf("OpenRepository: %v", err)
+	}
+
+	wts, err := repo.ListWorktrees()
+	if err != nil {
+		t.Fatalf("ListWorktrees: %v", err)
+	}
+
+	// The main worktree should be behind (upstream has a commit we don't have).
+	if len(wts) == 0 {
+		t.Fatal("expected at least one worktree")
+	}
+	if wts[0].Sync != SyncBehind {
+		t.Errorf("expected SyncBehind, got %v", wts[0].Sync)
+	}
+}
+
+func TestPull_MultipleRemotes(t *testing.T) {
+	branchName := "main"
+	localDir, originDir, upstreamDir := setupRepoWithMultipleRemotes(t, branchName)
+
+	// Add commits to both remotes.
+	runGit(t, originDir, "-c", "user.email=test@test.com", "-c", "user.name=Test",
+		"commit", "--allow-empty", "-m", "origin new commit")
+	runGit(t, upstreamDir, "-c", "user.email=test@test.com", "-c", "user.name=Test",
+		"commit", "--allow-empty", "-m", "upstream new commit")
+
+	repo, err := OpenRepository(localDir)
+	if err != nil {
+		t.Fatalf("OpenRepository: %v", err)
+	}
+
+	upstreamBefore := runGit(t, localDir, "rev-parse", "refs/remotes/upstream/"+branchName)
+
+	if err := repo.Pull(); err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+
+	// Pull should have fetched upstream too (even though merge is from origin).
+	upstreamAfter := runGit(t, localDir, "rev-parse", "refs/remotes/upstream/"+branchName)
+	if upstreamAfter == upstreamBefore {
+		t.Error("upstream tracking ref was not updated during Pull")
+	}
+
+	// Local branch should have origin's new commit (merged via pull).
+	localHead := runGit(t, localDir, "rev-parse", "HEAD")
+	originHead := runGit(t, originDir, "rev-parse", "HEAD")
+	if localHead != originHead {
+		t.Errorf("local HEAD %s != origin HEAD %s after pull", localHead, originHead)
+	}
+}
+
 func TestParseRepoName(t *testing.T) {
 	tests := []struct {
 		url  string
