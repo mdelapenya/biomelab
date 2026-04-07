@@ -28,7 +28,11 @@ internal/
   git/worktree.go           Go-git v6 wrapper: list, create, remove, repair, pull, fetch, sync status
   git/credential.go         Git credential helper protocol (git credential fill)
   agent/agents.go           Agent kind registry (claude, kiro, copilot, codex, opencode, gemini)
-  agent/detect.go           Process detection via gopsutil
+  agent/detect.go           Agent process detection (uses shared process.Lister)
+  ide/ides.go               IDE kind registry (vscode, cursor, zed, windsurf, goland, intellij, pycharm, neovim, vim)
+  ide/detect.go             IDE process detection (matches CWD + cmdline against worktree paths)
+  ide/kill.go               Kill IDE processes (SIGTERM then SIGKILL) before worktree deletion
+  process/process.go        Shared process enumeration types (Lister, Info, OSLister, Enrich)
   github/pr.go              GitHub-specific PR helpers (ParsePRRef, ValidatePR for fetch-PR flow)
   provider/provider.go      PRProvider interface, provider detection, shared types
   provider/github.go        GitHub PR lookup via gh CLI
@@ -48,7 +52,7 @@ docs/
 ## Key dependencies
 
 - **go-git v6** (unreleased, from main branch) -- All git operations. Uses `x/plumbing/worktree` for linked worktree support.
-- **gopsutil** -- Cross-platform process detection for agent matching.
+- **gopsutil** -- Cross-platform process detection for agent and IDE matching.
 - **bubbletea + lipgloss + bubbles** -- TUI framework.
 - **gh CLI** -- External tool for PR status (not a Go dependency).
 
@@ -65,6 +69,8 @@ docs/
 **Multi-remote support**: `Fetch()` and `Pull()` iterate over all configured remotes (e.g. origin, upstream, forks) so tracking refs stay current for every remote. Pull fetches all remotes first, then merges from origin.
 
 **Sync status**: Computed by comparing `refs/heads/<branch>` against tracking branches for "reference remotes" (`origin` and `upstream`, defined in `referenceRemotes`). The first non-up-to-date remote determines the status (ahead/behind/diverged). A `Fetch()` runs on every refresh cycle to keep remote refs current.
+
+**IDE detection**: The `internal/ide` package detects IDE processes open in each worktree, using the same process snapshot as agent detection (single `process.Lister.Processes()` call per refresh cycle). IDE matching uses process name only (not cmdline) to avoid false positives from generic patterns like "code". Worktree matching checks both CWD and cmdline args, since Electron-based IDEs (VS Code, Cursor) may have the workspace path as a CLI argument rather than CWD. The `ProcessPatterns` list is ordered so that more specific patterns (e.g. "nvim") match before broader ones (e.g. "vim"). Electron-based IDEs spawn many helper processes (Code Helper Renderer/GPU/Plugin); these are grouped into process trees using PPID so each independent window is one card entry, while all tree PIDs are collected in `ExtraPIDs` for killing. Two VS Code windows for the same worktree produce two entries. On worktree deletion, all detected IDE processes are killed (SIGTERM, then SIGKILL after 500ms) before removing the directory.
 
 **Terminal tab management**: The `internal/warp` package tracks which repo tabs have been opened in the current session (in-memory map). First `Enter` creates a tab, subsequent presses split within it. macOS uses System Events AppleScript for keyboard shortcuts (Cmd+T, Cmd+Shift+D). Linux uses terminal-specific CLI flags.
 
@@ -101,7 +107,7 @@ Modes: `modeNormal`, `modeCreate`, `modeFetchPR`, `modeConfirmDelete`
 - `modeNormal` -- Arrow keys navigate, `c`/`d`/`e`/`f`/`p`/`r`/`m`/`Enter`/`q` trigger actions.
 - `modeCreate` -- Text input active. `Enter` confirms, `Esc` cancels. Only accessible from main card (cursor == 0).
 - `modeFetchPR` -- Text input active. Accepts `"123"` or `"owner/repo#123"`. `Enter` validates via `gh` and fetches; `Esc` or empty input cancels. Only accessible from main card.
-- `modeConfirmDelete` -- Two-step: `y` arms the deletion, then `Enter` confirms. `Esc` or any other key cancels. Not available on main worktree. Renders as a centered popup overlay via `overlayCenter()` in `viewContent()`, not in the scrollable viewport. All App-level navigation (Tab, arrows, mouse) is blocked while the popup is active — keys are forwarded directly to the child.
+- `modeConfirmDelete` -- Two-step: `y` arms the deletion, then `Enter` confirms. `Esc` or any other key cancels. Not available on main worktree. Renders as a centered popup overlay via `overlayCenter()` in `viewContent()`, not in the scrollable viewport. If IDEs are detected in the worktree, the popup lists which IDEs will be closed (e.g. "Open IDEs (vscode, neovim) will be closed."). On confirm, IDE processes are killed before the worktree directory is removed. All App-level navigation (Tab, arrows, mouse) is blocked while the popup is active — keys are forwarded directly to the child.
 
 Cursor 0 = main worktree. Cursor 1+ = linked worktrees. Left/right only work in linked grid. Up from first linked row goes to main. Down from main goes to first linked.
 
@@ -109,10 +115,11 @@ Cursor 0 = main worktree. Cursor 1+ = linked worktrees. Left/right only work in 
 
 - **Config tests**: Use `t.TempDir()` for config file paths. Test round-trip save/load, dedup, remove.
 - **Git tests**: Use real temp repos via `t.TempDir()` + `gogit.PlainInit`. Test worktree create/remove/list/dirty.
-- **Agent tests**: Mock `ProcessLister` interface with canned `ProcessInfo` slices. No real processes.
+- **Agent tests**: Mock `process.Lister` interface with canned `process.Info` slices. No real processes.
+- **IDE tests**: Same mock pattern as agent tests. Test CWD matching, cmdline matching, process tree deduplication (Electron helpers grouped by PPID), two independent windows producing two entries, and nested helper rollup.
 - **App tests**: Create a `testApp(n)` with pre-populated repoTabs (no real repos). Test focus switching, repo navigation, add/remove modes, stale message routing.
 - **TUI tests**: Create a `testModel(n)` with pre-populated worktrees. Send `tea.KeyMsg` to `Update`, assert model fields.
-- **Card tests**: Call `card.Render(wt, agents, pr)` and assert output contains expected strings.
+- **Card tests**: Call `card.Render(wt, agents, ides, pr, cliAvail, prov)` and assert output contains expected strings. IDE card tests verify `■ <kind>` rendering and `□ no IDE` placeholder.
 
 Always run `go test -race ./...` -- the TUI must be safe for concurrent `View` + `Update`.
 
@@ -128,3 +135,6 @@ Always run `go test -race ./...` -- the TUI must be safe for concurrent `View` +
 - **`App.Init()` is async**: repos are loaded inside a `tea.Cmd` closure and arrive via `appInitMsg`. bubbletea's `WindowSizeMsg` arrives before `appInitMsg`, so the `appInitMsg` handler must resize all children using stored dimensions.
 - Always bounds-check `a.active < len(a.repos)` before accessing `a.repos[a.active]` — repos can be removed while the active index is stale.
 - **Confirmation dialogs should use popup overlays**, not status messages appended to the viewport bottom (which scroll off-screen). Use `overlayCenter()` to composite popups on top of `viewContent()`. See `modeConfirmDelete` for the pattern. Popups are fully modal: background is dimmed, and all navigation (Tab, arrows, mouse) is blocked. When a child model enters a modal mode, `handleKeyMsg` detects `!child.IsNormal()` and forwards keys directly to the child, bypassing App-level navigation.
+- **IDE `ProcessPatterns` order matters**: more specific patterns must come before broader ones (e.g. `"nvim"` before `"vim"`). Using a map would cause non-deterministic matching; the ordered `[]processPattern` slice is intentional.
+- **IDE killing is best-effort**: `KillProcesses` silently ignores errors (process may have already exited, or permission denied). No error is surfaced to the user.
+- **IDE cmdline matching uses `strings.Contains`**: a worktree path appearing anywhere in a process cmdline will match. This can produce false positives if the path is a substring of an unrelated argument.

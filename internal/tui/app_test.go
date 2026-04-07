@@ -374,14 +374,14 @@ func TestAppQuitBlockedDuringTextInput(t *testing.T) {
 }
 
 func TestNewApp(t *testing.T) {
-	a := NewApp("/tmp/test-config.json", nil, 0)
+	a := NewApp("/tmp/test-config.json", nil, nil, nil, 0)
 	if a.refreshInterval != DefaultNetworkRefreshInterval {
 		t.Errorf("refreshInterval = %v, want %v", a.refreshInterval, DefaultNetworkRefreshInterval)
 	}
 }
 
 func TestNewApp_CustomInterval(t *testing.T) {
-	a := NewApp("/tmp/test-config.json", nil, 10*time.Second)
+	a := NewApp("/tmp/test-config.json", nil, nil, nil, 10*time.Second)
 	if a.refreshInterval != 10*time.Second {
 		t.Errorf("refreshInterval = %v, want 10s", a.refreshInterval)
 	}

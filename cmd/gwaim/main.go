@@ -11,6 +11,8 @@ import (
 	"github.com/mdelapenya/gwaim/internal/agent"
 	"github.com/mdelapenya/gwaim/internal/config"
 	"github.com/mdelapenya/gwaim/internal/git"
+	"github.com/mdelapenya/gwaim/internal/ide"
+	"github.com/mdelapenya/gwaim/internal/process"
 	"github.com/mdelapenya/gwaim/internal/tui"
 )
 
@@ -33,6 +35,8 @@ func main() {
 	refreshInterval := resolveRefreshInterval(refreshFlag)
 
 	detector := agent.NewDetector()
+	ideDetector := ide.NewDetector()
+	procLister := &process.OSLister{}
 	configPath := config.DefaultPath()
 
 	// If we're in a git repo, auto-add it to config.
@@ -50,7 +54,7 @@ func main() {
 		}
 	}
 
-	app := tui.NewApp(configPath, detector, refreshInterval)
+	app := tui.NewApp(configPath, detector, ideDetector, procLister, refreshInterval)
 	p := tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 	if _, err := p.Run(); err != nil {

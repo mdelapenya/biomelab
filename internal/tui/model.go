@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,6 +18,8 @@ import (
 	"github.com/mdelapenya/gwaim/internal/agent"
 	"github.com/mdelapenya/gwaim/internal/git"
 	"github.com/mdelapenya/gwaim/internal/github"
+	"github.com/mdelapenya/gwaim/internal/ide"
+	"github.com/mdelapenya/gwaim/internal/process"
 	"github.com/mdelapenya/gwaim/internal/provider"
 	"github.com/mdelapenya/gwaim/internal/tui/card"
 	"github.com/mdelapenya/gwaim/internal/warp"
@@ -45,11 +48,14 @@ const (
 
 // Model is the top-level bubbletea model for gwaim.
 type Model struct {
-	repo      *git.Repository
-	detector  *agent.Detector
-	worktrees []git.Worktree
-	agents    agent.DetectionResult
-	prs       provider.PRResult
+	repo         *git.Repository
+	detector     *agent.Detector
+	ideDetector  *ide.Detector
+	procLister   process.Lister
+	worktrees    []git.Worktree
+	agents       agent.DetectionResult
+	ides         ide.DetectionResult
+	prs          provider.PRResult
 	cliAvail  provider.CLIAvailability
 	prProv    provider.PRProvider
 	cursor    int
@@ -85,8 +91,8 @@ type zone struct {
 
 // New creates a new TUI model. refreshInterval controls how often network
 // operations (fetch + PR lookups) run. Pass 0 to use DefaultNetworkRefreshInterval.
-// Local state (dirty status, agents) always refreshes every LocalRefreshInterval.
-func New(repo *git.Repository, detector *agent.Detector, refreshInterval time.Duration) Model {
+// Local state (dirty status, agents, IDEs) always refreshes every LocalRefreshInterval.
+func New(repo *git.Repository, detector *agent.Detector, ideDetector *ide.Detector, procLister process.Lister, refreshInterval time.Duration) Model {
 	ti := textinput.New()
 	ti.Placeholder = "branch-name"
 	ti.CharLimit = 80
@@ -107,6 +113,8 @@ func New(repo *git.Repository, detector *agent.Detector, refreshInterval time.Du
 	return Model{
 		repo:            repo,
 		detector:        detector,
+		ideDetector:     ideDetector,
+		procLister:      procLister,
 		keys:            defaultKeyMap(),
 		textInput:       ti,
 		mouseOn:         true,
@@ -117,8 +125,8 @@ func New(repo *git.Repository, detector *agent.Detector, refreshInterval time.Du
 
 // newEmbedded creates a Model that renders without its own header.
 // Used by App, which renders the header above both columns.
-func newEmbedded(repo *git.Repository, detector *agent.Detector, refreshInterval time.Duration) Model {
-	m := New(repo, detector, refreshInterval)
+func newEmbedded(repo *git.Repository, detector *agent.Detector, ideDetector *ide.Detector, procLister process.Lister, refreshInterval time.Duration) Model {
+	m := New(repo, detector, ideDetector, procLister, refreshInterval)
 	m.embedded = true
 	return m
 }
@@ -137,7 +145,7 @@ func (m Model) Resume() (Model, tea.Cmd) {
 	rp := m.repoPath()
 	return m, tea.Batch(
 		doQuickRefresh(m.repo, rp),
-		doLocalRefresh(m.repo, m.detector, rp),
+		doLocalRefresh(m.repo, m.detector, m.ideDetector, m.procLister, rp),
 		m.doLocalTick(),
 		m.doTick(),
 	)
@@ -179,8 +187,8 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		doCheckCLI(m.prProv, rp),
 		doQuickRefresh(m.repo, rp),
-		doLocalRefresh(m.repo, m.detector, rp),
-		doNetworkRefresh(m.repo, m.detector, m.prProv, m.cliAvail, rp),
+		doLocalRefresh(m.repo, m.detector, m.ideDetector, m.procLister, rp),
+		doNetworkRefresh(m.repo, m.detector, m.ideDetector, m.procLister, m.prProv, m.cliAvail, rp),
 		m.doLocalTick(),
 		m.doTick(),
 	)
@@ -212,14 +220,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil // don't re-schedule: breaks the tick chain
 		}
 		rp := m.repoPath()
-		return m, tea.Batch(doNetworkRefresh(m.repo, m.detector, m.prProv, m.cliAvail, rp), m.doTick())
+		return m, tea.Batch(doNetworkRefresh(m.repo, m.detector, m.ideDetector, m.procLister, m.prProv, m.cliAvail, rp), m.doTick())
 
 	case localTickMsg:
 		if m.isStale(msg.repoPath) || m.paused {
 			return m, nil // don't re-schedule: breaks the tick chain
 		}
 		rp := m.repoPath()
-		return m, tea.Batch(doLocalRefresh(m.repo, m.detector, rp), m.doLocalTick())
+		return m, tea.Batch(doLocalRefresh(m.repo, m.detector, m.ideDetector, m.procLister, rp), m.doLocalTick())
 
 	case refreshMsg:
 		if m.isStale(msg.repoPath) {
@@ -230,6 +238,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.worktrees = msg.worktrees
 			m.agents = msg.agents
+			m.ides = msg.ides
 			if msg.hasPRs {
 				m.prs = msg.prs
 			}
@@ -281,7 +290,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.statusMsg = errorStyle.Render("Error: " + msg.err.Error())
 			m.mode = modeNormal
-			return m, tea.Batch(doQuickRefresh(m.repo, rp), doLocalRefresh(m.repo, m.detector, rp))
+			return m, tea.Batch(doQuickRefresh(m.repo, rp), doLocalRefresh(m.repo, m.detector, m.ideDetector, m.procLister, rp))
 		}
 		m.statusMsg = cleanStyle.Render("Worktree created — opening panel...")
 		m.mode = modeNormal
@@ -289,7 +298,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		newWtPath := filepath.Join(m.repo.Root(), ".gwaim-worktrees", msg.branchName)
 		return m, tea.Batch(
 			doQuickRefresh(m.repo, rp),
-			doLocalRefresh(m.repo, m.detector, rp),
+			doLocalRefresh(m.repo, m.detector, m.ideDetector, m.procLister, rp),
 			doOpenWarpPanel(m.repo.RepoName(), git.Worktree{Path: newWtPath, Branch: msg.branchName}, nil),
 		)
 
@@ -301,14 +310,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.statusMsg = errorStyle.Render("Error: " + msg.err.Error())
 			m.mode = modeNormal
-			return m, tea.Batch(doQuickRefresh(m.repo, rp), doLocalRefresh(m.repo, m.detector, rp))
+			return m, tea.Batch(doQuickRefresh(m.repo, rp), doLocalRefresh(m.repo, m.detector, m.ideDetector, m.procLister, rp))
 		}
 		m.statusMsg = cleanStyle.Render("PR fetched — opening panel...")
 		m.mode = modeNormal
 		// Trigger a network refresh so the new worktree's PR badge appears immediately.
 		return m, tea.Batch(
 			doQuickRefresh(m.repo, rp),
-			doNetworkRefresh(m.repo, m.detector, m.prProv, m.cliAvail, rp),
+			doNetworkRefresh(m.repo, m.detector, m.ideDetector, m.procLister, m.prProv, m.cliAvail, rp),
 			doOpenWarpPanel(m.repo.RepoName(), git.Worktree{Path: msg.wtPath, Branch: msg.branchName}, nil),
 		)
 
@@ -323,7 +332,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMsg = cleanStyle.Render("Worktree removed")
 		}
 		m.mode = modeNormal
-		return m, tea.Batch(doQuickRefresh(m.repo, rp), doLocalRefresh(m.repo, m.detector, rp))
+		return m, tea.Batch(doQuickRefresh(m.repo, rp), doLocalRefresh(m.repo, m.detector, m.ideDetector, m.procLister, rp))
 
 	case warpOpenedMsg:
 		if msg.err != nil {
@@ -352,7 +361,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMsg = cleanStyle.Render("Pull complete")
 		}
 		// Pull changes local state only; sync status will update on next network tick.
-		return m, tea.Batch(doQuickRefresh(m.repo, rp), doLocalRefresh(m.repo, m.detector, rp))
+		return m, tea.Batch(doQuickRefresh(m.repo, rp), doLocalRefresh(m.repo, m.detector, m.ideDetector, m.procLister, rp))
 
 	case worktreeRepairedMsg:
 		if m.isStale(msg.repoPath) {
@@ -366,7 +375,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.statusMsg = cleanStyle.Render("Nothing to repair")
 		}
-		return m, tea.Batch(doQuickRefresh(m.repo, rp), doLocalRefresh(m.repo, m.detector, rp))
+		return m, tea.Batch(doQuickRefresh(m.repo, rp), doLocalRefresh(m.repo, m.detector, m.ideDetector, m.procLister, rp))
 
 	case tea.KeyMsg:
 		updated, cmd := m.handleKey(msg)
@@ -453,7 +462,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				wt := m.worktrees[m.cursor]
 				m.mode = modeNormal
 				m.deleteConfirmed = false
-				return m, doRemoveWorktree(m.repo, wt.Branch, m.repoPath())
+				// Collect all IDE PIDs for this worktree so they can be killed before removal.
+				var idePIDs []int32
+				for _, i := range m.ides[wt.Path] {
+					idePIDs = append(idePIDs, i.ExtraPIDs...)
+				}
+				return m, doRemoveWorktree(m.repo, wt.Branch, m.repoPath(), idePIDs)
 			}
 			m.mode = modeNormal
 			m.deleteConfirmed = false
@@ -646,7 +660,8 @@ func (m *Model) renderFixedTop() string {
 	if len(m.worktrees) > 0 {
 		mainWt := m.worktrees[0]
 		agents := m.agents[mainWt.Path]
-		content := card.Render(mainWt, agents, m.prs[mainWt.Branch], m.cliAvail, prov)
+		mainIDEs := m.ides[mainWt.Path]
+		content := card.Render(mainWt, agents, mainIDEs, m.prs[mainWt.Branch], m.cliAvail, prov)
 
 		mainWidth := m.width - 4
 		if mainWidth < 40 {
@@ -712,7 +727,8 @@ func (m *Model) renderLinkedCards() string {
 		var rowIndices []int
 		for i, wt := range linked {
 			agents := m.agents[wt.Path]
-			content := card.Render(wt, agents, m.prs[wt.Branch], m.cliAvail, prov)
+			wtIDEs := m.ides[wt.Path]
+			content := card.Render(wt, agents, wtIDEs, m.prs[wt.Branch], m.cliAvail, prov)
 
 			globalIdx := i + 1
 			style := cardStyle.Width(cardWidth)
@@ -866,11 +882,21 @@ func (m Model) renderConfirmPopup() string {
 	}
 	wt := m.worktrees[m.cursor]
 
+	ideList := m.ides[wt.Path]
+	var ideNote string
+	if len(ideList) > 0 {
+		var names []string
+		for _, i := range ideList {
+			names = append(names, string(i.Kind))
+		}
+		ideNote = fmt.Sprintf("\nOpen IDEs (%s) will be closed.", strings.Join(names, ", "))
+	}
+
 	var msg string
 	if m.deleteConfirmed {
 		msg = fmt.Sprintf("Delete worktree %q?\n\nPress Enter to confirm, Esc to cancel.", wt.Branch)
 	} else {
-		msg = fmt.Sprintf("Delete worktree %q?\n\nThis removes the directory, branch,\nand prunes metadata.\n\n[y] confirm  [Esc] cancel", wt.Branch)
+		msg = fmt.Sprintf("Delete worktree %q?\n\nThis removes the directory, branch,\nand prunes metadata.%s\n\n[y] confirm  [Esc] cancel", wt.Branch, ideNote)
 	}
 
 	return popupStyle.Render(msg)
@@ -978,9 +1004,9 @@ func doQuickRefresh(repo *git.Repository, repoPath string) tea.Cmd {
 	}
 }
 
-// doLocalRefresh reads dirty status and detects agents — no network I/O.
+// doLocalRefresh reads dirty status and detects agents and IDEs — no network I/O.
 // Fires every LocalRefreshInterval and after any state-modifying operation.
-func doLocalRefresh(repo *git.Repository, detector *agent.Detector, repoPath string) tea.Cmd {
+func doLocalRefresh(repo *git.Repository, detector *agent.Detector, ideDetector *ide.Detector, procLister process.Lister, repoPath string) tea.Cmd {
 	return func() tea.Msg {
 		wts, err := repo.ListWorktrees()
 		if err != nil {
@@ -990,14 +1016,24 @@ func doLocalRefresh(repo *git.Repository, detector *agent.Detector, repoPath str
 		for i, wt := range wts {
 			paths[i] = wt.Path
 		}
-		agents := detector.Detect(paths)
-		return refreshMsg{repoPath: repoPath, source: refreshSourceLocal, worktrees: wts, agents: agents}
+
+		// Fetch processes once and share across both detectors.
+		ctx := context.Background()
+		procs, procErr := procLister.Processes(ctx)
+		var agents agent.DetectionResult
+		var ides ide.DetectionResult
+		if procErr == nil {
+			agents = detector.DetectFromProcesses(procs, paths)
+			ides = ideDetector.DetectFromProcesses(procs, paths)
+		}
+
+		return refreshMsg{repoPath: repoPath, source: refreshSourceLocal, worktrees: wts, agents: agents, ides: ides}
 	}
 }
 
 // doNetworkRefresh fetches remote refs and looks up PR status.
 // Fires every refreshInterval (controlled by --refresh / GWAIM_REFRESH).
-func doNetworkRefresh(repo *git.Repository, detector *agent.Detector, prProv provider.PRProvider, cliAvail provider.CLIAvailability, repoPath string) tea.Cmd {
+func doNetworkRefresh(repo *git.Repository, detector *agent.Detector, ideDetector *ide.Detector, procLister process.Lister, prProv provider.PRProvider, cliAvail provider.CLIAvailability, repoPath string) tea.Cmd {
 	return func() tea.Msg {
 		fetchErr := repo.Fetch()
 
@@ -1013,14 +1049,23 @@ func doNetworkRefresh(repo *git.Repository, detector *agent.Detector, prProv pro
 			branches[i] = wt.Branch
 		}
 
-		agents := detector.Detect(paths)
+		// Fetch processes once and share across both detectors.
+		ctx := context.Background()
+		procs, procErr := procLister.Processes(ctx)
+		var agents agent.DetectionResult
+		var ides ide.DetectionResult
+		if procErr == nil {
+			agents = detector.DetectFromProcesses(procs, paths)
+			ides = ideDetector.DetectFromProcesses(procs, paths)
+		}
+
 		var prs provider.PRResult
 		if cliAvail == provider.CLIAvailable {
 			prs = prProv.FetchPRs(repo.Root(), branches)
 		} else {
 			prs = make(provider.PRResult)
 		}
-		return refreshMsg{repoPath: repoPath, source: refreshSourceNetwork, worktrees: wts, agents: agents, prs: prs, hasPRs: true, fetchErr: fetchErr}
+		return refreshMsg{repoPath: repoPath, source: refreshSourceNetwork, worktrees: wts, agents: agents, ides: ides, prs: prs, hasPRs: true, fetchErr: fetchErr}
 	}
 }
 
@@ -1092,8 +1137,10 @@ func doRepairWorktrees(repo *git.Repository, repoPath string) tea.Cmd {
 	}
 }
 
-func doRemoveWorktree(repo *git.Repository, name, repoPath string) tea.Cmd {
+func doRemoveWorktree(repo *git.Repository, name, repoPath string, idePIDs []int32) tea.Cmd {
 	return func() tea.Msg {
+		// Kill IDE processes before removing the worktree directory.
+		ide.KillProcesses(idePIDs)
 		err := repo.RemoveWorktree(name)
 		return worktreeRemovedMsg{repoPath: repoPath, err: err}
 	}
