@@ -138,10 +138,24 @@ func (d *Detector) DetectFromProcesses(procs []process.Info, worktreePaths []str
 
 	for _, ide := range ides {
 		cwd := filepath.Clean(ide.Cwd)
+
+		// For cmdline matching, find the longest (most specific) worktree path
+		// that appears in the cmdline. This prevents a parent path like
+		// "/repo" from matching when the cmdline actually contains
+		// "/repo/.gwaim-worktrees/feature-branch".
+		bestCmdlineIdx := -1
+		bestCmdlineLen := 0
+		for j := range worktreePaths {
+			if strings.Contains(ide.Cmdline, cleanPaths[j]) && len(cleanPaths[j]) > bestCmdlineLen {
+				bestCmdlineIdx = j
+				bestCmdlineLen = len(cleanPaths[j])
+			}
+		}
+
 		for j, wtPath := range worktreePaths {
 			cleanWT := cleanPaths[j]
 			cwdMatch := ide.Cwd != "" && cwd == cleanWT
-			cmdlineMatch := strings.Contains(ide.Cmdline, cleanWT)
+			cmdlineMatch := bestCmdlineIdx == j
 			if cwdMatch || cmdlineMatch {
 				tk := treeKey{wtPath: wtPath, rootPID: rootOf[ide.PID]}
 				treePIDs[tk] = append(treePIDs[tk], ide.PID)

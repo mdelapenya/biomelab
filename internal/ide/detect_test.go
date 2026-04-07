@@ -297,3 +297,54 @@ func TestDetectFromProcesses(t *testing.T) {
 		t.Fatalf("expected 1 IDE for /other, got %d", len(result["/other"]))
 	}
 }
+
+func TestDetect_CmdlineMatchesMostSpecificPath(t *testing.T) {
+	// When the main repo path is a prefix of a worktree path, a process
+	// whose cmdline contains the worktree path should only match the
+	// worktree, not the parent repo.
+	lister := &mockLister{
+		procs: []process.Info{
+			{PID: 100, PPID: 1, Name: "code", Cmdline: "code /repo/.gwaim-worktrees/feature", Cwd: "/"},
+		},
+	}
+
+	d := NewDetectorWithLister(lister)
+	result := d.Detect([]string{"/repo", "/repo/.gwaim-worktrees/feature"})
+
+	if len(result["/repo"]) != 0 {
+		t.Errorf("expected 0 IDEs for parent /repo, got %d", len(result["/repo"]))
+	}
+	if len(result["/repo/.gwaim-worktrees/feature"]) != 1 {
+		t.Fatalf("expected 1 IDE for worktree, got %d", len(result["/repo/.gwaim-worktrees/feature"]))
+	}
+	if result["/repo/.gwaim-worktrees/feature"][0].Kind != VSCode {
+		t.Errorf("expected vscode, got %s", result["/repo/.gwaim-worktrees/feature"][0].Kind)
+	}
+}
+
+func TestDetect_CWDMatchNotAffectedByMostSpecificCmdline(t *testing.T) {
+	// A process with CWD matching the parent repo should still match,
+	// even if its cmdline also contains a child worktree path.
+	lister := &mockLister{
+		procs: []process.Info{
+			{PID: 100, PPID: 1, Name: "nvim", Cwd: "/repo"},
+			{PID: 200, PPID: 1, Name: "code", Cmdline: "code /repo/.gwaim-worktrees/feature", Cwd: "/"},
+		},
+	}
+
+	d := NewDetectorWithLister(lister)
+	result := d.Detect([]string{"/repo", "/repo/.gwaim-worktrees/feature"})
+
+	if len(result["/repo"]) != 1 {
+		t.Fatalf("expected 1 IDE for /repo (CWD match), got %d", len(result["/repo"]))
+	}
+	if result["/repo"][0].Kind != Neovim {
+		t.Errorf("expected neovim, got %s", result["/repo"][0].Kind)
+	}
+	if len(result["/repo/.gwaim-worktrees/feature"]) != 1 {
+		t.Fatalf("expected 1 IDE for worktree, got %d", len(result["/repo/.gwaim-worktrees/feature"]))
+	}
+	if result["/repo/.gwaim-worktrees/feature"][0].Kind != VSCode {
+		t.Errorf("expected vscode, got %s", result["/repo/.gwaim-worktrees/feature"][0].Kind)
+	}
+}
