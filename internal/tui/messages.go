@@ -3,6 +3,7 @@ package tui
 import (
 	"github.com/mdelapenya/gwaim/internal/agent"
 	"github.com/mdelapenya/gwaim/internal/git"
+	"github.com/mdelapenya/gwaim/internal/ide"
 	"github.com/mdelapenya/gwaim/internal/provider"
 )
 
@@ -21,6 +22,7 @@ type refreshMsg struct {
 	source    refreshSource
 	worktrees []git.Worktree
 	agents    agent.DetectionResult
+	ides      ide.DetectionResult
 	prs       provider.PRResult
 	hasPRs    bool // true only when a network refresh attempted PR lookup
 	err       error

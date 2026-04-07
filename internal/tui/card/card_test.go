@@ -6,6 +6,7 @@ import (
 
 	"github.com/mdelapenya/gwaim/internal/agent"
 	"github.com/mdelapenya/gwaim/internal/git"
+	"github.com/mdelapenya/gwaim/internal/ide"
 	"github.com/mdelapenya/gwaim/internal/provider"
 )
 
@@ -16,7 +17,7 @@ func TestRender_CleanNoAgent(t *testing.T) {
 		IsMain: true,
 	}
 
-	got := Render(wt, nil, nil, provider.CLIAvailable, provider.ProviderGitHub)
+	got := Render(wt, nil, nil, nil, provider.CLIAvailable, provider.ProviderGitHub)
 
 	if !strings.Contains(got, "main") {
 		t.Error("expected branch name in output")
@@ -39,7 +40,7 @@ func TestRender_DirtyWithAgent(t *testing.T) {
 		{Kind: agent.Claude, PID: "12345"},
 	}
 
-	got := Render(wt, agents, nil, provider.CLIAvailable, provider.ProviderGitHub)
+	got := Render(wt, agents, nil, nil, provider.CLIAvailable, provider.ProviderGitHub)
 
 	if !strings.Contains(got, "feature-auth") {
 		t.Error("expected branch name in output")
@@ -65,7 +66,7 @@ func TestRender_MultipleAgents(t *testing.T) {
 		{Kind: agent.Copilot, PID: "200"},
 	}
 
-	got := Render(wt, agents, nil, provider.CLIAvailable, provider.ProviderGitHub)
+	got := Render(wt, agents, nil, nil, provider.CLIAvailable, provider.ProviderGitHub)
 
 	if !strings.Contains(got, "claude") {
 		t.Error("expected claude in output")
@@ -85,7 +86,7 @@ func TestRender_SubAgent(t *testing.T) {
 		{Kind: agent.Claude, PID: "200", IsSubAgent: true},
 	}
 
-	got := Render(wt, agents, nil, provider.CLIAvailable, provider.ProviderGitHub)
+	got := Render(wt, agents, nil, nil, provider.CLIAvailable, provider.ProviderGitHub)
 
 	if !strings.Contains(got, "↳") {
 		t.Error("expected subagent indent marker '↳' in output")
@@ -102,7 +103,7 @@ func TestRender_DetachedHead(t *testing.T) {
 		Detached: true,
 	}
 
-	got := Render(wt, nil, nil, provider.CLIAvailable, provider.ProviderGitHub)
+	got := Render(wt, nil, nil, nil, provider.CLIAvailable, provider.ProviderGitHub)
 
 	if !strings.Contains(got, "detached") {
 		t.Error("expected 'detached' in output")
@@ -121,7 +122,7 @@ func TestRender_WithPR(t *testing.T) {
 		CheckStatus: "success",
 	}
 
-	got := Render(wt, nil, pr, provider.CLIAvailable, provider.ProviderGitHub)
+	got := Render(wt, nil, nil, pr, provider.CLIAvailable, provider.ProviderGitHub)
 
 	if !strings.Contains(got, "#42") {
 		t.Error("expected PR number in output")
@@ -150,7 +151,7 @@ func TestRender_WithDraftPR(t *testing.T) {
 		CheckStatus: "pending",
 	}
 
-	got := Render(wt, nil, pr, provider.CLIAvailable, provider.ProviderGitHub)
+	got := Render(wt, nil, nil, pr, provider.CLIAvailable, provider.ProviderGitHub)
 
 	if !strings.Contains(got, "draft") {
 		t.Error("expected 'draft' state in output")
@@ -166,7 +167,7 @@ func TestRender_CLINotFound(t *testing.T) {
 		Branch: "feature-x",
 	}
 
-	got := Render(wt, nil, nil, provider.CLINotFound, provider.ProviderGitHub)
+	got := Render(wt, nil, nil, nil, provider.CLINotFound, provider.ProviderGitHub)
 
 	if !strings.Contains(got, "gh not installed") {
 		t.Error("expected 'gh not installed' message")
@@ -182,7 +183,7 @@ func TestRender_CLINotAuthenticated(t *testing.T) {
 		Branch: "feature-x",
 	}
 
-	got := Render(wt, nil, nil, provider.CLINotAuthenticated, provider.ProviderGitHub)
+	got := Render(wt, nil, nil, nil, provider.CLINotAuthenticated, provider.ProviderGitHub)
 
 	if !strings.Contains(got, "gh not authenticated") {
 		t.Error("expected 'gh not authenticated' message")
@@ -204,7 +205,7 @@ func TestRender_PRTakesPrecedenceOverCLIStatus(t *testing.T) {
 	}
 
 	// Even with CLINotAuthenticated, if we somehow have a PR, show it.
-	got := Render(wt, nil, pr, provider.CLINotAuthenticated, provider.ProviderGitHub)
+	got := Render(wt, nil, nil, pr, provider.CLINotAuthenticated, provider.ProviderGitHub)
 
 	if !strings.Contains(got, "#7") {
 		t.Error("expected PR number in output")
@@ -220,7 +221,7 @@ func TestRender_UnsupportedProvider_ShowsMessage(t *testing.T) {
 		Branch: "feature-x",
 	}
 
-	got := Render(wt, nil, nil, provider.CLIUnsupportedProvider, provider.ProviderUnknown)
+	got := Render(wt, nil, nil, nil, provider.CLIUnsupportedProvider, provider.ProviderUnknown)
 
 	if !strings.Contains(got, "not yet supported") {
 		t.Error("expected 'not yet supported' message, got: " + got)
@@ -238,7 +239,7 @@ func TestRender_GitLabProvider_UsesMRLabel(t *testing.T) {
 		State:  "open",
 	}
 
-	got := Render(wt, nil, mr, provider.CLIAvailable, provider.ProviderGitLab)
+	got := Render(wt, nil, nil, mr, provider.CLIAvailable, provider.ProviderGitLab)
 
 	if !strings.Contains(got, "MR") {
 		t.Error("expected MR label for GitLab provider")
@@ -254,7 +255,7 @@ func TestRender_GitLabNotFound(t *testing.T) {
 		Branch: "feature-x",
 	}
 
-	got := Render(wt, nil, nil, provider.CLINotFound, provider.ProviderGitLab)
+	got := Render(wt, nil, nil, nil, provider.CLINotFound, provider.ProviderGitLab)
 
 	if !strings.Contains(got, "glab not installed") {
 		t.Error("expected 'glab not installed' message, got: " + got)
@@ -270,12 +271,65 @@ func TestRender_GitLabNotAuthenticated(t *testing.T) {
 		Branch: "feature-x",
 	}
 
-	got := Render(wt, nil, nil, provider.CLINotAuthenticated, provider.ProviderGitLab)
+	got := Render(wt, nil, nil, nil, provider.CLINotAuthenticated, provider.ProviderGitLab)
 
 	if !strings.Contains(got, "glab not authenticated") {
 		t.Error("expected 'glab not authenticated' message, got: " + got)
 	}
 	if !strings.Contains(got, "glab auth login") {
 		t.Error("expected auth login instruction for glab")
+	}
+}
+
+func TestRender_WithIDE(t *testing.T) {
+	wt := git.Worktree{
+		Path:   "/home/user/project",
+		Branch: "feature",
+	}
+	ides := []ide.Info{
+		{Kind: ide.VSCode, PID: 42},
+	}
+
+	got := Render(wt, nil, ides, nil, provider.CLIAvailable, provider.ProviderGitHub)
+
+	if !strings.Contains(got, "vscode") {
+		t.Error("expected IDE kind in output")
+	}
+	if !strings.Contains(got, "42") {
+		t.Error("expected IDE PID in output")
+	}
+}
+
+func TestRender_NoIDE(t *testing.T) {
+	wt := git.Worktree{
+		Path:   "/home/user/project",
+		Branch: "main",
+		IsMain: true,
+	}
+
+	got := Render(wt, nil, nil, nil, provider.CLIAvailable, provider.ProviderGitHub)
+
+	if !strings.Contains(got, "no IDE") {
+		t.Error("expected 'no IDE' indicator")
+	}
+}
+
+func TestRender_MultipleIDEs(t *testing.T) {
+	wt := git.Worktree{
+		Path:   "/tmp/work",
+		Branch: "dev",
+	}
+	ides := []ide.Info{
+		{Kind: ide.VSCode, PID: 100},
+		{Kind: ide.Neovim, PID: 200},
+	}
+
+	got := Render(wt, nil, ides, nil, provider.CLIAvailable, provider.ProviderGitHub)
+
+	if !strings.Contains(got, "vscode") {
+		t.Error("expected vscode in output")
+	}
+	if !strings.Contains(got, "neovim") {
+		t.Error("expected neovim in output")
 	}
 }

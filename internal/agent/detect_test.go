@@ -4,19 +4,21 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/mdelapenya/gwaim/internal/process"
 )
 
 type mockLister struct {
-	procs []ProcessInfo
+	procs []process.Info
 }
 
-func (m *mockLister) Processes(_ context.Context) ([]ProcessInfo, error) {
+func (m *mockLister) Processes(_ context.Context) ([]process.Info, error) {
 	return m.procs, nil
 }
 
 func TestDetect_MatchesCWDToWorktree(t *testing.T) {
 	lister := &mockLister{
-		procs: []ProcessInfo{
+		procs: []process.Info{
 			{PID: 12345, Name: "claude", Cwd: "/home/user/project", Status: "S", Created: time.Date(2026, 3, 4, 17, 53, 7, 0, time.UTC)},
 			{PID: 67890, Name: "kiro", Cwd: "/home/user/other", Status: "S+", Created: time.Date(2026, 3, 10, 18, 13, 23, 0, time.UTC)},
 			{PID: 111, Name: "bash", Cwd: "/home/user/project"},
@@ -53,7 +55,7 @@ func TestDetect_MatchesCWDToWorktree(t *testing.T) {
 
 func TestDetect_NoAgents(t *testing.T) {
 	lister := &mockLister{
-		procs: []ProcessInfo{
+		procs: []process.Info{
 			{PID: 111, Name: "bash", Cwd: "/home/user/project"},
 			{PID: 222, Name: "vim", Cwd: "/home/user/project"},
 		},
@@ -69,7 +71,7 @@ func TestDetect_NoAgents(t *testing.T) {
 
 func TestDetect_EmptyCWDSkipped(t *testing.T) {
 	lister := &mockLister{
-		procs: []ProcessInfo{
+		procs: []process.Info{
 			{PID: 12345, Name: "claude", Cwd: ""},
 		},
 	}
@@ -86,7 +88,7 @@ func TestDetect_ParentChildSubAgent(t *testing.T) {
 	// A CLI agent spawns a child with the same name and CWD.
 	// Parent should not be a subagent, child should be marked as subagent.
 	lister := &mockLister{
-		procs: []ProcessInfo{
+		procs: []process.Info{
 			{PID: 100, Name: "copilot", Cwd: "/project", Status: "S"},
 			{PID: 200, PPID: 100, Name: "copilot", Cwd: "/project", Status: "S"},
 		},
@@ -109,7 +111,7 @@ func TestDetect_ParentChildSubAgent(t *testing.T) {
 func TestDetect_IndependentSessionsSameKind(t *testing.T) {
 	// Two independent sessions of the same agent (not parent-child) should both appear.
 	lister := &mockLister{
-		procs: []ProcessInfo{
+		procs: []process.Info{
 			{PID: 100, PPID: 1, Name: "claude", Cwd: "/project", Status: "S"},
 			{PID: 200, PPID: 1, Name: "claude", Cwd: "/project", Status: "S"},
 		},
@@ -126,7 +128,7 @@ func TestDetect_IndependentSessionsSameKind(t *testing.T) {
 func TestDetect_DifferentKindsSameWorktree(t *testing.T) {
 	// Two different agent kinds in the same worktree should both appear.
 	lister := &mockLister{
-		procs: []ProcessInfo{
+		procs: []process.Info{
 			{PID: 100, Name: "claude", Cwd: "/project", Status: "S"},
 			{PID: 200, Name: "copilot", Cwd: "/project", Status: "S"},
 		},
@@ -142,7 +144,7 @@ func TestDetect_DifferentKindsSameWorktree(t *testing.T) {
 
 func TestDetect_CopilotPattern(t *testing.T) {
 	lister := &mockLister{
-		procs: []ProcessInfo{
+		procs: []process.Info{
 			{PID: 999, Name: "copilot-agent", Cwd: "/work"},
 		},
 	}
@@ -162,7 +164,7 @@ func TestDetect_CmdlineMatch(t *testing.T) {
 	// Agents like gemini run as Node.js scripts: the process name is "node"
 	// but the cmdline contains the agent name.
 	lister := &mockLister{
-		procs: []ProcessInfo{
+		procs: []process.Info{
 			{PID: 500, Name: "node", Cmdline: "/opt/homebrew/bin/node /opt/homebrew/bin/gemini --yolo", Cwd: "/project", Status: "S"},
 		},
 	}
@@ -181,7 +183,7 @@ func TestDetect_CmdlineMatch(t *testing.T) {
 func TestDetect_CmdlineNoFalsePositive(t *testing.T) {
 	// A node process without any agent in the cmdline should not match.
 	lister := &mockLister{
-		procs: []ProcessInfo{
+		procs: []process.Info{
 			{PID: 600, Name: "node", Cmdline: "/usr/bin/node /app/server.js", Cwd: "/project"},
 		},
 	}
@@ -197,7 +199,7 @@ func TestDetect_CmdlineNoFalsePositive(t *testing.T) {
 func TestDetect_CmdlineParentChildSubAgent(t *testing.T) {
 	// Gemini spawns two node processes (parent + child). Child should be a subagent.
 	lister := &mockLister{
-		procs: []ProcessInfo{
+		procs: []process.Info{
 			{PID: 500, PPID: 1, Name: "node", Cmdline: "/opt/homebrew/bin/node /opt/homebrew/bin/gemini --yolo", Cwd: "/project", Status: "S"},
 			{PID: 600, PPID: 500, Name: "node", Cmdline: "/opt/homebrew/bin/node /opt/homebrew/bin/gemini --yolo", Cwd: "/project", Status: "S"},
 		},

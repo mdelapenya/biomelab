@@ -12,6 +12,7 @@ import (
 
 	"github.com/mdelapenya/gwaim/internal/agent"
 	"github.com/mdelapenya/gwaim/internal/git"
+	"github.com/mdelapenya/gwaim/internal/ide"
 	"github.com/mdelapenya/gwaim/internal/provider"
 )
 
@@ -25,6 +26,7 @@ func testModel(n int) Model {
 	m := Model{
 		keys:            defaultKeyMap(),
 		agents:          make(agent.DetectionResult),
+		ides:            make(ide.DetectionResult),
 		textInput:       ti,
 		refreshInterval: DefaultNetworkRefreshInterval,
 		prProv:          &provider.GitHubProvider{},
@@ -509,14 +511,14 @@ func TestScrollState_NotReady(t *testing.T) {
 }
 
 func TestNew_DefaultRefreshInterval(t *testing.T) {
-	m := New(nil, nil, 0)
+	m := New(nil, nil, nil, nil, 0)
 	if m.refreshInterval != DefaultNetworkRefreshInterval {
 		t.Errorf("refreshInterval = %v, want %v", m.refreshInterval, DefaultNetworkRefreshInterval)
 	}
 }
 
 func TestNew_CustomRefreshInterval(t *testing.T) {
-	m := New(nil, nil, 10*time.Second)
+	m := New(nil, nil, nil, nil, 10*time.Second)
 	if m.refreshInterval != 10*time.Second {
 		t.Errorf("refreshInterval = %v, want 10s", m.refreshInterval)
 	}

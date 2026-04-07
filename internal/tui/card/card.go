@@ -8,6 +8,7 @@ import (
 
 	"github.com/mdelapenya/gwaim/internal/agent"
 	"github.com/mdelapenya/gwaim/internal/git"
+	"github.com/mdelapenya/gwaim/internal/ide"
 	"github.com/mdelapenya/gwaim/internal/provider"
 )
 
@@ -16,6 +17,8 @@ var (
 	agentActiveStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	agentDetailStyle = lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("42"))
 	agentNoneStyle   = lipgloss.NewStyle().Faint(true)
+	ideActiveStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
+	ideNoneStyle     = lipgloss.NewStyle().Faint(true)
 	dirtyStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 	cleanStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	mainBadge        = lipgloss.NewStyle().
@@ -42,7 +45,7 @@ var (
 )
 
 // Render produces the content for a single worktree card.
-func Render(wt git.Worktree, agents []agent.Info, pr *provider.PRInfo, cliAvail provider.CLIAvailability, prov provider.Provider) string {
+func Render(wt git.Worktree, agents []agent.Info, ides []ide.Info, pr *provider.PRInfo, cliAvail provider.CLIAvailability, prov provider.Provider) string {
 	var b strings.Builder
 
 	// Branch line
@@ -101,6 +104,18 @@ func Render(wt git.Worktree, agents []agent.Info, pr *provider.PRInfo, cliAvail 
 		}
 	} else {
 		b.WriteString(agentNoneStyle.Render("○ no agent"))
+		b.WriteString("\n")
+	}
+
+	// IDE status
+	if len(ides) > 0 {
+		for _, i := range ides {
+			line := fmt.Sprintf("■ %s (PID %d)", string(i.Kind), i.PID)
+			b.WriteString(ideActiveStyle.Render(line))
+			b.WriteString("\n")
+		}
+	} else {
+		b.WriteString(ideNoneStyle.Render("□ no IDE"))
 		b.WriteString("\n")
 	}
 

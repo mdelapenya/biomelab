@@ -13,6 +13,8 @@ import (
 	"github.com/mdelapenya/gwaim/internal/agent"
 	"github.com/mdelapenya/gwaim/internal/config"
 	"github.com/mdelapenya/gwaim/internal/git"
+	"github.com/mdelapenya/gwaim/internal/ide"
+	"github.com/mdelapenya/gwaim/internal/process"
 )
 
 type focusPanel int
@@ -48,6 +50,8 @@ type App struct {
 	active           int        // selected repo index
 	focus            focusPanel // which panel has focus
 	detector         *agent.Detector
+	ideDetector      *ide.Detector
+	procLister       process.Lister
 	configPath       string
 	width            int
 	height           int
@@ -67,7 +71,7 @@ type addRepoMsg struct {
 }
 
 // NewApp creates a new App model.
-func NewApp(configPath string, detector *agent.Detector, refreshInterval time.Duration) App {
+func NewApp(configPath string, detector *agent.Detector, ideDetector *ide.Detector, procLister process.Lister, refreshInterval time.Duration) App {
 	ti := textinput.New()
 	ti.Placeholder = "/path/to/repository"
 	ti.CharLimit = 256
@@ -79,6 +83,8 @@ func NewApp(configPath string, detector *agent.Detector, refreshInterval time.Du
 
 	return App{
 		detector:        detector,
+		ideDetector:     ideDetector,
+		procLister:      procLister,
 		configPath:      configPath,
 		textInput:       ti,
 		refreshInterval: refreshInterval,
@@ -98,7 +104,7 @@ func (a App) Init() tea.Cmd {
 		if err != nil {
 			continue // skip repos that can't be opened
 		}
-		m := newEmbedded(repo, a.detector, a.refreshInterval)
+		m := newEmbedded(repo, a.detector, a.ideDetector, a.procLister, a.refreshInterval)
 		if i != 0 {
 			// Non-active repos start paused — no tick chains.
 			m.paused = true
@@ -434,7 +440,7 @@ func (a App) handleAddRepoMsg(msg addRepoMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Create the child model (starts unpaused — it's the new active).
-	m := newEmbedded(msg.repo, a.detector, a.refreshInterval)
+	m := newEmbedded(msg.repo, a.detector, a.ideDetector, a.procLister, a.refreshInterval)
 	rt := &repoTab{
 		path:  msg.path,
 		name:  msg.name,

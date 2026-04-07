@@ -6,91 +6,27 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
-	"github.com/shirou/gopsutil/v4/process"
+	"github.com/mdelapenya/gwaim/internal/process"
 )
-
-// ProcessLister abstracts process enumeration for testability.
-type ProcessLister interface {
-	Processes(ctx context.Context) ([]ProcessInfo, error)
-}
-
-// ProcessInfo holds the data we need from each OS process.
-type ProcessInfo struct {
-	PID     int32
-	PPID    int32
-	Name    string
-	Cmdline string
-	Cwd     string
-	Status  string
-	Created time.Time
-}
-
-// osProcessLister uses gopsutil to enumerate real processes.
-type osProcessLister struct{}
-
-func (o *osProcessLister) Processes(ctx context.Context) ([]ProcessInfo, error) {
-	procs, err := process.ProcessesWithContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var result []ProcessInfo
-	for _, p := range procs {
-		name, err := p.NameWithContext(ctx)
-		if err != nil {
-			continue
-		}
-		var cmdline string
-		if cl, err := p.CmdlineWithContext(ctx); err == nil {
-			cmdline = cl
-		}
-		result = append(result, ProcessInfo{
-			PID:     p.Pid,
-			Name:    name,
-			Cmdline: cmdline,
-		})
-	}
-	return result, nil
-}
-
-// enrichProcess fills in Cwd, Status, and Created for a process.
-func enrichProcess(ctx context.Context, info *ProcessInfo) {
-	p, err := process.NewProcess(info.PID)
-	if err != nil {
-		return
-	}
-	if cwd, err := p.CwdWithContext(ctx); err == nil {
-		info.Cwd = cwd
-	}
-	if statuses, err := p.StatusWithContext(ctx); err == nil && len(statuses) > 0 {
-		info.Status = strings.Join(statuses, ",")
-	}
-	if createTime, err := p.CreateTimeWithContext(ctx); err == nil {
-		info.Created = time.UnixMilli(createTime)
-	}
-	if ppid, err := p.PpidWithContext(ctx); err == nil {
-		info.PPID = ppid
-	}
-}
 
 // Detector finds coding agent processes and matches them to worktree paths.
 type Detector struct {
-	lister ProcessLister
+	lister process.Lister
 }
 
 // NewDetector creates a Detector using real system processes.
 func NewDetector() *Detector {
-	return &Detector{lister: &osProcessLister{}}
+	return &Detector{lister: &process.OSLister{}}
 }
 
 // NewDetectorWithLister creates a Detector with a custom process lister (for testing).
-func NewDetectorWithLister(lister ProcessLister) *Detector {
+func NewDetectorWithLister(lister process.Lister) *Detector {
 	return &Detector{lister: lister}
 }
 
 // Detect finds known coding agent processes and matches their CWDs to the given worktree paths.
+// It fetches processes internally via the configured Lister.
 func (d *Detector) Detect(worktreePaths []string) DetectionResult {
 	ctx := context.Background()
 
@@ -99,10 +35,19 @@ func (d *Detector) Detect(worktreePaths []string) DetectionResult {
 		return DetectionResult{}
 	}
 
+	return d.DetectFromProcesses(procs, worktreePaths)
+}
+
+// DetectFromProcesses matches pre-fetched processes against known agent patterns
+// and worktree paths. Use this when sharing a single process snapshot across
+// multiple detectors.
+func (d *Detector) DetectFromProcesses(procs []process.Info, worktreePaths []string) DetectionResult {
+	ctx := context.Background()
+
 	// Filter to agent processes only.
 	// Match against both the process name and the command line, since some agents
 	// (e.g. gemini) run as Node.js scripts where the process name is "node".
-	var agents []ProcessInfo
+	var agents []process.Info
 	for _, p := range procs {
 		name := strings.ToLower(filepath.Base(p.Name))
 		cmdline := strings.ToLower(p.Cmdline)
@@ -129,7 +74,7 @@ func (d *Detector) Detect(worktreePaths []string) DetectionResult {
 	// Enrich with CWD, state, and start time (only if not already provided).
 	for i := range agents {
 		if agents[i].Cwd == "" {
-			enrichProcess(ctx, &agents[i])
+			process.Enrich(ctx, &agents[i])
 		}
 	}
 
