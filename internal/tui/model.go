@@ -462,12 +462,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				wt := m.worktrees[m.cursor]
 				m.mode = modeNormal
 				m.deleteConfirmed = false
-				// Collect all IDE PIDs for this worktree so they can be killed before removal.
-				var idePIDs []int32
-				for _, i := range m.ides[wt.Path] {
-					idePIDs = append(idePIDs, i.ExtraPIDs...)
-				}
-				return m, doRemoveWorktree(m.repo, wt.Branch, m.repoPath(), idePIDs)
+				return m, doRemoveWorktree(m.repo, wt.Branch, m.repoPath())
 			}
 			m.mode = modeNormal
 			m.deleteConfirmed = false
@@ -882,21 +877,11 @@ func (m Model) renderConfirmPopup() string {
 	}
 	wt := m.worktrees[m.cursor]
 
-	ideList := m.ides[wt.Path]
-	var ideNote string
-	if len(ideList) > 0 {
-		var names []string
-		for _, i := range ideList {
-			names = append(names, string(i.Kind))
-		}
-		ideNote = fmt.Sprintf("\nOpen IDEs (%s) will be closed.", strings.Join(names, ", "))
-	}
-
 	var msg string
 	if m.deleteConfirmed {
 		msg = fmt.Sprintf("Delete worktree %q?\n\nPress Enter to confirm, Esc to cancel.", wt.Branch)
 	} else {
-		msg = fmt.Sprintf("Delete worktree %q?\n\nThis removes the directory, branch,\nand prunes metadata.%s\n\n[y] confirm  [Esc] cancel", wt.Branch, ideNote)
+		msg = fmt.Sprintf("Delete worktree %q?\n\nThis removes the directory, branch,\nand prunes metadata.\n\n[y] confirm  [Esc] cancel", wt.Branch)
 	}
 
 	return popupStyle.Render(msg)
@@ -1137,10 +1122,8 @@ func doRepairWorktrees(repo *git.Repository, repoPath string) tea.Cmd {
 	}
 }
 
-func doRemoveWorktree(repo *git.Repository, name, repoPath string, idePIDs []int32) tea.Cmd {
+func doRemoveWorktree(repo *git.Repository, name, repoPath string) tea.Cmd {
 	return func() tea.Msg {
-		// Kill IDE processes before removing the worktree directory.
-		ide.KillProcesses(idePIDs)
 		err := repo.RemoveWorktree(name)
 		return worktreeRemovedMsg{repoPath: repoPath, err: err}
 	}

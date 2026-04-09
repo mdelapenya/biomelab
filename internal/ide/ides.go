@@ -40,7 +40,7 @@ var ProcessPatterns = []processPattern{
 type Info struct {
 	Kind      Kind
 	PID       int32   // representative PID shown on the card
-	ExtraPIDs []int32 // all PIDs for this IDE kind (including PID); used for killing
+	ExtraPIDs []int32 // all PIDs in this IDE's process tree (including PID)
 }
 
 // DetectionResult maps absolute worktree paths to the IDEs open in them.
