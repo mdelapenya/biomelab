@@ -525,23 +525,6 @@ func (r *Repository) Pull() error {
 }
 
 // Repair runs "git worktree repair" to fix broken worktree links.
-// This shells out to git because go-git v6 does not provide a repair API.
-// It returns the repair output (written to stderr by git), which describes
-// each repaired worktree in the format "repair: <msg>: <path>".
-// An empty string means nothing needed repair.
-func (r *Repository) Repair() (string, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	cmd := exec.Command("git", "worktree", "repair")
-	cmd.Dir = r.repoRoot
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
-	}
-	return strings.TrimSpace(string(out)), nil
-}
-
 func isAuthError(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "authentication required") ||

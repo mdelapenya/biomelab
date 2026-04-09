@@ -17,7 +17,7 @@
 - **Delete worktrees** -- Press `d` on any linked worktree to delete it. A centered popup overlay shows what will happen: press `y` to arm, then `Enter` to confirm. `Esc` cancels at any point. The worktree directory is removed, the branch is deleted, and stale metadata is pruned. The main worktree cannot be deleted.
 - **Pull** -- Press `p` to pull. Fetches all configured remotes (origin, upstream, forks, etc.) first so all tracking refs are current, then merges from origin. Uses go-git with credentials resolved from your configured git credential helpers (osxkeychain, gh auth, etc.).
 - **Fetch PR into worktree** -- Press `f` from the main card to fetch a pull request into a new linked worktree. A prompt accepts a plain PR number (`123`) or a fork reference (`owner/repo#123`). gwaim validates the PR via `gh`, fetches the head branch, and creates a worktree for it. The branch ref is preserved exactly (e.g., `ralph/issue-19`), while the directory name is sanitized to be filesystem-safe.
-- **Repair worktrees** -- Press `r` from the main card to run `git worktree repair`, which fixes broken links between the main worktree and linked worktrees (e.g., after a worktree directory was moved manually). The status bar shows which worktrees were repaired, or "Nothing to repair" if all links are healthy.
+- **Refresh** -- Press `r` to force-refresh all cards in the current repo: worktree dirty/sync status, running agents, open IDEs, and PR status. This triggers a full network refresh (git fetch + PR lookup) rather than waiting for the next automatic refresh cycle.
 - **Open in terminal** -- Press `Enter` to open the selected worktree in a new terminal tab. If an agent is running in the worktree, the agent command is executed automatically. The first `Enter` creates a tab named after the repo (e.g., `docker/sandboxes`); subsequent presses add split panels to that same tab.
 - **Mouse support** -- Press `m` to toggle mouse mode. When enabled, click on cards to select them. When disabled (default), normal text selection works for copying paths, branch names, etc.
 - **Scrollable viewport** -- The main worktree card stays pinned at the top; linked worktree cards scroll independently below it. A scrollbar on the right panel border shows the current scroll position. Scroll with the mouse wheel, page up/down, or arrow keys (which auto-scroll to keep the selected card visible).
@@ -27,7 +27,7 @@
 - **Go 1.25+** -- Required to build from source.
 - **gh CLI** (GitHub) -- The [GitHub CLI](https://cli.github.com/) is required for pull request and CI status information on GitHub-hosted repositories. Install it and authenticate with `gh auth login`.
 - **glab CLI** (GitLab) -- The [GitLab CLI](https://gitlab.com/gitlab-org/cli) is required for merge request and CI pipeline status on GitLab-hosted repositories. Install it and authenticate with `glab auth login`.
-- **git** -- Required on the host for credential helper resolution (`git credential fill`) and worktree repair (`git worktree repair`). All other git operations use go-git natively.
+- **git** -- Required on the host for credential helper resolution (`git credential fill`). All other git operations use go-git natively.
 - **Global gitignore** -- gwaim creates worktrees in a `.gwaim-worktrees/` directory at the repository root. You must add this to your global gitignore so it is not tracked by any repository:
 
   ```bash
@@ -256,7 +256,7 @@ The current refresh interval is shown in the help bar at the bottom of the scree
 | `d`              | Delete the selected linked worktree (y + Enter to confirm)        |
 | `e`              | Open the selected worktree in an editor (`$GWAIM_EDITOR` or `code`) |
 | `p`              | Pull from remote (fetches and merges into main branch)            |
-| `r`              | Repair worktree links (only from the main card)                   |
+| `r`              | Force-refresh all cards in the repo (worktrees, agents, IDEs, PRs)|
 | `m`              | Toggle mouse mode on/off (default: off for text selection)        |
 
 ### Navigation model
@@ -287,7 +287,7 @@ gwaim is structured into the following internal packages:
 
 - **`cmd/gwaim`** -- Entry point. Loads the repo config, auto-adds the current directory's repo if applicable, creates the agent detector, and starts the Bubbletea program with the `App` model.
 - **`internal/config`** -- Persists the list of registered repositories to `~/.config/gwaim/repos.json`. Provides `Load`/`Save`/`Add`/`Remove` with atomic writes (write to `.tmp`, rename). Deduplicates by repo path.
-- **`internal/git`** -- Git operations using [go-git v6](https://github.com/go-git/go-git). Handles repository opening, worktree listing (main + linked), creation, removal, repair, pruning, pull, fetch, and sync status computation. Uses the `x/plumbing/worktree` extension for linked worktree management. Credentials are resolved via `git credential fill`. Repair shells out to `git worktree repair` (go-git v6 has no repair API).
+- **`internal/git`** -- Git operations using [go-git v6](https://github.com/go-git/go-git). Handles repository opening, worktree listing (main + linked), creation, removal, pruning, pull, fetch, and sync status computation. Uses the `x/plumbing/worktree` extension for linked worktree management. Credentials are resolved via `git credential fill`.
 - **`internal/agent`** -- Detects coding agent processes using [gopsutil](https://github.com/shirou/gopsutil). Enumerates all processes, filters by known agent patterns, resolves their CWDs, and matches them to worktree paths. Reports PID, process state, and start time.
 - **`internal/provider`** -- Multi-provider PR/MR abstraction. Defines a `PRProvider` interface and auto-detects the hosting provider (GitHub, GitLab) from the origin remote URL. Includes `GitHubProvider` (via `gh` CLI), `GitLabProvider` (via `glab` CLI), and `UnsupportedProvider` (graceful fallback for unknown hosts). Runs lookups concurrently (up to 4 at a time). Extracts PR/MR number, title, state, draft status, and CI check/pipeline status.
 - **`internal/github`** -- GitHub-specific PR helpers: `ParsePRRef` (parses `"123"` or `"owner/repo#123"`) and `ValidatePR` (confirms a PR exists via `gh` and returns its head branch) for the fetch-PR flow.
