@@ -876,7 +876,7 @@ func extractRepoPath(msg tea.Msg) string {
 		return m.repoPath
 	case pullMsg:
 		return m.repoPath
-	case worktreeRepairedMsg:
+	case cardRefreshMsg:
 		return m.repoPath
 	case localFlashDoneMsg:
 		return m.repoPath

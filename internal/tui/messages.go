@@ -66,11 +66,17 @@ type editorOpenedMsg struct {
 	err error
 }
 
-// worktreeRepairedMsg is sent after a worktree repair completes.
-type worktreeRepairedMsg struct {
-	repoPath string
-	output   string // per-worktree repair details from git, empty if nothing needed repair
-	err      error
+// cardRefreshMsg carries updated state for a single worktree card.
+type cardRefreshMsg struct {
+	repoPath  string
+	wtPath    string // worktree path identifying the card
+	worktrees []git.Worktree
+	agents    agent.DetectionResult
+	ides      ide.DetectionResult
+	prs       provider.PRResult
+	hasPRs    bool
+	err       error
+	fetchErr  error
 }
 
 // tickMsg triggers a network refresh (fetch + PRs).

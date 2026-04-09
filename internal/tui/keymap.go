@@ -11,7 +11,7 @@ type keyMap struct {
 	FetchPR  key.Binding
 	Delete   key.Binding
 	Pull     key.Binding
-	Repair   key.Binding
+	Refresh  key.Binding
 	Editor   key.Binding
 	Mouse    key.Binding
 	Enter    key.Binding
@@ -52,9 +52,9 @@ func defaultKeyMap() keyMap {
 			key.WithKeys("p"),
 			key.WithHelp("p", "pull"),
 		),
-		Repair: key.NewBinding(
+		Refresh: key.NewBinding(
 			key.WithKeys("r"),
-			key.WithHelp("r", "repair"),
+			key.WithHelp("r", "refresh"),
 		),
 		Editor: key.NewBinding(
 			key.WithKeys("e"),

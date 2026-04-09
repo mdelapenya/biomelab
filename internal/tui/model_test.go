@@ -302,7 +302,7 @@ func TestUpdate(t *testing.T) {
 		}
 	})
 
-	t.Run("repair from main worktree", func(t *testing.T) {
+	t.Run("refresh from main worktree", func(t *testing.T) {
 		m := testModel(2)
 		m.cursor = 0 // main worktree
 
@@ -311,14 +311,14 @@ func TestUpdate(t *testing.T) {
 		model := updated.(Model)
 
 		if model.statusMsg == "" {
-			t.Error("expected status message for repair")
+			t.Error("expected status message for refresh")
 		}
 		if cmd == nil {
-			t.Error("expected a command for repair")
+			t.Error("expected a command for refresh")
 		}
 	})
 
-	t.Run("repair blocked from non-main worktree", func(t *testing.T) {
+	t.Run("refresh from non-main worktree", func(t *testing.T) {
 		m := testModel(2)
 		m.cursor = 1 // non-main worktree
 
@@ -326,11 +326,11 @@ func TestUpdate(t *testing.T) {
 		updated, cmd := m.Update(msg)
 		model := updated.(Model)
 
-		if model.statusMsg != "" {
-			t.Error("expected no status message when repair from non-main")
+		if model.statusMsg == "" {
+			t.Error("expected status message for refresh")
 		}
-		if cmd != nil {
-			t.Error("expected no command when repair from non-main")
+		if cmd == nil {
+			t.Error("expected a command for refresh")
 		}
 	})
 

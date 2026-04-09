@@ -4,7 +4,7 @@ This file provides context for Claude and other coding agents working on this co
 
 ## What is gwaim?
 
-gwaim (Git Worktree AI Manager) is a Go TUI that manages git worktrees in the context of coding agents. It provides a multi-repository dashboard with a two-column layout: a left panel listing registered repos and a right panel showing the selected repo's worktree cards. It detects which coding agents are running in each worktree and provides actions to create/delete/repair worktrees, pull, open editors, and open terminal tabs.
+gwaim (Git Worktree AI Manager) is a Go TUI that manages git worktrees in the context of coding agents. It provides a multi-repository dashboard with a two-column layout: a left panel listing registered repos and a right panel showing the selected repo's worktree cards. It detects which coding agents are running in each worktree and provides actions to create/delete worktrees, pull, refresh card state, open editors, and open terminal tabs.
 
 ## Build and test commands
 
@@ -25,7 +25,7 @@ Go version: 1.25+ (check `go env GOROOT` if you hit version mismatches).
 cmd/gwaim/main.go           Entry point (creates App, auto-adds current repo)
 internal/
   config/config.go          Repo list persistence (~/.config/gwaim/repos.json)
-  git/worktree.go           Go-git v6 wrapper: list, create, remove, repair, pull, fetch, sync status
+  git/worktree.go           Go-git v6 wrapper: list, create, remove, pull, fetch, sync status
   git/credential.go         Git credential helper protocol (git credential fill)
   agent/agents.go           Agent kind registry (claude, kiro, copilot, codex, opencode, gemini)
   agent/detect.go           Agent process detection (uses shared process.Lister)
@@ -58,7 +58,7 @@ docs/
 
 ## Architecture decisions
 
-**No shelling out to git** for git operations. The exceptions are `git credential fill` in `internal/git/credential.go` (credential helper protocol, because go-git has no built-in credential helper support), `git worktree repair` in `internal/git/worktree.go` (because go-git v6 has no repair API), and `git worktree add` in `FetchPR` (shells out to add the worktree with a sanitized directory name while preserving the original branch ref).
+**No shelling out to git** for git operations. The exceptions are `git credential fill` in `internal/git/credential.go` (credential helper protocol, because go-git has no built-in credential helper support) and `git worktree add` in `FetchPR` (shells out to add the worktree with a sanitized directory name while preserving the original branch ref).
 
 **FetchPR directory naming**: The directory basename is sanitized (slashes → dashes) so `.git/worktrees/<key>` is safe, but the local branch ref keeps its original name (e.g., `ralph/issue-19` stays `ralph/issue-19`, not `ralph-issue-19`). `FetchPR` returns `(wtPath string, err error)` so the TUI uses the actual path rather than re-deriving it.
 
@@ -104,7 +104,7 @@ docs/
 
 Modes: `modeNormal`, `modeCreate`, `modeFetchPR`, `modeConfirmDelete`
 
-- `modeNormal` -- Arrow keys navigate, `c`/`d`/`e`/`f`/`p`/`r`/`m`/`Enter`/`q` trigger actions.
+- `modeNormal` -- Arrow keys navigate, `c`/`d`/`e`/`f`/`p`/`r` (refresh)/`m`/`Enter`/`q` trigger actions.
 - `modeCreate` -- Text input active. `Enter` confirms, `Esc` cancels. Only accessible from main card (cursor == 0).
 - `modeFetchPR` -- Text input active. Accepts `"123"` or `"owner/repo#123"`. `Enter` validates via `gh` and fetches; `Esc` or empty input cancels. Only accessible from main card.
 - `modeConfirmDelete` -- Two-step: `y` arms the deletion, then `Enter` confirms. `Esc` or any other key cancels. Not available on main worktree. Renders as a centered popup overlay via `overlayCenter()` in `viewContent()`, not in the scrollable viewport. On confirm, the worktree directory is removed. All App-level navigation (Tab, arrows, mouse) is blocked while the popup is active — keys are forwarded directly to the child.

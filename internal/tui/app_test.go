@@ -400,7 +400,7 @@ func TestExtractRepoPath(t *testing.T) {
 		{"worktreeRemovedMsg", worktreeRemovedMsg{repoPath: "/e"}, "/e"},
 		{"prFetchedMsg", prFetchedMsg{repoPath: "/f"}, "/f"},
 		{"pullMsg", pullMsg{repoPath: "/g"}, "/g"},
-		{"worktreeRepairedMsg", worktreeRepairedMsg{repoPath: "/h"}, "/h"},
+		{"cardRefreshMsg", cardRefreshMsg{repoPath: "/h"}, "/h"},
 		{"localFlashDoneMsg", localFlashDoneMsg{repoPath: "/i"}, "/i"},
 		{"netFlashDoneMsg", netFlashDoneMsg{repoPath: "/j"}, "/j"},
 		{"cliCheckMsg", cliCheckMsg{repoPath: "/k"}, "/k"},

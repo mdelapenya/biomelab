@@ -363,19 +363,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Pull changes local state only; sync status will update on next network tick.
 		return m, tea.Batch(doQuickRefresh(m.repo, rp), doLocalRefresh(m.repo, m.detector, m.ideDetector, m.procLister, rp))
 
-	case worktreeRepairedMsg:
+	case cardRefreshMsg:
 		if m.isStale(msg.repoPath) {
 			return m, nil
 		}
-		rp := m.repoPath()
 		if msg.err != nil {
-			m.statusMsg = errorStyle.Render("Repair: " + msg.err.Error())
-		} else if msg.output != "" {
-			m.statusMsg = cleanStyle.Render("Repair: " + msg.output)
-		} else {
-			m.statusMsg = cleanStyle.Render("Nothing to repair")
+			m.statusMsg = errorStyle.Render("Refresh: " + msg.err.Error())
+			return m, nil
 		}
-		return m, tea.Batch(doQuickRefresh(m.repo, rp), doLocalRefresh(m.repo, m.detector, m.ideDetector, m.procLister, rp))
+		if msg.fetchErr != nil {
+			m.statusMsg = errorStyle.Render("Fetch: " + msg.fetchErr.Error())
+		} else {
+			m.statusMsg = cleanStyle.Render("Refreshed")
+		}
+		// Update worktree list (needed for dirty/sync status).
+		m.worktrees = msg.worktrees
+		// Merge per-card agent/IDE/PR data into existing maps.
+		for k, v := range msg.agents {
+			m.agents[k] = v
+		}
+		for k, v := range msg.ides {
+			m.ides[k] = v
+		}
+		if msg.hasPRs {
+			for k, v := range msg.prs {
+				m.prs[k] = v
+			}
+		}
+		if m.cursor >= len(m.worktrees) && len(m.worktrees) > 0 {
+			m.cursor = len(m.worktrees) - 1
+		}
+		m.syncViewport()
+		return m, nil
 
 	case tea.KeyMsg:
 		updated, cmd := m.handleKey(msg)
@@ -540,12 +559,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.statusMsg = cleanStyle.Render("Pulling...")
 		return m, doPull(m.repo, m.repoPath())
 
-	case key.Matches(msg, m.keys.Repair):
-		if m.cursor != 0 {
-			return m, nil // repair only from main worktree
+	case key.Matches(msg, m.keys.Refresh):
+		if m.cursor >= len(m.worktrees) {
+			return m, nil
 		}
-		m.statusMsg = cleanStyle.Render("Repairing worktrees...")
-		return m, doRepairWorktrees(m.repo, m.repoPath())
+		wt := m.worktrees[m.cursor]
+		m.statusMsg = cleanStyle.Render("Refreshing card state...")
+		return m, doCardRefresh(m.repo, m.detector, m.ideDetector, m.procLister, m.prProv, m.cliAvail, m.repoPath(), wt.Path, wt.Branch)
 
 	case key.Matches(msg, m.keys.Mouse):
 		m.mouseOn = !m.mouseOn
@@ -860,7 +880,7 @@ func (m Model) viewContent() string {
 	if m.mouseOn {
 		mouseLabel = "m mouse:on"
 	}
-	helpText := "←→↑↓ navigate • ↵ open tab • e editor • p pull • r repair • c create • f fetch PR • d delete • " + mouseLabel + " • q quit"
+	helpText := "←→↑↓ navigate • ↵ open tab • e editor • p pull • r refresh • c create • f fetch PR • d delete • " + mouseLabel + " • q quit"
 	help := helpStyle.MaxWidth(m.width).Render(helpText)
 
 	if m.ready {
@@ -1054,6 +1074,49 @@ func doNetworkRefresh(repo *git.Repository, detector *agent.Detector, ideDetecto
 	}
 }
 
+// doCardRefresh refreshes a single worktree card: fetches remotes for sync
+// status, detects agents/IDEs only for the target path, and looks up PRs
+// only for the target branch.
+func doCardRefresh(repo *git.Repository, detector *agent.Detector, ideDetector *ide.Detector, procLister process.Lister, prProv provider.PRProvider, cliAvail provider.CLIAvailability, repoPath, wtPath, branch string) tea.Cmd {
+	return func() tea.Msg {
+		fetchErr := repo.Fetch()
+
+		wts, err := repo.ListWorktrees()
+		if err != nil {
+			return cardRefreshMsg{repoPath: repoPath, wtPath: wtPath, err: err}
+		}
+
+		// Detect agents/IDEs only for the target worktree.
+		ctx := context.Background()
+		procs, procErr := procLister.Processes(ctx)
+		var agents agent.DetectionResult
+		var ides ide.DetectionResult
+		if procErr == nil {
+			agents = detector.DetectFromProcesses(procs, []string{wtPath})
+			ides = ideDetector.DetectFromProcesses(procs, []string{wtPath})
+		}
+
+		// Look up PR only for the target branch.
+		var prs provider.PRResult
+		if cliAvail == provider.CLIAvailable {
+			prs = prProv.FetchPRs(repo.Root(), []string{branch})
+		} else {
+			prs = make(provider.PRResult)
+		}
+
+		return cardRefreshMsg{
+			repoPath:  repoPath,
+			wtPath:    wtPath,
+			worktrees: wts,
+			agents:    agents,
+			ides:      ides,
+			prs:       prs,
+			hasPRs:    true,
+			fetchErr:  fetchErr,
+		}
+	}
+}
+
 func doCheckCLI(prProv provider.PRProvider, repoPath string) tea.Cmd {
 	return func() tea.Msg {
 		return cliCheckMsg{repoPath: repoPath, avail: prProv.CheckCLI()}
@@ -1112,13 +1175,6 @@ func doFetchPR(repo *git.Repository, input, repoPath string) tea.Cmd {
 
 		wtPath, err := repo.FetchPR(ref.Number, branchName, remoteURL)
 		return prFetchedMsg{repoPath: repoPath, branchName: branchName, wtPath: wtPath, err: err}
-	}
-}
-
-func doRepairWorktrees(repo *git.Repository, repoPath string) tea.Cmd {
-	return func() tea.Msg {
-		output, err := repo.Repair()
-		return worktreeRepairedMsg{repoPath: repoPath, output: output, err: err}
 	}
 }
 
