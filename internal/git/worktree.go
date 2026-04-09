@@ -524,7 +524,6 @@ func (r *Repository) Pull() error {
 	return err
 }
 
-// Repair runs "git worktree repair" to fix broken worktree links.
 func isAuthError(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "authentication required") ||

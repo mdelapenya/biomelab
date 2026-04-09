@@ -17,7 +17,7 @@
 - **Delete worktrees** -- Press `d` on any linked worktree to delete it. A centered popup overlay shows what will happen: press `y` to arm, then `Enter` to confirm. `Esc` cancels at any point. The worktree directory is removed, the branch is deleted, and stale metadata is pruned. The main worktree cannot be deleted.
 - **Pull** -- Press `p` to pull. Fetches all configured remotes (origin, upstream, forks, etc.) first so all tracking refs are current, then merges from origin. Uses go-git with credentials resolved from your configured git credential helpers (osxkeychain, gh auth, etc.).
 - **Fetch PR into worktree** -- Press `f` from the main card to fetch a pull request into a new linked worktree. A prompt accepts a plain PR number (`123`) or a fork reference (`owner/repo#123`). gwaim validates the PR via `gh`, fetches the head branch, and creates a worktree for it. The branch ref is preserved exactly (e.g., `ralph/issue-19`), while the directory name is sanitized to be filesystem-safe.
-- **Refresh** -- Press `r` to force-refresh all cards in the current repo: worktree dirty/sync status, running agents, open IDEs, and PR status. This triggers a full network refresh (git fetch + PR lookup) rather than waiting for the next automatic refresh cycle.
+- **Refresh card** -- Press `r` to force-refresh the selected card's state: worktree dirty/sync status, running agents, open IDEs, and PR status. This triggers a network refresh (git fetch + PR lookup) for the selected worktree rather than waiting for the next automatic refresh cycle.
 - **Open in terminal** -- Press `Enter` to open the selected worktree in a new terminal tab. If an agent is running in the worktree, the agent command is executed automatically. The first `Enter` creates a tab named after the repo (e.g., `docker/sandboxes`); subsequent presses add split panels to that same tab.
 - **Mouse support** -- Press `m` to toggle mouse mode. When enabled, click on cards to select them. When disabled (default), normal text selection works for copying paths, branch names, etc.
 - **Scrollable viewport** -- The main worktree card stays pinned at the top; linked worktree cards scroll independently below it. A scrollbar on the right panel border shows the current scroll position. Scroll with the mouse wheel, page up/down, or arrow keys (which auto-scroll to keep the selected card visible).
@@ -256,7 +256,7 @@ The current refresh interval is shown in the help bar at the bottom of the scree
 | `d`              | Delete the selected linked worktree (y + Enter to confirm)        |
 | `e`              | Open the selected worktree in an editor (`$GWAIM_EDITOR` or `code`) |
 | `p`              | Pull from remote (fetches and merges into main branch)            |
-| `r`              | Force-refresh all cards in the repo (worktrees, agents, IDEs, PRs)|
+| `r`              | Force-refresh the selected card (worktree, agents, IDEs, PRs)     |
 | `m`              | Toggle mouse mode on/off (default: off for text selection)        |
 
 ### Navigation model
