@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/mdelapenya/gwaim/internal/agent"
+	"github.com/mdelapenya/gwaim/internal/config"
 	"github.com/mdelapenya/gwaim/internal/git"
 	"github.com/mdelapenya/gwaim/internal/ide"
 	"github.com/mdelapenya/gwaim/internal/provider"
@@ -835,3 +836,39 @@ func TestOverlayCenter(t *testing.T) {
 }
 
 // TestConfirmDeleteRendersPopup is in app_test.go since the popup is rendered at the App level.
+
+// --- Sandbox worktree creation tests ---
+
+func TestSandboxCreateGoesDirectlyToCmd(t *testing.T) {
+	m := testModel(2)
+	m.activeMode = &config.ModeEntry{Type: "sandbox", SandboxName: "owner-repo-claude", Agent: "claude"}
+	m.mode = modeCreate
+	m.textInput.SetValue("feature/my-branch")
+
+	msg := tea.KeyMsg{Type: tea.KeyEnter}
+	updated, cmd := m.Update(msg)
+	model := updated.(Model)
+
+	// Sandbox mode goes straight to modeNormal and creates worktree (no agent prompt).
+	if model.mode != modeNormal {
+		t.Errorf("mode = %d, want modeNormal", model.mode)
+	}
+	if cmd == nil {
+		t.Error("expected a cmd to create sandbox worktree")
+	}
+}
+
+func TestRegularCreateDoesNotUseSandbox(t *testing.T) {
+	m := testModel(2)
+	m.activeMode = nil
+	m.mode = modeCreate
+	m.textInput.SetValue("feature/my-branch")
+
+	msg := tea.KeyMsg{Type: tea.KeyEnter}
+	updated, _ := m.Update(msg)
+	model := updated.(Model)
+
+	if model.mode != modeNormal {
+		t.Errorf("mode = %d, want modeNormal", model.mode)
+	}
+}

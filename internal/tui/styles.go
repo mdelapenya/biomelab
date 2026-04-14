@@ -33,7 +33,8 @@ var (
 
 	helpStyle = lipgloss.NewStyle().Faint(true).MarginTop(1)
 
-	errorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196")) // red
+	errorStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("196")) // red
+	sandboxStoppedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214")) // yellow/orange — matches card sandbox stopped color
 
 	inputPromptStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
 
@@ -44,13 +45,6 @@ var (
 				Foreground(lipgloss.Color("39")) // cyan
 
 	unselectedRepoStyle = lipgloss.NewStyle().Faint(true)
-
-	repoCardStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			Padding(0, 1)
-
-	selectedRepoCardStyle = repoCardStyle.
-				BorderForeground(lipgloss.Color("39")) // cyan
 
 	repoPanelHelpStyle = lipgloss.NewStyle().Faint(true)
 

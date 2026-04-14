@@ -2,6 +2,7 @@ package tui
 
 import (
 	"github.com/mdelapenya/gwaim/internal/agent"
+	"github.com/mdelapenya/gwaim/internal/config"
 	"github.com/mdelapenya/gwaim/internal/git"
 	"github.com/mdelapenya/gwaim/internal/ide"
 	"github.com/mdelapenya/gwaim/internal/provider"
@@ -18,15 +19,19 @@ const (
 
 // refreshMsg carries updated worktree and agent data.
 type refreshMsg struct {
-	repoPath  string // identifies which repo this message belongs to
-	source    refreshSource
-	worktrees []git.Worktree
-	agents    agent.DetectionResult
-	ides      ide.DetectionResult
-	prs       provider.PRResult
-	hasPRs    bool // true only when a network refresh attempted PR lookup
-	err       error
-	fetchErr  error
+	repoPath       string // identifies which repo this message belongs to
+	source         refreshSource
+	worktrees      []git.Worktree
+	agents         agent.DetectionResult
+	ides           ide.DetectionResult
+	prs            provider.PRResult
+	hasPRs         bool   // true only when a network refresh attempted PR lookup
+	err            error
+	fetchErr       error
+	sandboxStatus  int                // sandbox.Status value for active mode
+	allSbxStatuses map[string]int    // all sandbox name → status (for tree dots)
+	sbxClientVer   string            // sbx client version
+	sbxServerVer   string            // sbx server version
 }
 
 // worktreeCreatedMsg is sent after a worktree is successfully created.
@@ -34,6 +39,7 @@ type worktreeCreatedMsg struct {
 	repoPath   string
 	branchName string
 	err        error
+	sbxOutput  string // output from sbx create (empty for regular worktrees)
 }
 
 // worktreeRemovedMsg is sent after a worktree is removed.
@@ -103,4 +109,50 @@ type netFlashDoneMsg struct {
 type cliCheckMsg struct {
 	repoPath string
 	avail    provider.CLIAvailability
+}
+
+// sandboxStartedMsg is sent after sbx run -d (start) completes.
+type sandboxStartedMsg struct {
+	repoPath    string
+	sandboxName string
+	err         error
+}
+
+// sandboxStoppedCmdMsg is sent after sbx stop completes.
+type sandboxStoppedCmdMsg struct {
+	repoPath    string
+	sandboxName string
+	err         error
+}
+
+// sandboxRemovedMsg is sent after sbx rm completes.
+type sandboxRemovedMsg struct {
+	repoPath    string
+	sandboxName string
+	output      string
+	err         error
+}
+
+// sandboxCreatedFromCardMsg is sent after sbx create completes from the main card.
+type sandboxCreatedFromCardMsg struct {
+	repoPath    string
+	sandboxName string
+	output      string
+	err         error
+}
+
+// enrollSandboxRequestMsg is sent by the model when a non-sandbox repo
+// wants to enroll in sandbox mode from the main card.
+type enrollSandboxRequestMsg struct {
+	repoPath string
+	mode     config.ModeEntry
+}
+
+// repoValidatedMsg is sent after a repo path has been validated
+// but before the user selects regular/sandbox mode.
+type repoValidatedMsg struct {
+	path string
+	name string
+	repo *git.Repository
+	err  error
 }

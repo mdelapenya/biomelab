@@ -547,24 +547,19 @@ func (r *Repository) resolveCredentialsForRemote(remote *gogit.Remote) (*githttp
 	return credentialFill(urls[0])
 }
 
-// FetchPR fetches a GitHub pull request's head ref and creates a worktree for it.
-// The PR ref (refs/pull/<N>/head) is fetched to a local branch named branchName.
-// If remoteURL is non-empty, it is used as the fetch URL (for fork PRs);
-// otherwise the default origin remote is used.
-// Returns the path of the created worktree.
-func (r *Repository) FetchPR(prNumber int, branchName, remoteURL string) (string, error) {
+// FetchPRRef fetches a pull request's head ref to a local branch without creating a worktree.
+// Used in sandbox mode where the worktree is created inside the sandbox via sbx.
+func (r *Repository) FetchPRRef(prNumber int, branchName, remoteURL string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if err := r.reopen(); err != nil {
-		return "", err
+		return err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Fetch refs/pull/<N>/head to refs/heads/<branchName>.
-	// Keep the original branch name (slashes allowed in git refs).
 	refSpec := config.RefSpec(fmt.Sprintf("+refs/pull/%d/head:refs/heads/%s", prNumber, branchName))
 	opts := &gogit.FetchOptions{
 		RefSpecs: []config.RefSpec{refSpec},
@@ -578,14 +573,25 @@ func (r *Repository) FetchPR(prNumber int, branchName, remoteURL string) (string
 		if isAuthError(err) {
 			auth, credErr := r.resolveCredentials()
 			if credErr != nil {
-				return "", fmt.Errorf("fetch PR auth: %w", credErr)
+				return fmt.Errorf("fetch PR auth: %w", credErr)
 			}
 			opts.Auth = auth
 			err = r.repo.FetchContext(ctx, opts)
 		}
 		if err != nil && err != gogit.NoErrAlreadyUpToDate {
-			return "", fmt.Errorf("fetch PR ref: %w", err)
+			return fmt.Errorf("fetch PR ref: %w", err)
 		}
+	}
+
+	return nil
+}
+
+// FetchPR fetches a pull request's head ref and creates a worktree for it.
+// Delegates ref fetching to FetchPRRef, then creates a worktree on the host.
+// Returns the path of the created worktree.
+func (r *Repository) FetchPR(prNumber int, branchName, remoteURL string) (string, error) {
+	if err := r.FetchPRRef(prNumber, branchName, remoteURL); err != nil {
+		return "", err
 	}
 
 	// Create the worktree using the git CLI.

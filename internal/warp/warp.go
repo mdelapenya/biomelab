@@ -80,9 +80,14 @@ func splitPanel(dir, agentCmd string) error {
 // --- macOS ---
 
 func darwinNewTab(dir, agentCmd string) error {
-	text := "cd " + escAS(dir)
-	if agentCmd != "" {
-		text += " && " + agentCmd
+	var text string
+	if dir != "" {
+		text = "cd " + escAS(dir)
+		if agentCmd != "" {
+			text += " && " + agentCmd
+		}
+	} else {
+		text = agentCmd
 	}
 
 	return osascript([]string{
@@ -122,9 +127,14 @@ func darwinFocusTab(repoName string) error {
 }
 
 func darwinSplitPanel(dir, agentCmd string) error {
-	text := "cd " + escAS(dir)
-	if agentCmd != "" {
-		text += " && " + agentCmd
+	var text string
+	if dir != "" {
+		text = "cd " + escAS(dir)
+		if agentCmd != "" {
+			text += " && " + agentCmd
+		}
+	} else {
+		text = agentCmd
 	}
 
 	return osascript([]string{
@@ -185,9 +195,14 @@ func linuxNewTab(repoName, dir string) error {
 }
 
 func linuxSplitPanel(dir, agentCmd string) error {
-	shellCmd := "cd " + shellQuote(dir)
-	if agentCmd != "" {
-		shellCmd += " && " + agentCmd
+	var shellCmd string
+	if dir != "" {
+		shellCmd = "cd " + shellQuote(dir)
+		if agentCmd != "" {
+			shellCmd += " && " + agentCmd
+		}
+	} else {
+		shellCmd = agentCmd
 	}
 	shellCmd += "; exec $SHELL"
 

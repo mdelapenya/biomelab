@@ -38,14 +38,36 @@ var (
 
 	cliUnavailStyle = lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("214"))
 
+	sandboxRunStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))  // green
+	sandboxStopStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214")) // yellow
+	sandboxWarnStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196")) // red
+
 	syncUpToDateStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	syncNeedSyncStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 	syncDivergedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 	syncUnknownStyle  = lipgloss.NewStyle().Faint(true)
 )
 
+// SandboxStatus represents the state of a sandbox for display.
+type SandboxStatus int
+
+const (
+	SandboxNotFound SandboxStatus = iota // sandbox does not exist
+	SandboxRunning                       // sandbox is running
+	SandboxStopped                       // sandbox exists but is stopped
+)
+
+// SandboxInfo holds sandbox-specific display data for a card.
+// When Name is non-empty, the card shows a sandbox badge.
+type SandboxInfo struct {
+	Name          string        // sandbox name (derived from repo + agent)
+	Status        SandboxStatus // current sandbox status
+	ClientVersion string        // sbx client version
+	ServerVersion string        // sbx server version
+}
+
 // Render produces the content for a single worktree card.
-func Render(wt git.Worktree, agents []agent.Info, ides []ide.Info, pr *provider.PRInfo, cliAvail provider.CLIAvailability, prov provider.Provider) string {
+func Render(wt git.Worktree, agents []agent.Info, ides []ide.Info, pr *provider.PRInfo, cliAvail provider.CLIAvailability, prov provider.Provider, sbx *SandboxInfo) string {
 	var b strings.Builder
 
 	// Branch line
@@ -61,7 +83,30 @@ func Render(wt git.Worktree, agents []agent.Info, ides []ide.Info, pr *provider.
 
 	// Path
 	b.WriteString(pathStyle.Render(wt.Path))
-	b.WriteString("\n\n")
+	b.WriteString("\n")
+
+	// Sandbox info
+	if sbx != nil && sbx.Name != "" {
+		switch sbx.Status {
+		case SandboxRunning:
+			b.WriteString(sandboxRunStyle.Render("🐳 sandbox: " + sbx.Name + " (running)"))
+		case SandboxStopped:
+			b.WriteString(sandboxStopStyle.Render("🐳 sandbox: " + sbx.Name + " (stopped)"))
+		case SandboxNotFound:
+			b.WriteString(sandboxWarnStyle.Render("🐳 sandbox: " + sbx.Name + " (not found)"))
+		}
+		b.WriteString("\n")
+		if sbx.ClientVersion != "" {
+			ver := "sbx: client " + sbx.ClientVersion
+			if sbx.ServerVersion != "" {
+				ver += "  server " + sbx.ServerVersion
+			}
+			b.WriteString(pathStyle.Render(ver))
+			b.WriteString("\n")
+		}
+	}
+
+	b.WriteString("\n")
 
 	// PR/MR status
 	prLabel := "PR"
