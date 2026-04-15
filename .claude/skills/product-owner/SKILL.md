@@ -165,13 +165,14 @@ fetches origin, upstream, and any configured forks before merging.
 
 ### 8. Open in Terminal
 
-Press Enter on any card to open the worktree in a terminal tab. First press
-creates a new tab (named after the repo); subsequent presses split within that
-tab. If an agent is detected, the agent command auto-launches in the new panel.
-In sandbox mode, the terminal attaches to the sandbox session.
+Press Enter on any card to open the worktree in a new terminal window. Each
+press opens a fresh window — no tab reuse or split panels.
+In sandbox mode, the terminal runs `sbx run --branch <branch> <name>` to
+attach to the sandbox session. In regular mode, a shell opens in the worktree
+directory.
 
-Supported terminals: **Warp, iTerm, Terminal.app** (macOS, auto-detected);
-**gnome-terminal, konsole, xfce4-terminal** (Linux).
+macOS uses `.command` files via `open` (no permissions required). Linux uses
+`x-terminal-emulator` (system default). Override with `BIOME_TERMINAL` env var.
 
 ### 9. Open in Editor
 
@@ -400,10 +401,10 @@ editor. The worktree card disappears, which is a sufficient signal.
 ### DL-005: No terminal auto-open on worktree creation
 
 **Decision:** Creating a worktree (or fetching a PR) does not automatically
-open a terminal tab. The user must press Enter on the card.
+open a terminal window. The user must press Enter on the card.
 
 **Why:** Users may want to create several worktrees in batch before attaching
-to any of them. Auto-opening would produce a flood of terminal tabs. The
+to any of them. Auto-opening would produce a flood of terminal windows. The
 explicit Enter gesture gives the user control over when to start working.
 
 ### DL-006: One sandbox per agent per repo
@@ -416,14 +417,15 @@ in a single sandbox would create conflicting environments and make it unclear
 which agent "owns" the sandbox lifecycle. One-to-one mapping keeps the mental
 model simple.
 
-### DL-007: Terminal tab reuse via split panels
+### DL-007: Fresh terminal window per Enter press
 
-**Decision:** First Enter on a worktree creates a named tab; subsequent presses
-split within that tab.
+**Decision:** Every Enter press opens a new terminal window. No tab tracking,
+no split panels, no terminal-specific integrations.
 
-**Why:** Developers working across many worktrees would quickly accumulate
-dozens of tabs. Splitting within a repo-named tab keeps related terminals
-visually grouped and reduces tab clutter.
+**Why:** Maintaining compatibility across different terminal emulators (Warp,
+iTerm, Terminal.app, gnome-terminal, konsole, xfce4-terminal) with tab reuse
+and split panel logic was cumbersome and fragile. The simple approach — open a
+fresh window every time — works everywhere with no permissions or AppleScript.
 
 ### DL-008: Main card is not deletable
 
