@@ -58,11 +58,11 @@ jobs:
           cp .goreleaser.yml .goreleaser.nightly.yml
           yq -i '.archives[0].name_template = "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"' .goreleaser.nightly.yml
           yq -i ".builds[0].ldflags = [\"-s -w -X main.version=${NIGHTLY_TAG#v}-${SHORT_SHA}\"]" .goreleaser.nightly.yml
-          yq -i '.homebrew_casks[0].name = "gwaim-nightly"' .goreleaser.nightly.yml
+          yq -i '.homebrew_casks[0].name = "biomelab-nightly"' .goreleaser.nightly.yml
           yq -i '.homebrew_casks[0].description = "Git Worktree AI Manager (nightly) — a terminal dashboard for git worktrees and coding agents"' .goreleaser.nightly.yml
-          yq -i '.homebrew_casks[0].binary = "gwaim"' .goreleaser.nightly.yml
-          yq -i '.homebrew_casks[0].conflicts = [{"cask": "gwaim"}]' .goreleaser.nightly.yml
-          yq -i '.homebrew_casks[0].url.template = "https://github.com/mdelapenya/gwaim/releases/download/{{ .Tag }}/{{ .ArtifactName }}"' .goreleaser.nightly.yml
+          yq -i '.homebrew_casks[0].binary = "biomelab"' .goreleaser.nightly.yml
+          yq -i '.homebrew_casks[0].conflicts = [{"cask": "biomelab"}]' .goreleaser.nightly.yml
+          yq -i '.homebrew_casks[0].url.template = "https://github.com/mdelapenya/biomelab/releases/download/{{ .Tag }}/{{ .ArtifactName }}"' .goreleaser.nightly.yml
           # Tell GoReleaser to generate the cask but not push it — we fix the version and push ourselves.
           yq -i '.homebrew_casks[0].skip_upload = true' .goreleaser.nightly.yml
           yq -i '.release.prerelease = true' .goreleaser.nightly.yml
@@ -83,7 +83,7 @@ jobs:
           NIGHTLY_TAG: ${{ steps.nightly.outputs.tag }}
         run: |
           VERSION="${NIGHTLY_TAG#v}"
-          CASK_FILE=$(find dist -name "gwaim-nightly.rb" | head -1)
+          CASK_FILE=$(find dist -name "biomelab-nightly.rb" | head -1)
 
           # GoReleaser mangles the version when the cask name differs from the project name,
           # appending an extra "-nightly" suffix everywhere (version field, URLs, filenames).
@@ -94,13 +94,13 @@ jobs:
           cd "$(mktemp -d)"
           git clone "https://x-access-token:${HOMEBREW_TAP_GITHUB_TOKEN}@github.com/mdelapenya/homebrew-tap.git" .
           mkdir -p Casks
-          cp "${GITHUB_WORKSPACE}/${CASK_FILE}" Casks/gwaim-nightly.rb
-          git add Casks/gwaim-nightly.rb
+          cp "${GITHUB_WORKSPACE}/${CASK_FILE}" Casks/biomelab-nightly.rb
+          git add Casks/biomelab-nightly.rb
           if git diff --cached --quiet; then
             echo "No changes to cask file."
           else
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git commit -m "Update gwaim-nightly cask to ${VERSION}"
+            git commit -m "Update biomelab-nightly cask to ${VERSION}"
             git push
           fi

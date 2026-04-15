@@ -4,11 +4,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mdelapenya/gwaim/internal/tui"
+	"github.com/mdelapenya/biomelab/internal/tui"
 )
 
 func TestResolveRefreshInterval_FlagTakesPrecedence(t *testing.T) {
-	t.Setenv("GWAIM_REFRESH", "30s")
+	t.Setenv("BIOME_REFRESH", "30s")
 	got := resolveRefreshInterval(10 * time.Second)
 	if got != 10*time.Second {
 		t.Errorf("got %v, want 10s (flag should override env)", got)
@@ -16,7 +16,7 @@ func TestResolveRefreshInterval_FlagTakesPrecedence(t *testing.T) {
 }
 
 func TestResolveRefreshInterval_EnvFallback(t *testing.T) {
-	t.Setenv("GWAIM_REFRESH", "15s")
+	t.Setenv("BIOME_REFRESH", "15s")
 	got := resolveRefreshInterval(0)
 	if got != 15*time.Second {
 		t.Errorf("got %v, want 15s (env var fallback)", got)
@@ -24,7 +24,7 @@ func TestResolveRefreshInterval_EnvFallback(t *testing.T) {
 }
 
 func TestResolveRefreshInterval_Default(t *testing.T) {
-	t.Setenv("GWAIM_REFRESH", "")
+	t.Setenv("BIOME_REFRESH", "")
 	got := resolveRefreshInterval(0)
 	if got != tui.DefaultNetworkRefreshInterval {
 		t.Errorf("got %v, want %v (default)", got, tui.DefaultNetworkRefreshInterval)

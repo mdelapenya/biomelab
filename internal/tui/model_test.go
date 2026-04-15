@@ -10,11 +10,11 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/mdelapenya/gwaim/internal/agent"
-	"github.com/mdelapenya/gwaim/internal/config"
-	"github.com/mdelapenya/gwaim/internal/git"
-	"github.com/mdelapenya/gwaim/internal/ide"
-	"github.com/mdelapenya/gwaim/internal/provider"
+	"github.com/mdelapenya/biomelab/internal/agent"
+	"github.com/mdelapenya/biomelab/internal/config"
+	"github.com/mdelapenya/biomelab/internal/git"
+	"github.com/mdelapenya/biomelab/internal/ide"
+	"github.com/mdelapenya/biomelab/internal/provider"
 )
 
 // testModel creates a Model with pre-populated worktrees (no repo/detector needed for unit tests).
@@ -750,7 +750,7 @@ func TestRenderHeader_ShowsTimestamps(t *testing.T) {
 	m := testModel(2)
 	m.width = 120
 
-	title := "gwaim - Git Worktree Agent Manager"
+	title := "biomelab - Git Worktree Agent Manager"
 
 	// Before any refresh — shows dashes.
 	header := m.renderHeader(title)

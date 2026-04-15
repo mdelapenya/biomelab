@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mdelapenya/gwaim/internal/process"
+	"github.com/mdelapenya/biomelab/internal/process"
 )
 
 // Detector finds IDE processes and matches them to worktree paths.
@@ -142,7 +142,7 @@ func (d *Detector) DetectFromProcesses(procs []process.Info, worktreePaths []str
 		// For cmdline matching, find the longest (most specific) worktree path
 		// that appears in the cmdline. This prevents a parent path like
 		// "/repo" from matching when the cmdline actually contains
-		// "/repo/.gwaim-worktrees/feature-branch".
+		// "/repo/.biomelab-worktrees/feature-branch".
 		bestCmdlineIdx := -1
 		bestCmdlineLen := 0
 		for j := range worktreePaths {

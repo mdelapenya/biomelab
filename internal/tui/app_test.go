@@ -10,9 +10,9 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/mdelapenya/gwaim/internal/agent"
-	"github.com/mdelapenya/gwaim/internal/config"
-	"github.com/mdelapenya/gwaim/internal/git"
+	"github.com/mdelapenya/biomelab/internal/agent"
+	"github.com/mdelapenya/biomelab/internal/config"
+	"github.com/mdelapenya/biomelab/internal/git"
 )
 
 // testApp creates an App with n pre-populated repoGroups using fake data.
@@ -643,7 +643,7 @@ func TestAppViewFitsTerminalHeight(t *testing.T) {
 	}
 
 	// Title must be present on first line.
-	if !strings.Contains(lines[0], "gwaim") {
+	if !strings.Contains(lines[0], "biomelab") {
 		t.Errorf("expected title on line 0, got %q", lines[0])
 	}
 	// Timestamps are now inside the right panel (line 1 is the top border).

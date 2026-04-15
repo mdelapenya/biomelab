@@ -274,7 +274,7 @@ func TestFullLoop(t *testing.T) {
     )
     _, err := p.Run()
     assert(err == nil)
-    assert(strings.Contains(out.String(), "gwaim"))
+    assert(strings.Contains(out.String(), "biomelab"))
 }
 ```
 

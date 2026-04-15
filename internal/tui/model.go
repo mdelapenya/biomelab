@@ -14,20 +14,20 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/mdelapenya/gwaim/internal/agent"
-	"github.com/mdelapenya/gwaim/internal/config"
-	"github.com/mdelapenya/gwaim/internal/git"
-	"github.com/mdelapenya/gwaim/internal/github"
-	"github.com/mdelapenya/gwaim/internal/ide"
-	"github.com/mdelapenya/gwaim/internal/process"
-	"github.com/mdelapenya/gwaim/internal/provider"
-	"github.com/mdelapenya/gwaim/internal/sandbox"
-	"github.com/mdelapenya/gwaim/internal/tui/card"
-	"github.com/mdelapenya/gwaim/internal/warp"
+	"github.com/mdelapenya/biomelab/internal/agent"
+	"github.com/mdelapenya/biomelab/internal/config"
+	"github.com/mdelapenya/biomelab/internal/git"
+	"github.com/mdelapenya/biomelab/internal/github"
+	"github.com/mdelapenya/biomelab/internal/ide"
+	"github.com/mdelapenya/biomelab/internal/process"
+	"github.com/mdelapenya/biomelab/internal/provider"
+	"github.com/mdelapenya/biomelab/internal/sandbox"
+	"github.com/mdelapenya/biomelab/internal/tui/card"
+	"github.com/mdelapenya/biomelab/internal/warp"
 )
 
 // DefaultNetworkRefreshInterval is the default interval for network operations
-// (git fetch + PR lookups). Controlled by --refresh / GWAIM_REFRESH.
+// (git fetch + PR lookups). Controlled by --refresh / BIOME_REFRESH.
 const DefaultNetworkRefreshInterval = 30 * time.Second
 
 // LocalRefreshInterval is the fixed interval for local state refreshes
@@ -50,7 +50,7 @@ const (
 	modeEnrollSandboxFromCard // non-sandbox repo: prompt for agent to enroll
 )
 
-// Model is the top-level bubbletea model for gwaim.
+// Model is the top-level bubbletea model for biomelab.
 type Model struct {
 	repo         *git.Repository
 	detector     *agent.Detector
@@ -1170,10 +1170,10 @@ func (m *Model) ensureCursorVisible() {
 
 func (m Model) View() string {
 	if len(m.worktrees) == 0 && m.err == nil {
-		return titleStyle.Render("gwaim") + "\n\nLoading worktrees...\n"
+		return titleStyle.Render("biomelab") + "\n\nLoading worktrees...\n"
 	}
 
-	title := titleStyle.Render("gwaim - Git Worktree Agent Manager")
+	title := titleStyle.Render("biomelab - Git Worktree Agent Manager")
 	header := m.renderHeader(title)
 
 	return header + "\n" + m.viewContent()
@@ -1395,7 +1395,7 @@ func doLocalRefresh(repo *git.Repository, detector *agent.Detector, ideDetector 
 }
 
 // doNetworkRefresh fetches remote refs and looks up PR status.
-// Fires every refreshInterval (controlled by --refresh / GWAIM_REFRESH).
+// Fires every refreshInterval (controlled by --refresh / BIOME_REFRESH).
 func doNetworkRefresh(repo *git.Repository, detector *agent.Detector, ideDetector *ide.Detector, procLister process.Lister, prProv provider.PRProvider, cliAvail provider.CLIAvailability, repoPath string, sbxName string) tea.Cmd {
 	return func() tea.Msg {
 		fetchErr := repo.Fetch()
@@ -1552,7 +1552,7 @@ func doRemoveWorktree(repo *git.Repository, name, repoPath string) tea.Cmd {
 
 func doOpenEditor(dir string) tea.Cmd {
 	return func() tea.Msg {
-		editor := os.Getenv("GWAIM_EDITOR")
+		editor := os.Getenv("BIOME_EDITOR")
 		if editor == "" {
 			editor = "code"
 		}

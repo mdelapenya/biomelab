@@ -129,12 +129,12 @@ func TestListWorktrees_WithLinked(t *testing.T) {
 	}
 
 	// Open with our wrapper and list.
-	gwaim, err := OpenRepository(dir)
+	biomelab, err := OpenRepository(dir)
 	if err != nil {
 		t.Fatalf("failed to open: %v", err)
 	}
 
-	wts, err := gwaim.ListWorktrees()
+	wts, err := biomelab.ListWorktrees()
 	if err != nil {
 		t.Fatalf("ListWorktrees failed: %v", err)
 	}
@@ -454,7 +454,7 @@ func TestFetchPR_SlashedBranchName(t *testing.T) {
 		}
 
 		// Worktree path must use the sanitized directory name.
-		wantPath := filepath.Join(mainDir, ".gwaim-worktrees", "ralph-issue-19")
+		wantPath := filepath.Join(mainDir, ".biomelab-worktrees", "ralph-issue-19")
 		if wtPath != wantPath {
 			t.Errorf("wtPath = %q, want %q", wtPath, wantPath)
 		}
@@ -637,12 +637,12 @@ func TestParseRepoName(t *testing.T) {
 	}{
 		// HTTPS
 		{"https://github.com/docker/sandboxes.git", "docker/sandboxes"},
-		{"https://github.com/mdelapenya/gwaim.git", "mdelapenya/gwaim"},
+		{"https://github.com/mdelapenya/biomelab.git", "mdelapenya/biomelab"},
 		{"https://github.com/owner/repo", "owner/repo"},
 		{"https://gitlab.com/group/project.git", "group/project"},
 		// SSH
 		{"git@github.com:docker/sandboxes.git", "docker/sandboxes"},
-		{"git@github.com:mdelapenya/gwaim.git", "mdelapenya/gwaim"},
+		{"git@github.com:mdelapenya/biomelab.git", "mdelapenya/biomelab"},
 		{"git@gitlab.com:group/project.git", "group/project"},
 		// Edge cases
 		{"", ""},

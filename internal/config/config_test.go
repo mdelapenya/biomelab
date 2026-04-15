@@ -18,6 +18,11 @@ func TestDefaultPath(t *testing.T) {
 }
 
 func TestLoadNonExistent(t *testing.T) {
+	// Override legacy path so it doesn't find a real ~/.config/biomelab/repos.json.
+	origFn := legacyPathFn
+	legacyPathFn = func() string { return filepath.Join(t.TempDir(), "no-legacy.json") }
+	t.Cleanup(func() { legacyPathFn = origFn })
+
 	cfg, err := Load(filepath.Join(t.TempDir(), "nope.json"))
 	if err != nil {
 		t.Fatalf("Load non-existent: %v", err)
@@ -288,6 +293,78 @@ func TestNewFormatRoundTrip(t *testing.T) {
 	}
 	if len(loaded.Repos) != 1 || len(loaded.Repos[0].Modes) != 2 {
 		t.Errorf("round-trip failed: %+v", loaded.Repos)
+	}
+}
+
+func TestLoadMigratesFromLegacyGwaimPath(t *testing.T) {
+	// Set up a legacy config at the old gwaim path.
+	legacyDir := t.TempDir()
+	legacyFile := filepath.Join(legacyDir, "gwaim", "repos.json")
+	if err := os.MkdirAll(filepath.Dir(legacyFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldJSON := `{"repos":[{"path":"/tmp/repo","name":"repo","modes":[{"type":"regular"}]}]}`
+	if err := os.WriteFile(legacyFile, []byte(oldJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Override legacyPathFn to point to our temp legacy file.
+	origFn := legacyPathFn
+	legacyPathFn = func() string { return legacyFile }
+	t.Cleanup(func() { legacyPathFn = origFn })
+
+	// Load from a new (non-existent) path — should pick up the legacy config.
+	newPath := filepath.Join(legacyDir, "biomelab", "repos.json")
+	cfg, err := Load(newPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.Repos) != 1 || cfg.Repos[0].Path != "/tmp/repo" {
+		t.Errorf("expected migrated repo, got %+v", cfg.Repos)
+	}
+
+	// The new config file should have been created.
+	if _, err := os.Stat(newPath); err != nil {
+		t.Errorf("expected new config file to exist: %v", err)
+	}
+
+	// The legacy directory should have been removed.
+	if _, err := os.Stat(filepath.Dir(legacyFile)); !os.IsNotExist(err) {
+		t.Errorf("expected legacy directory to be removed, but it still exists")
+	}
+}
+
+func TestLoadIgnoresLegacyWhenNewExists(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create new config with repo-a.
+	newPath := filepath.Join(dir, "biomelab", "repos.json")
+	newCfg := &Config{Repos: []RepoEntry{{Path: "/tmp/repo-a", Name: "a", Modes: []ModeEntry{{Type: "regular"}}}}}
+	if err := Save(newPath, newCfg); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create legacy config with repo-b.
+	legacyFile := filepath.Join(dir, "gwaim", "repos.json")
+	if err := os.MkdirAll(filepath.Dir(legacyFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacyJSON := `{"repos":[{"path":"/tmp/repo-b","name":"b","modes":[{"type":"regular"}]}]}`
+	if err := os.WriteFile(legacyFile, []byte(legacyJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	origFn := legacyPathFn
+	legacyPathFn = func() string { return legacyFile }
+	t.Cleanup(func() { legacyPathFn = origFn })
+
+	// Load should use the new config, not the legacy one.
+	cfg, err := Load(newPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.Repos) != 1 || cfg.Repos[0].Path != "/tmp/repo-a" {
+		t.Errorf("expected new config repo, got %+v", cfg.Repos)
 	}
 }
 

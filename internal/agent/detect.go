@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/mdelapenya/gwaim/internal/process"
+	"github.com/mdelapenya/biomelab/internal/process"
 )
 
 // Detector finds coding agent processes and matches them to worktree paths.

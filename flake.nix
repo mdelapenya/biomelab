@@ -1,5 +1,5 @@
 {
-  description = "gwaim — Git Worktree AI Manager";
+  description = "biomelab — Git Worktree AI Manager";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -13,7 +13,7 @@
       in
       {
         packages.default = pkgs.buildGoModule {
-          pname = "gwaim";
+          pname = "biomelab";
           version = "unstable-${self.shortRev or self.dirtyShortRev or "unknown"}";
 
           src = self;
@@ -21,13 +21,13 @@
           # To update: run `nix build` and replace with the hash from the error message.
           vendorHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 
-          subPackages = [ "cmd/gwaim" ];
+          subPackages = [ "cmd/biomelab" ];
 
           meta = with pkgs.lib; {
             description = "Git Worktree AI Manager — a terminal dashboard for git worktrees and coding agents";
-            homepage = "https://github.com/mdelapenya/gwaim";
+            homepage = "https://github.com/mdelapenya/biomelab";
             license = licenses.mit;
-            mainProgram = "gwaim";
+            mainProgram = "biomelab";
           };
         };
 

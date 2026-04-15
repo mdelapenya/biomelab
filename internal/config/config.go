@@ -33,8 +33,19 @@ type Config struct {
 	Repos []RepoEntry `json:"repos"`
 }
 
-// DefaultPath returns the default config file path (~/.config/gwaim/repos.json).
+// DefaultPath returns the default config file path (~/.config/biomelab/repos.json).
 func DefaultPath() string {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		home, _ := os.UserHomeDir()
+		dir = filepath.Join(home, ".config")
+	}
+	return filepath.Join(dir, "biomelab", "repos.json")
+}
+
+// legacyPathFn returns the old config file path (~/.config/gwaim/repos.json).
+// It is a variable so tests can override it.
+var legacyPathFn = func() string {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		home, _ := os.UserHomeDir()
@@ -45,12 +56,34 @@ func DefaultPath() string {
 
 // Load reads the config from the given path.
 // Returns an empty Config (not an error) if the file does not exist.
+// If the file does not exist but the legacy gwaim config does, it is
+// copied to the new location automatically.
 // Migrates old-format entries (no Modes field) to the new format.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return &Config{}, nil
+			// Try the legacy gwaim config path.
+			legacy := legacyPathFn()
+			data, err = os.ReadFile(legacy)
+			if err != nil {
+				// No legacy config either — fresh start.
+				return &Config{}, nil
+			}
+			// Legacy config found — parse, migrate, save to the new path,
+			// and remove the old directory.
+			var cfg Config
+			if err := json.Unmarshal(data, &cfg); err != nil {
+				return nil, err
+			}
+			cfg.migrate()
+			if err := Save(path, &cfg); err != nil {
+				return nil, err
+			}
+			if err := os.RemoveAll(filepath.Dir(legacy)); err != nil {
+				return nil, err
+			}
+			return &cfg, nil
 		}
 		return nil, err
 	}
@@ -59,6 +92,12 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	cfg.migrate()
+	// Clean up legacy gwaim config directory if it still exists.
+	if legacyDir := filepath.Dir(legacyPathFn()); dirExists(legacyDir) {
+		if err := os.RemoveAll(legacyDir); err != nil {
+			return nil, err
+		}
+	}
 	return &cfg, nil
 }
 
@@ -183,6 +222,11 @@ func (c *Config) Remove(path string) bool {
 		}
 	}
 	return false
+}
+
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 // IndexOf returns the index of the repo with the given path, or -1 if not found.

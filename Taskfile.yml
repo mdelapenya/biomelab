@@ -5,7 +5,7 @@ vars:
     sh: grep '^go ' go.mod | awk '{print $2}'
   GO:
     sh: eval "$(gvm {{.GO_VERSION}})" && which go
-  BIN: bin/gwaim
+  BIN: bin/biomelab
   VERSION:
     sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
   LDFLAGS: -s -w -X main.version={{.VERSION}}
@@ -19,10 +19,10 @@ tasks:
       - go install github.com/andrewkroh/gvm/cmd/gvm@latest
 
   build:
-    desc: Build the gwaim binary
+    desc: Build the biomelab binary
     deps: [setup]
     cmds:
-      - '{{.GO}} build -ldflags "{{.LDFLAGS}}" -o {{.BIN}} ./cmd/gwaim'
+      - '{{.GO}} build -ldflags "{{.LDFLAGS}}" -o {{.BIN}} ./cmd/biomelab'
     sources:
       - '**/*.go'
     generates:
@@ -41,10 +41,10 @@ tasks:
       - '{{.GO}} test -race -v ./...'
 
   install:
-    desc: Install gwaim to $GOPATH/bin
+    desc: Install biomelab to $GOPATH/bin
     deps: [setup]
     cmds:
-      - '{{.GO}} install -ldflags "{{.LDFLAGS}}" ./cmd/gwaim'
+      - '{{.GO}} install -ldflags "{{.LDFLAGS}}" ./cmd/biomelab'
 
   lint:
     desc: Run golangci-lint v2

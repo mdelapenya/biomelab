@@ -2,16 +2,16 @@
 
 This file provides context for Claude and other coding agents working on this codebase.
 
-## What is gwaim?
+## What is biomelab?
 
-gwaim (Git Worktree AI Manager) is a Go TUI that manages git worktrees in the context of coding agents. It provides a multi-repository dashboard with a two-column layout: a left panel listing registered repos and a right panel showing the selected repo's worktree cards. It detects which coding agents are running in each worktree and provides actions to create/delete worktrees, pull, refresh card state, open editors, and open terminal tabs.
+biomelab (Git Worktree AI Manager) is a Go TUI that manages git worktrees in the context of coding agents. It provides a multi-repository dashboard with a two-column layout: a left panel listing registered repos and a right panel showing the selected repo's worktree cards. It detects which coding agents are running in each worktree and provides actions to create/delete worktrees, pull, refresh card state, open editors, and open terminal tabs.
 
-**gwaim recommends Docker Sandboxes (`sbx`) as the default mode for coding agents.** Sandbox mode provides each worktree with an isolated Docker environment (its own filesystem, Docker daemon, and network), so agents can install packages, build containers, and modify files without touching the host. When adding a repo, sandbox mode is the recommended choice. Regular (host-only) mode is available as a fallback for repos that don't need isolation.
+**biomelab recommends Docker Sandboxes (`sbx`) as the default mode for coding agents.** Sandbox mode provides each worktree with an isolated Docker environment (its own filesystem, Docker daemon, and network), so agents can install packages, build containers, and modify files without touching the host. When adding a repo, sandbox mode is the recommended choice. Regular (host-only) mode is available as a fallback for repos that don't need isolation.
 
 ## Build and test commands
 
 ```
-task build        # Build to bin/gwaim
+task build        # Build to bin/biomelab
 task install      # Install to $GOPATH/bin
 task test         # Run tests
 task test-race    # Run tests with -race
@@ -24,9 +24,9 @@ Go version: 1.25+ (check `go env GOROOT` if you hit version mismatches).
 ## Project structure
 
 ```
-cmd/gwaim/main.go           Entry point (creates App, auto-adds current repo)
+cmd/biomelab/main.go           Entry point (creates App, auto-adds current repo)
 internal/
-  config/config.go          Repo list persistence (~/.config/gwaim/repos.json)
+  config/config.go          Repo list persistence (~/.config/biomelab/repos.json)
   git/worktree.go           Go-git v6 wrapper: list, create, remove, pull, fetch, sync status
   git/credential.go         Git credential helper protocol (git credential fill)
   agent/agents.go           Agent kind registry (claude, kiro, copilot, codex, opencode, gemini)
@@ -83,13 +83,13 @@ docs/
 
 **Multi-repo architecture**: The `App` model (`tui/app.go`) wraps multiple `Model` instances in a two-column layout. Left panel (~15%) shows registered repos as a tree (header per repo group, indented mode lines below), right panel (~85%) shows the active mode's worktree dashboard. The tree layout looks like:
 ```
-mdelapenya/gwaim          ← header (dimmed, click selects first mode)
+mdelapenya/biomelab          ← header (dimmed, click selects first mode)
   ▸ 📂                    ← selected mode child (regular)
     🐳 [claude]           ← sandbox mode child
 docker/sandboxes
     📂
 ```
-`Tab`/`Shift+Tab` switches focus between panels. Clicking a mode line also focuses and selects it. Repos are persisted in `~/.config/gwaim/repos.json` via `internal/config`. Each repo entry has a `modes` list (see config format below). `repoTab` is now `repoGroup` — each group has `modes []config.ModeEntry` and `activeMode int`. There is **one `Model` per repo** with filtered views: `Model` has `activeMode *config.ModeEntry` and `allWorktrees`/`worktrees` (unfiltered/filtered). Regular mode shows `.gwaim-worktrees/` worktrees; sandbox mode shows `.sbx/<sandboxName>-worktrees/` worktrees. The main worktree is always shown. All async messages carry a `repoPath` field; `App.Update` routes them to the correct child model by matching `repoPath` to `repoGroup.path`. Stale messages (from a previously-active repo) are discarded by `Model.isStale()`.
+`Tab`/`Shift+Tab` switches focus between panels. Clicking a mode line also focuses and selects it. Repos are persisted in `~/.config/biomelab/repos.json` via `internal/config`. Each repo entry has a `modes` list (see config format below). `repoTab` is now `repoGroup` — each group has `modes []config.ModeEntry` and `activeMode int`. There is **one `Model` per repo** with filtered views: `Model` has `activeMode *config.ModeEntry` and `allWorktrees`/`worktrees` (unfiltered/filtered). Regular mode shows `.biomelab-worktrees/` worktrees; sandbox mode shows `.sbx/<sandboxName>-worktrees/` worktrees. The main worktree is always shown. All async messages carry a `repoPath` field; `App.Update` routes them to the correct child model by matching `repoPath` to `repoGroup.path`. Stale messages (from a previously-active repo) are discarded by `Model.isStale()`.
 
 **Mode navigation**: Up/down in the left panel traverses modes across groups. Switching modes within the same group does not pause/resume the child Model. Switching across groups does pause/resume.
 
@@ -97,13 +97,13 @@ docker/sandboxes
 
 **Repo list scrolling**: The left panel has manual scroll support via `repoScrollOffset`. The tree uses variable heights per group (1 header line + N mode lines), so the old `repoCardHeight` constant has been removed. When groups exceed the visible area, only the visible slice is rendered and a scrollbar appears on the left panel's right border. Keyboard navigation calls `ensureActiveRepoVisible()` to auto-scroll. Mouse wheel events (`MouseButtonWheelUp`/`Down`) in the left panel adjust the scroll offset directly. Both panels' scrollbar geometry is computed by `scrollbarGeometry()` and rendered in `buildPanels()` using `panelScroll` structs.
 
-**Embedded models**: When a `Model` is used inside the `App`, it is created with `newEmbedded()` which sets `embedded = true`. Embedded models render refresh timestamps inside `renderFixedTop()` (above the main card, inside the right panel) instead of in a standalone header. The App header is title-only (`gwaim - Git Worktree Agent Manager`). The App calls `Model.ViewContent()` (body + help, no header) instead of `Model.View()`.
+**Embedded models**: When a `Model` is used inside the `App`, it is created with `newEmbedded()` which sets `embedded = true`. Embedded models render refresh timestamps inside `renderFixedTop()` (above the main card, inside the right panel) instead of in a standalone header. The App header is title-only (`biomelab - Git Worktree Agent Manager`). The App calls `Model.ViewContent()` (body + help, no header) instead of `Model.View()`.
 
 **Manual panel borders**: Panel borders are rendered manually in `App.buildPanels()` using `╭╮│╰╯─` characters, NOT via lipgloss `Border()`. This was a deliberate decision: lipgloss `Border()` + `Height()`/`MaxHeight()` does not reliably produce panels of identical height when content includes ANSI-styled text. Manual borders give exact control over every row, ensuring both panels always have the same height. Border color is cyan when the panel is focused.
 
 **Layout height budget**: The `App.View()` layout is: header (1 row, title only) + two bordered panels (`contentH + 2` rows) = `a.height` rows total. Refresh timestamps are rendered inside the right panel by the embedded Model, not in the App header. Content lines are clamped via `splitClampPad()` and cell widths forced via `lipgloss.Width()/MaxWidth()` to prevent wrapping.
 
-**Config format**: The config file (`~/.config/gwaim/repos.json`) uses a `modes` list per repo entry:
+**Config format**: The config file (`~/.config/biomelab/repos.json`) uses a `modes` list per repo entry:
 ```go
 type ModeEntry struct {
     Type        string // "regular" or "sandbox"
@@ -138,7 +138,7 @@ The old flat format (with `Sandbox bool`, `SandboxName string`, `Agent string` f
 
 The enrollment flow in `app.go` uses `appModeSelectRepoMode` and `appModeEnrollAgent` modes.
 
-**Startup without a git repo**: gwaim can start from any directory. If the current directory is inside a git repo, it auto-adds it to the config. If not, the app shows an empty state with instructions to add a repo.
+**Startup without a git repo**: biomelab can start from any directory. If the current directory is inside a git repo, it auto-adds it to the config. If not, the app shows an empty state with instructions to add a repo.
 
 **Stale resize prevention**: When switching repos, `resizeActiveChild()` sends a `childResizeMsg` (custom type) instead of `tea.WindowSizeMsg`. This prevents the App from overwriting its stored terminal dimensions with the child's smaller panel dimensions.
 
@@ -195,4 +195,4 @@ Always run `go test -race ./...` -- the TUI must be safe for concurrent `View` +
 - **Confirmation dialogs should use popup overlays**, not status messages appended to the viewport bottom (which scroll off-screen). Use `overlayCenter()` to composite popups on top of `viewContent()`. See `modeConfirmDelete` for the pattern. Popups are fully modal: background is dimmed, and all navigation (Tab, arrows, mouse) is blocked. When a child model enters a modal mode, `handleKeyMsg` detects `!child.IsNormal()` and forwards keys directly to the child, bypassing App-level navigation.
 - **IDE `ProcessPatterns` order matters**: more specific patterns must come before broader ones (e.g. `"nvim"` before `"vim"`). Using a map would cause non-deterministic matching; the ordered `[]processPattern` slice is intentional.
 
-- **IDE cmdline matching uses longest-match**: when multiple worktree paths match a process cmdline (e.g. `/repo` is a prefix of `/repo/.gwaim-worktrees/feature`), only the longest (most specific) path wins. CWD matching is exact and unaffected by this rule.
+- **IDE cmdline matching uses longest-match**: when multiple worktree paths match a process cmdline (e.g. `/repo` is a prefix of `/repo/.biomelab-worktrees/feature`), only the longest (most specific) path wins. CWD matching is exact and unaffected by this rule.

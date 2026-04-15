@@ -1,8 +1,8 @@
 version: 2
 
 builds:
-  - main: ./cmd/gwaim
-    binary: gwaim
+  - main: ./cmd/biomelab
+    binary: biomelab
     env:
       - CGO_ENABLED=0
     ldflags:
@@ -32,18 +32,18 @@ checksum:
   name_template: "checksums.txt"
 
 homebrew_casks:
-  - name: gwaim
+  - name: biomelab
     repository:
       owner: mdelapenya
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    homepage: https://github.com/mdelapenya/gwaim
+    homepage: https://github.com/mdelapenya/biomelab
     description: "Git Worktree AI Manager — a terminal dashboard for git worktrees and coding agents"
     license: MIT
 
 nfpms:
-  - package_name: gwaim
-    homepage: https://github.com/mdelapenya/gwaim
+  - package_name: biomelab
+    homepage: https://github.com/mdelapenya/biomelab
     description: "Git Worktree AI Manager — a terminal dashboard for git worktrees and coding agents"
     license: MIT
     maintainer: Manuel de la Peña <manuel@mdelapenya.dev>
@@ -55,4 +55,4 @@ nfpms:
 release:
   github:
     owner: mdelapenya
-    name: gwaim
+    name: biomelab
