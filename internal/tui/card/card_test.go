@@ -382,6 +382,62 @@ func TestRender_SandboxNotFound(t *testing.T) {
 	}
 }
 
+func TestRender_SandboxRunning_ShowsEnrolledAgent(t *testing.T) {
+	wt := git.Worktree{
+		Path:   "/home/user/project",
+		Branch: "feature",
+	}
+	sbx := &SandboxInfo{Name: "owner-repo-claude", Status: SandboxRunning, Agent: "claude"}
+
+	// No host-level agents detected, but sandbox is running with an enrolled agent.
+	got := Render(wt, nil, nil, nil, provider.CLIAvailable, provider.ProviderGitHub, sbx)
+
+	if !strings.Contains(got, "claude") {
+		t.Error("expected enrolled agent name in output")
+	}
+	if !strings.Contains(got, "sandbox") {
+		t.Error("expected '(sandbox)' indicator for sandbox agent")
+	}
+	if strings.Contains(got, "no agent") {
+		t.Error("should not show 'no agent' when sandbox is running with enrolled agent")
+	}
+}
+
+func TestRender_SandboxStopped_ShowsNoAgent(t *testing.T) {
+	wt := git.Worktree{
+		Path:   "/home/user/project",
+		Branch: "feature",
+	}
+	sbx := &SandboxInfo{Name: "owner-repo-claude", Status: SandboxStopped, Agent: "claude"}
+
+	got := Render(wt, nil, nil, nil, provider.CLIAvailable, provider.ProviderGitHub, sbx)
+
+	if !strings.Contains(got, "no agent") {
+		t.Error("expected 'no agent' when sandbox is stopped")
+	}
+}
+
+func TestRender_SandboxRunning_HostAgentTakesPrecedence(t *testing.T) {
+	wt := git.Worktree{
+		Path:   "/home/user/project",
+		Branch: "feature",
+	}
+	agents := []agent.Info{
+		{Kind: agent.Claude, PID: "99999", State: "S", Started: "Mon 1 Jan 15:00:00 2026"},
+	}
+	sbx := &SandboxInfo{Name: "owner-repo-claude", Status: SandboxRunning, Agent: "claude"}
+
+	got := Render(wt, agents, nil, nil, provider.CLIAvailable, provider.ProviderGitHub, sbx)
+
+	if !strings.Contains(got, "PID 99999") {
+		t.Error("expected host agent PID when host agents are detected")
+	}
+	// Should show the host-detected agent, not the generic sandbox one.
+	if strings.Contains(got, "(sandbox)") {
+		t.Error("should show host-detected agent details, not sandbox indicator")
+	}
+}
+
 func TestRender_NoSandboxInfo(t *testing.T) {
 	wt := git.Worktree{
 		Path:   "/home/user/project",

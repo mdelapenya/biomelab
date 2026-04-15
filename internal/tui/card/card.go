@@ -62,6 +62,7 @@ const (
 type SandboxInfo struct {
 	Name          string        // sandbox name (derived from repo + agent)
 	Status        SandboxStatus // current sandbox status
+	Agent         string        // enrolled agent kind (e.g. "claude")
 	ClientVersion string        // sbx client version
 	ServerVersion string        // sbx server version
 }
@@ -147,6 +148,13 @@ func Render(wt git.Worktree, agents []agent.Info, ides []ide.Info, pr *provider.
 			b.WriteString(agentDetailStyle.Render(detail))
 			b.WriteString("\n")
 		}
+	} else if sbx != nil && sbx.Agent != "" && sbx.Status == SandboxRunning {
+		// In sandbox mode with a running sandbox, the agent runs inside the
+		// container and is not visible to host process detection. Show the
+		// enrolled agent kind instead.
+		line := fmt.Sprintf("%s (sandbox)", sbx.Agent)
+		b.WriteString(agentActiveStyle.Render("● " + line))
+		b.WriteString("\n")
 	} else {
 		b.WriteString(agentNoneStyle.Render("○ no agent"))
 		b.WriteString("\n")
