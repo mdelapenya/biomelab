@@ -55,14 +55,17 @@ func darwinOpen(dir, command string) error {
 	// The script removes itself on exit so temp files don't accumulate.
 	script := "#!/bin/bash\nrm -f " + shellQuote(path) + "\n" + shellCmd + "\n"
 	if _, err := f.WriteString(script); err != nil {
-		f.Close()
-		os.Remove(path)
+		_ = f.Close()
+		_ = os.Remove(path)
 		return fmt.Errorf("terminal: write temp file: %w", err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		_ = os.Remove(path)
+		return fmt.Errorf("terminal: close temp file: %w", err)
+	}
 
 	if err := os.Chmod(path, 0o755); err != nil {
-		os.Remove(path)
+		_ = os.Remove(path)
 		return fmt.Errorf("terminal: chmod temp file: %w", err)
 	}
 
