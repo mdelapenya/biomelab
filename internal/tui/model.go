@@ -157,8 +157,10 @@ func (m Model) Resume() (Model, tea.Cmd) {
 	m.paused = false
 	rp := m.repoPath()
 	return m, tea.Batch(
+		doCheckCLI(m.prProv, rp),
 		doQuickRefresh(m.repo, rp),
 		doLocalRefresh(m.repo, m.detector, m.ideDetector, m.procLister, rp, m.sbxName()),
+		doNetworkRefresh(m.repo, m.detector, m.ideDetector, m.procLister, m.prProv, m.cliAvail, rp, m.sbxName()),
 		m.doLocalTick(),
 		m.doTick(),
 	)
