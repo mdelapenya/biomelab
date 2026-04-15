@@ -15,6 +15,7 @@ import (
 	"github.com/mdelapenya/biomelab/internal/git"
 	"github.com/mdelapenya/biomelab/internal/ide"
 	"github.com/mdelapenya/biomelab/internal/provider"
+	"github.com/mdelapenya/biomelab/internal/sandbox"
 )
 
 // testModel creates a Model with pre-populated worktrees (no repo/detector needed for unit tests).
@@ -784,8 +785,8 @@ func TestRenderConfirmPopup(t *testing.T) {
 		if !strings.Contains(popup, "branch-b") {
 			t.Errorf("popup should contain branch name, got: %s", popup)
 		}
-		if !strings.Contains(popup, "[y] confirm") {
-			t.Errorf("popup should contain [y] confirm hint, got: %s", popup)
+		if !strings.Contains(popup, "[y]es") {
+			t.Errorf("popup should contain [y]es hint, got: %s", popup)
 		}
 	})
 
@@ -799,8 +800,8 @@ func TestRenderConfirmPopup(t *testing.T) {
 		if !strings.Contains(popup, "branch-b") {
 			t.Errorf("popup should contain branch name, got: %s", popup)
 		}
-		if !strings.Contains(popup, "Press Enter to confirm") {
-			t.Errorf("popup should contain Enter hint, got: %s", popup)
+		if !strings.Contains(popup, "[Enter] confirm") {
+			t.Errorf("popup should contain [Enter] confirm hint, got: %s", popup)
 		}
 	})
 
@@ -870,5 +871,85 @@ func TestRegularCreateDoesNotUseSandbox(t *testing.T) {
 
 	if model.mode != modeNormal {
 		t.Errorf("mode = %d, want modeNormal", model.mode)
+	}
+}
+
+func TestRenderMainCardHelp_NonSandbox(t *testing.T) {
+	m := testModel(2)
+	help := m.renderMainCardHelp()
+	for _, want := range []string{"[c]reate", "[f]etch PR", "[n]ew sandbox"} {
+		if !strings.Contains(help, want) {
+			t.Errorf("non-sandbox help = %q, missing %q", help, want)
+		}
+	}
+}
+
+func TestRenderMainCardHelp_SandboxRunning(t *testing.T) {
+	m := testModel(2)
+	m.activeMode = &config.ModeEntry{Type: "sandbox", SandboxName: "test-sbx", Agent: "claude"}
+	m.sandboxStatus = sandbox.StatusRunning
+	help := m.renderMainCardHelp()
+	for _, want := range []string{"[c]reate", "[f]etch PR", "[S]top", "[d]el sandbox"} {
+		if !strings.Contains(help, want) {
+			t.Errorf("running sandbox help = %q, missing %q", help, want)
+		}
+	}
+}
+
+func TestRenderMainCardHelp_SandboxStopped(t *testing.T) {
+	m := testModel(2)
+	m.activeMode = &config.ModeEntry{Type: "sandbox", SandboxName: "test-sbx", Agent: "claude"}
+	m.sandboxStatus = sandbox.StatusStopped
+	help := m.renderMainCardHelp()
+	for _, want := range []string{"[s]tart", "[d]el sandbox"} {
+		if !strings.Contains(help, want) {
+			t.Errorf("stopped sandbox help = %q, missing %q", help, want)
+		}
+	}
+}
+
+func TestRenderMainCardHelp_SandboxNotFound(t *testing.T) {
+	m := testModel(2)
+	m.activeMode = &config.ModeEntry{Type: "sandbox", SandboxName: "test-sbx", Agent: "claude"}
+	m.sandboxStatus = sandbox.StatusNotFound
+	help := m.renderMainCardHelp()
+	if !strings.Contains(help, "[n]ew sandbox") {
+		t.Errorf("not-found sandbox help = %q, missing %q", help, "[n]ew sandbox")
+	}
+}
+
+func TestRenderFixedTop_ContainsMainCardHelp(t *testing.T) {
+	m := testModel(2)
+	m.width = 120
+	m.height = 40
+	body := m.renderFixedTop()
+	if !strings.Contains(body, "[c]reate") {
+		t.Error("renderFixedTop should include main card help line with '[c]reate'")
+	}
+}
+
+func TestViewContent_BottomBarNoMainCardActions(t *testing.T) {
+	m := testModel(2)
+	m.width = 120
+	m.height = 40
+	content := m.viewContent()
+	// The help bar is the last non-empty line.
+	lines := strings.Split(content, "\n")
+	var helpLine string
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.TrimSpace(lines[i]) != "" {
+			helpLine = lines[i]
+			break
+		}
+	}
+	for _, absent := range []string{"[c]reate", "[f]etch PR", "[n]ew sandbox", "[S]top", "[s]tart"} {
+		if strings.Contains(helpLine, absent) {
+			t.Errorf("bottom help bar should not contain %q, got: %s", absent, helpLine)
+		}
+	}
+	for _, present := range []string{"[d]elete", "[q]uit", "nav"} {
+		if !strings.Contains(helpLine, present) {
+			t.Errorf("bottom help bar should contain %q, got: %s", present, helpLine)
+		}
 	}
 }

@@ -33,6 +33,9 @@ var (
 
 	helpStyle = lipgloss.NewStyle().Faint(true).MarginTop(1)
 
+	mainCardHelpActiveStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	mainCardHelpFaintStyle  = lipgloss.NewStyle().Faint(true)
+
 	errorStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("196")) // red
 	sandboxStoppedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214")) // yellow/orange — matches card sandbox stopped color
 

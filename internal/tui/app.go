@@ -861,7 +861,7 @@ func (a App) View() string {
 		b.WriteString(inputPromptStyle.Render("  Repository path: ") + a.textInput.View())
 	case appModeSelectRepoMode:
 		b.WriteString("\n")
-		b.WriteString(inputPromptStyle.Render("  Mode: [s] Sandbox (recommended)  [r] Regular  [esc] Cancel"))
+		b.WriteString(inputPromptStyle.Render("  Mode: [s]andbox (recommended)  [r]egular  [Esc] cancel"))
 	case appModeEnrollAgent, appModeAddSandboxMode:
 		b.WriteString("\n")
 		b.WriteString(inputPromptStyle.Render("  Agent: ") + a.textInput.View())
@@ -902,7 +902,7 @@ func (a App) renderConfirmRemovePopup() string {
 		return ""
 	}
 	name := a.repos[a.active].name
-	msg := fmt.Sprintf("Remove %q from dashboard?\n\n[y] confirm  [any key] cancel", name)
+	msg := fmt.Sprintf("Remove %q from dashboard?\n\n[y]es  [any key] cancel", name)
 	return popupStyle.Render(msg)
 }
 
@@ -914,7 +914,7 @@ func (a App) renderEmptyState() string {
 	case appModeAddRepo:
 		body += "\n" + inputPromptStyle.Render("  Repository path: ") + a.textInput.View() + "\n"
 	case appModeSelectRepoMode:
-		body += "\n" + inputPromptStyle.Render("  Mode: [s] Sandbox (recommended)  [r] Regular  [esc] Cancel") + "\n"
+		body += "\n" + inputPromptStyle.Render("  Mode: [s]andbox (recommended)  [r]egular  [Esc] cancel") + "\n"
 	case appModeEnrollAgent, appModeAddSandboxMode:
 		body += "\n" + inputPromptStyle.Render("  Agent: ") + a.textInput.View() + "\n"
 	}
@@ -922,7 +922,7 @@ func (a App) renderEmptyState() string {
 		body += "\n" + a.statusMsg + "\n"
 	}
 
-	help := helpStyle.Render("a add repo • q quit")
+	help := helpStyle.Render("[a]dd repo • [q]uit")
 	return title + body + "\n" + help
 }
 

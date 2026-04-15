@@ -792,8 +792,8 @@ func TestAppConfirmRemoveRendersPopup(t *testing.T) {
 	if !strings.Contains(view, a.repos[0].name) {
 		t.Errorf("popup should contain repo name %q, got:\n%s", a.repos[0].name, view)
 	}
-	if !strings.Contains(view, "[y] confirm") {
-		t.Errorf("popup should contain [y] confirm hint, got:\n%s", view)
+	if !strings.Contains(view, "[y]es") {
+		t.Errorf("popup should contain [y]es hint, got:\n%s", view)
 	}
 }
 
@@ -844,8 +844,8 @@ func TestAppConfirmDeleteRendersPopup(t *testing.T) {
 	if !strings.Contains(view, "Delete worktree") {
 		t.Errorf("App.View should contain worktree delete popup, got:\n%s", view)
 	}
-	if !strings.Contains(view, "[y] confirm") {
-		t.Errorf("App.View should show [y] confirm hint, got:\n%s", view)
+	if !strings.Contains(view, "[y]es") {
+		t.Errorf("App.View should show [y]es hint, got:\n%s", view)
 	}
 }
 
@@ -992,8 +992,8 @@ func TestAppSelectRepoModeRendering(t *testing.T) {
 	a.mode = appModeSelectRepoMode
 
 	view := a.View()
-	if !strings.Contains(view, "Regular") || !strings.Contains(view, "Sandbox") {
-		t.Errorf("should show Regular/Sandbox choices, got:\n%s", view)
+	if !strings.Contains(view, "[r]egular") || !strings.Contains(view, "[s]andbox") {
+		t.Errorf("should show [r]egular/[s]andbox choices, got:\n%s", view)
 	}
 }
 
