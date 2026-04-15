@@ -2,10 +2,12 @@
 
 **Git Worktree AI Manager** -- A terminal UI for managing git worktrees and the coding agents running inside them.
 
+> **Recommended: use [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) (`sbx`) for coding agents.** Sandbox mode gives each worktree an isolated Docker environment — its own filesystem, Docker daemon, and network — so agents can install packages, build containers, and modify files without touching the host. When adding a repo, sandbox mode is the default and recommended choice.
+
 ## Features
 
-- **Multi-repo dashboard** -- Register multiple repositories and switch between them in a two-column layout. The left panel (15%) shows registered repos as clickable cards with a scrollbar when the list overflows, the right panel (85%) shows the selected repo's worktree dashboard. Press `Tab` to switch focus between panels.
-- **Persistent config** -- Registered repos are saved to `~/.config/gwaim/repos.json` and restored on next launch. Starting gwaim inside a git repo auto-adds it.
+- **Multi-repo dashboard** -- Register multiple repositories and switch between them in a two-column layout. The left panel (15%) shows registered repos as a tree: each repo is a header (dimmed, click selects first mode) with indented mode lines below (regular `📂` or sandbox `🐳 [agent]`). The right panel (85%) shows the selected mode's worktree dashboard. A scrollbar appears when the tree overflows. Press `Tab` to switch focus between panels. The same repo can have multiple modes (e.g. regular + multiple sandbox agents).
+- **Persistent config** -- Registered repos are saved to `~/.config/gwaim/repos.json` and restored on next launch. Starting gwaim inside a git repo auto-adds it. Each repo entry has a list of modes (`regular` or `sandbox` with agent name). The old flat config format is auto-migrated on load.
 - **Start from anywhere** -- gwaim can launch from any directory, not just inside a git repo. If no repos are registered, an empty state guides you to add one.
 - **Hierarchical layout** -- The main worktree sits at the top (double-bordered card), with linked worktrees displayed in a responsive grid below.
 - **Worktree cards** -- Each card shows: branch name, path, dirty/clean status, sync status (ahead/behind/diverged/up-to-date), active agents, open IDEs, and PR info.
@@ -13,7 +15,8 @@
 - **IDE detection** -- Detects open IDEs (VS Code, Cursor, Zed, Windsurf, GoLand, IntelliJ, PyCharm, Neovim, Vim) in each worktree. Matches by process name and worktree path (both CWD and cmdline). Electron-based IDEs (VS Code, Cursor) spawn many helper processes; gwaim groups them by process tree so each independent window appears as one card entry.
 - **PR/MR status** -- Fetches pull request (GitHub) or merge request (GitLab) information and CI check status for each branch. Shows PR/MR number, title, state (open/draft/merged/closed), and CI result (pass/fail/pending). The hosting provider is auto-detected from the origin remote URL.
 - **Sync status** -- Compares each branch against its remote tracking branches for reference remotes (`origin` and `upstream`) and shows whether it is up-to-date, ahead, behind, or diverged. Runs `git fetch` on every refresh cycle across all configured remotes to keep tracking refs current.
-- **Create worktrees** -- Press `c` from the main card to create a new linked worktree. A branch name prompt appears under the main card. After creation, a new terminal tab opens automatically in the worktree directory.
+- **Docker Sandbox mode** (recommended) -- When adding a repo, choose between Sandbox (recommended) and Regular mode (`[s] Sandbox (recommended)  [r] Regular  [esc] Cancel`). In sandbox mode, one sandbox (VM) is created per enrollment via `sbx create`. The agent (claude, codex, copilot, gemini, kiro, opencode, shell) is chosen at enrollment time and reused for all worktrees. The same repo can have multiple sandbox modes with different agents, each appearing as an indented `🐳 [agent]` line under the repo header in the left panel tree. Adding a sandbox to a repo with only a regular mode replaces the regular entry. The main card displays real-time sandbox status: running (green), stopped (yellow with start command), or not found (red with create command). A pre-flight check ensures `sbx` is bootstrapped before enrollment.
+- **Create worktrees** -- Press `c` from the main card to create a new linked worktree. A branch name prompt appears under the main card. In regular mode, a git worktree is created directly on the host. In sandbox mode, the worktree is created inside the existing sandbox via `sbx run -d --branch` (detached) — no new VM is created. No terminal tabs auto-open; press Enter on the card to attach.
 - **Delete worktrees** -- Press `d` on any linked worktree to delete it. A centered popup overlay shows what will happen: press `y` to arm, then `Enter` to confirm. `Esc` cancels at any point. The worktree directory is removed, the branch is deleted, and stale metadata is pruned. The main worktree cannot be deleted.
 - **Pull** -- Press `p` to pull. Fetches all configured remotes (origin, upstream, forks, etc.) first so all tracking refs are current, then merges from origin. Uses go-git with credentials resolved from your configured git credential helpers (osxkeychain, gh auth, etc.).
 - **Fetch PR into worktree** -- Press `f` from the main card to fetch a pull request into a new linked worktree. A prompt accepts a plain PR number (`123`) or a fork reference (`owner/repo#123`). gwaim validates the PR via `gh`, fetches the head branch, and creates a worktree for it. The branch ref is preserved exactly (e.g., `ralph/issue-19`), while the directory name is sanitized to be filesystem-safe.
@@ -28,16 +31,19 @@
 - **gh CLI** (GitHub) -- The [GitHub CLI](https://cli.github.com/) is required for pull request and CI status information on GitHub-hosted repositories. Install it and authenticate with `gh auth login`.
 - **glab CLI** (GitLab) -- The [GitLab CLI](https://gitlab.com/gitlab-org/cli) is required for merge request and CI pipeline status on GitLab-hosted repositories. Install it and authenticate with `glab auth login`.
 - **git** -- Required on the host for credential helper resolution (`git credential fill`). All other git operations use go-git natively.
-- **Global gitignore** -- gwaim creates worktrees in a `.gwaim-worktrees/` directory at the repository root. You must add this to your global gitignore so it is not tracked by any repository:
+- **sbx CLI** (recommended) -- The [Docker Sandboxes CLI](https://docs.docker.com/ai/sandboxes/) is required for sandbox mode, which is the recommended way to use gwaim with coding agents. Install it and run `sbx ls` once to complete setup (Docker auth, network policy). Each sandbox gets its own isolated Docker environment.
+- **Global gitignore** -- gwaim creates worktrees in `.gwaim-worktrees/` (regular mode) and `.sbx/` (sandbox mode) directories at the repository root. You must add these to your global gitignore so they are not tracked by any repository:
 
   ```bash
   echo ".gwaim-worktrees" >> ~/.config/git/ignore
+  echo ".sbx" >> ~/.config/git/ignore
   ```
 
   Or, if you use a custom `core.excludesFile`:
 
   ```bash
   echo ".gwaim-worktrees" >> "$(git config --global core.excludesFile)"
+  echo ".sbx" >> "$(git config --global core.excludesFile)"
   ```
 
 ## Supported providers
@@ -236,10 +242,11 @@ The current refresh interval is shown in the help bar at the bottom of the scree
 
 | Key              | Action                                                            |
 |------------------|-------------------------------------------------------------------|
-| `up` / `k`      | Select previous repo                                              |
-| `down` / `j`    | Select next repo                                                  |
-| `a`              | Add a new repository (enter path)                                 |
-| `x`              | Remove selected repository from dashboard (popup confirmation)   |
+| `up` / `k`      | Select previous mode (traverses modes across repo groups)         |
+| `down` / `j`    | Select next mode (traverses modes across repo groups)             |
+| `a`              | Add a new repository (enter path, choose regular/sandbox)         |
+| `n`              | Add a sandbox mode to the selected repo (prompts for agent)       |
+| `x`              | Remove selected mode from dashboard (popup confirmation)          |
 | `Enter`          | Switch focus to worktree dashboard                                |
 
 #### Worktree dashboard (right panel focused)
@@ -251,7 +258,11 @@ The current refresh interval is shown in the help bar at the bottom of the scree
 | `up` / `k`      | Move cursor up (first linked row goes to main)                    |
 | `down` / `j`    | Move cursor down (main goes to first linked card)                 |
 | `Enter`          | Open selected worktree in a new terminal tab/panel                |
+| `n`              | New sandbox (main card, when sandbox not found or non-sandbox repo) |
+| `s`              | Start stopped sandbox (main card, sandbox mode, when stopped)     |
+| `S`              | Stop running sandbox (main card, sandbox mode, when running)      |
 | `c`              | Create a new worktree (only from the main card)                   |
+| `d` (main card)  | Remove sandbox with `sbx rm` (sandbox mode only, confirmation popup) |
 | `f`              | Fetch a PR into a new worktree (only from the main card; accepts `123` or `owner/repo#123`) |
 | `d`              | Delete the selected linked worktree (y + Enter to confirm)        |
 | `e`              | Open the selected worktree in an editor (`$GWAIM_EDITOR` or `code`) |
@@ -281,19 +292,86 @@ When you press `Enter` on a worktree card:
 
 The gwaim dashboard stays running in its own tab throughout.
 
+## Sandbox workflows
+
+gwaim recommends Docker Sandboxes for coding agents. Here are all the ways to work with sandboxes:
+
+### Enroll a new repo in sandbox mode
+
+1. **Left panel focused** → press `a` to add a repo
+2. Enter the repo path → press Enter
+3. Choose `[s] Sandbox (recommended)` 
+4. Enter the agent name (e.g., `claude`) → press Enter
+5. gwaim runs a pre-flight check (`sbx ls --json`). If sbx is not bootstrapped, you'll see an error — run `sbx ls` in a terminal first to complete Docker auth and network policy setup
+6. On success: repo appears in the tree as `🐳 [claude]`, sandbox is created via `sbx create` in the background
+
+### Add another sandbox agent to an existing repo
+
+1. **Left panel focused** → select any mode of the repo
+2. Press `n`
+3. Enter the agent name (e.g., `gemini`) → press Enter
+4. Pre-flight check runs. On success: new `🐳 [gemini]` line appears under the repo header
+5. The tree now shows multiple agents:
+   ```
+   mdelapenya/gwaim
+     🐳 [claude]
+     🐳 [gemini]
+   ```
+
+### Convert a regular repo to sandbox mode
+
+1. **Right panel focused**, main card selected → press `n`
+2. Enter the agent name → press Enter
+3. The `📂 [host]` mode is replaced by `🐳 [claude]`
+
+### Create a worktree inside a sandbox
+
+1. Select the sandbox mode in the left panel tree (e.g., `🐳 [claude]`)
+2. **Right panel** → press `c` on the main card
+3. Enter the branch name → press Enter
+4. gwaim runs `sbx run -d --branch <branch> <sandboxName>` (detached) — the worktree is created inside the existing sandbox VM
+5. The worktree card appears on the next refresh cycle (≤5s)
+6. Press Enter on the card to attach: opens a terminal with `sbx run --branch <branch> <sandboxName>`
+
+### Create sandbox when it doesn't exist
+
+If the main card shows `🐳 sandbox: name (not found)` in red:
+1. Press `n` → confirmation popup shows the full `sbx create` command
+2. Press `y` → sandbox is created in the background
+
+### Remove a sandbox
+
+1. Select the sandbox mode → **right panel**, main card selected
+2. Press `d` → confirmation popup: `sbx rm --force <name>`
+3. Press `y` → sandbox is removed (all containers and worktrees destroyed)
+
+### Remove a mode from the repo list
+
+1. **Left panel focused** → select the mode to remove
+2. Press `x` → confirmation popup
+3. Press `y` → mode is removed from config. If it was the last mode, the repo is removed entirely
+
+### Sandbox status indicators
+
+The main card shows real-time sandbox status (checked every 5s):
+- **Green**: `🐳 sandbox: name (running)` + sbx version info
+- **Yellow**: `🐳 sandbox: name (stopped)` + status bar: `Sandbox stopped — run: sbx run <name>`
+- **Red**: `🐳 sandbox: name (not found)` + status bar: `Sandbox not found — press 'n' to create it`
+
 ## Architecture
 
 gwaim is structured into the following internal packages:
 
 - **`cmd/gwaim`** -- Entry point. Loads the repo config, auto-adds the current directory's repo if applicable, creates the agent detector, and starts the Bubbletea program with the `App` model.
-- **`internal/config`** -- Persists the list of registered repositories to `~/.config/gwaim/repos.json`. Provides `Load`/`Save`/`Add`/`Remove` with atomic writes (write to `.tmp`, rename). Deduplicates by repo path.
+- **`internal/config`** -- Persists the list of registered repositories to `~/.config/gwaim/repos.json`. Each `RepoEntry` has a `Path`, `Name`, and `Modes []ModeEntry` (each mode is `regular` or `sandbox` with optional agent/sandbox name). Provides `Load`/`Save`/`Add`/`Remove`/`AddMode`/`RemoveMode` with atomic writes (write to `.tmp`, rename). Deduplicates by repo path. Auto-migrates the old flat config format (with `Sandbox bool` fields) on load.
 - **`internal/git`** -- Git operations using [go-git v6](https://github.com/go-git/go-git). Handles repository opening, worktree listing (main + linked), creation, removal, pruning, pull, fetch, and sync status computation. Uses the `x/plumbing/worktree` extension for linked worktree management. Credentials are resolved via `git credential fill`.
 - **`internal/agent`** -- Detects coding agent processes using [gopsutil](https://github.com/shirou/gopsutil). Enumerates all processes, filters by known agent patterns, resolves their CWDs, and matches them to worktree paths. Reports PID, process state, and start time.
 - **`internal/provider`** -- Multi-provider PR/MR abstraction. Defines a `PRProvider` interface and auto-detects the hosting provider (GitHub, GitLab) from the origin remote URL. Includes `GitHubProvider` (via `gh` CLI), `GitLabProvider` (via `glab` CLI), and `UnsupportedProvider` (graceful fallback for unknown hosts). Runs lookups concurrently (up to 4 at a time). Extracts PR/MR number, title, state, draft status, and CI check/pipeline status.
 - **`internal/github`** -- GitHub-specific PR helpers: `ParsePRRef` (parses `"123"` or `"owner/repo#123"`) and `ValidatePR` (confirms a PR exists via `gh` and returns its head branch) for the fetch-PR flow.
+- **`internal/sandbox`** -- Docker Sandbox (`sbx`) CLI wrapper. Provides `Preflight()` to verify sbx is bootstrapped, `CheckStatus()` for real-time sandbox state monitoring (running/stopped/not found), `CreateArgs()`/`RunDetachedWithBranchArgs()`/`RunWithBranchArgs()` to build CLI commands, `SanitizeName()` for safe sandbox names, and `Create()`/`RunDetached()` for background execution.
 - **`internal/tui`** -- Two-layer Bubbletea TUI:
-  - **`App`** (`app.go`): Top-level model managing multiple repos. Renders a two-column layout with manually-drawn borders (`buildPanels()`). Left panel shows the repo list, right panel shows the active repo's worktree dashboard. Handles focus switching (`Tab`/`Shift+Tab`/mouse click), repo add/remove, and routes async messages to the correct child by `repoPath`.
-  - **`Model`** (`model.go`): Per-repo worktree dashboard. The main card is pinned at the top (`renderFixedTop`); linked worktree cards scroll in a viewport (`renderLinkedCards`). Manages card grid layout, hierarchical navigation, input modes (normal, create, fetch-PR, confirm-delete), mouse toggle, periodic refresh, and two-zone click detection. When embedded inside `App`, skips its own header rendering (the App renders it above both panels).
+  - **`App`** (`app.go`): Top-level model managing multiple repos. Renders a two-column layout with manually-drawn borders (`buildPanels()`). Left panel shows a tree of repo groups (header + indented mode lines), right panel shows the active mode's worktree dashboard. Each `repoGroup` holds `modes []config.ModeEntry` and `activeMode int`; there is one `Model` per repo with filtered views. Handles focus switching (`Tab`/`Shift+Tab`/mouse click), mode navigation (up/down traverses modes across groups), repo add/remove, and routes async messages to the correct child by `repoPath`.
+  - **`Model`** (`model.go`): Per-repo worktree dashboard. Has `activeMode *config.ModeEntry` and `allWorktrees`/`worktrees` (unfiltered/filtered). Regular mode shows `.gwaim-worktrees/` worktrees; sandbox mode shows `.sbx/<sandboxName>-worktrees/` worktrees; the main worktree is always shown. The main card is pinned at the top (`renderFixedTop`); linked worktree cards scroll in a viewport (`renderLinkedCards`). Manages card grid layout, hierarchical navigation, input modes (normal, create, fetch-PR, confirm-delete, confirm-create-sandbox, confirm-remove-sandbox, enroll-sandbox-from-card), mouse toggle, periodic refresh, and two-zone click detection. When embedded inside `App`, skips its own header rendering (the App renders it above both panels).
 - **`internal/tui/card`** -- Pure render function that produces card content for a single worktree. Displays branch, path, PR status, agent info, dirty status, and sync status using lipgloss styles.
 - **`internal/warp`** -- Terminal tab/panel management. Creates named repo tabs and split panels. Supports Warp, iTerm, Terminal.app on macOS; gnome-terminal, konsole, xfce4-terminal on Linux.
 
@@ -301,7 +379,7 @@ gwaim is structured into the following internal packages:
 
 1. On startup, `App.Init()` loads the repo config and opens each repository. The current directory's repo is auto-added by `main.go` before launch.
 2. Each repo's `Model.Init()` starts its own refresh cycles: quick refresh (branch names), local refresh (dirty + agents every 5s), and network refresh (fetch + PRs at configurable interval).
-3. All async messages carry a `repoPath` field. `App.Update` routes each message to the matching child `Model` by path. Messages for removed repos are silently discarded.
+3. All async messages carry a `repoPath` field. `App.Update` routes each message to the matching child `Model` by path (matched against `repoGroup.path`). Messages for removed repos are silently discarded.
 4. `Model.renderFixedTop` produces the pinned main card section; `Model.renderLinkedCards` produces the scrollable worktree card grid. Both record card bounding zones for click detection.
 5. `Model.syncViewport` caches the fixed-top content and pushes linked cards into the viewport, dynamically sizing the viewport height.
 6. `App.View` composes: header (title only, 1 row) + two bordered panels (repo list + dashboard) using manually-rendered border characters for pixel-perfect height matching. Refresh timestamps are rendered inside the right panel by the embedded Model's `renderFixedTop`, not in the App header.

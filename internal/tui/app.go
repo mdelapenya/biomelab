@@ -15,6 +15,7 @@ import (
 	"github.com/mdelapenya/gwaim/internal/git"
 	"github.com/mdelapenya/gwaim/internal/ide"
 	"github.com/mdelapenya/gwaim/internal/process"
+	"github.com/mdelapenya/gwaim/internal/sandbox"
 )
 
 type focusPanel int
@@ -27,16 +28,21 @@ const (
 type appMode int
 
 const (
-	appModeNormal        appMode = iota
-	appModeAddRepo                      // text input for repo path
-	appModeConfirmRemove                // confirmation prompt for repo removal
+	appModeNormal          appMode = iota
+	appModeAddRepo                        // text input for repo path
+	appModeConfirmRemove                  // confirmation prompt for repo removal
+	appModeSelectRepoMode                 // choose regular vs sandbox after path validation
+	appModeEnrollAgent                    // text input for sandbox agent name (add-repo flow)
+	appModeAddSandboxMode                 // text input for agent to add sandbox mode to existing repo
 )
 
-// repoTab holds the state for a single registered repository.
-type repoTab struct {
-	path  string // repo root path (unique key)
-	name  string // display name
-	model Model  // per-repo worktree dashboard
+// repoGroup holds the state for a single registered repository with its modes.
+type repoGroup struct {
+	path       string             // repo root path (unique key)
+	name       string             // display name
+	modes      []config.ModeEntry // all modes for this repo
+	activeMode int                // index into modes
+	model      Model              // per-repo worktree dashboard
 }
 
 // panelScroll holds scroll state for a bordered panel's scrollbar.
@@ -46,7 +52,7 @@ type panelScroll struct {
 
 // App is the top-level bubbletea model that manages multiple repositories.
 type App struct {
-	repos            []*repoTab
+	repos            []*repoGroup
 	active           int        // selected repo index
 	focus            focusPanel // which panel has focus
 	detector         *agent.Detector
@@ -59,7 +65,12 @@ type App struct {
 	textInput        textinput.Model
 	statusMsg        string
 	refreshInterval  time.Duration
-	repoScrollOffset int // first visible repo card index
+	repoScrollOffset    int // first visible repo card index
+	pendingRepo         *repoValidatedMsg // holds validated repo during mode/agent selection
+	pendingAgent        string            // agent name during sandbox enrollment preflight
+	pendingEnrollPath   string            // repo path for from-card sandbox enrollment
+	pendingEnrollAgent  string            // agent for from-card sandbox enrollment
+	sbxStatuses         map[string]sandbox.Status // system-wide sandbox statuses for tree dots
 }
 
 // addRepoMsg is returned after validating and opening a new repo.
@@ -68,6 +79,7 @@ type addRepoMsg struct {
 	name string
 	repo *git.Repository
 	err  error
+	mode config.ModeEntry
 }
 
 // NewApp creates a new App model.
@@ -88,6 +100,7 @@ func NewApp(configPath string, detector *agent.Detector, ideDetector *ide.Detect
 		configPath:      configPath,
 		textInput:       ti,
 		refreshInterval: refreshInterval,
+		sbxStatuses:     make(map[string]sandbox.Status),
 	}
 }
 
@@ -105,13 +118,19 @@ func (a App) Init() tea.Cmd {
 			continue // skip repos that can't be opened
 		}
 		m := newEmbedded(repo, a.detector, a.ideDetector, a.procLister, a.refreshInterval)
+		modes := entry.Modes
+		if len(modes) == 0 {
+			modes = []config.ModeEntry{{Type: "regular"}}
+		}
+		m.activeMode = &modes[0]
 		if i != 0 {
 			// Non-active repos start paused — no tick chains.
 			m.paused = true
 		}
-		a.repos = append(a.repos, &repoTab{
+		a.repos = append(a.repos, &repoGroup{
 			path:  entry.Path,
 			name:  entry.Name,
+			modes: modes,
 			model: m,
 		})
 		if i == 0 {
@@ -120,17 +139,25 @@ func (a App) Init() tea.Cmd {
 		}
 	}
 
+	// Seed sandbox statuses so tree dots are correct from the start.
+	if statusMap := sandbox.CheckAllStatuses(); statusMap != nil {
+		for k, v := range statusMap {
+			a.sbxStatuses[k] = v
+		}
+	}
+
 	// Return the modified app as a cmd that sets up repos.
 	// Since Init() can't mutate the receiver, we use a message.
 	return func() tea.Msg {
-		return appInitMsg{repos: a.repos, cmds: cmds}
+		return appInitMsg{repos: a.repos, sbxStatuses: a.sbxStatuses, cmds: cmds}
 	}
 }
 
 // appInitMsg carries the repos loaded during Init.
 type appInitMsg struct {
-	repos []*repoTab
-	cmds  []tea.Cmd
+	repos       []*repoGroup
+	cmds        []tea.Cmd
+	sbxStatuses map[string]sandbox.Status
 }
 
 // childResizeMsg is a WindowSizeMsg targeted at the active child model only.
@@ -144,6 +171,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case appInitMsg:
 		a.repos = msg.repos
+		if msg.sbxStatuses != nil {
+			a.sbxStatuses = msg.sbxStatuses
+		}
 		if len(a.repos) > 0 {
 			a.focus = focusRight
 		}
@@ -186,6 +216,62 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
+	case repoValidatedMsg:
+		return a.handleRepoValidatedMsg(msg)
+
+	case sandboxCreatedMsg:
+		if msg.err != nil {
+			a.statusMsg = errorStyle.Render("Sandbox: " + msg.err.Error())
+		} else {
+			a.statusMsg = cleanStyle.Render("Sandbox created: " + msg.repoName)
+		}
+		return a, nil
+
+	case enrollSandboxRequestMsg:
+		// Non-sandbox repo wants to enroll — run preflight.
+		a.pendingEnrollPath = msg.repoPath
+		a.pendingEnrollAgent = msg.mode.Agent
+		return a, doSandboxPreflight()
+
+	case sandboxPreflightMsg:
+		if msg.err != nil {
+			a.statusMsg = errorStyle.Render(msg.err.Error())
+			// Clear both enrollment flows.
+			if a.pendingEnrollPath != "" {
+				a.pendingEnrollPath = ""
+				a.pendingEnrollAgent = ""
+				// Update child status.
+				for i, rt := range a.repos {
+					if rt.path == a.pendingEnrollPath {
+						a.repos[i].model.statusMsg = errorStyle.Render(msg.err.Error())
+						break
+					}
+				}
+			} else {
+				a.mode = appModeNormal
+				a.pendingRepo = nil
+				a.pendingAgent = ""
+			}
+			return a, nil
+		}
+
+		// sbx is ready. Check which enrollment flow we're in.
+		if a.pendingEnrollPath != "" {
+			// From-card enrollment: update existing repo to sandbox mode.
+			return a.finalizeCardEnrollment()
+		}
+
+		// From add-repo enrollment.
+		pending := a.pendingRepo
+		agentName := a.pendingAgent
+		a.pendingRepo = nil
+		a.pendingAgent = ""
+		a.mode = appModeNormal
+		a.statusMsg = cleanStyle.Render("Adding sandbox repository...")
+		sbxName := sandbox.SanitizeName(pending.name, agentName)
+		mode := config.ModeEntry{Type: "sandbox", SandboxName: sbxName, Agent: agentName}
+		return a, doFinalizeAddRepo(pending, mode, a.configPath)
+
 	case addRepoMsg:
 		return a.handleAddRepoMsg(msg)
 
@@ -203,6 +289,17 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if rt.path == rp {
 				updated, cmd := rt.model.Update(msg)
 				a.repos[i].model = updated.(Model)
+
+				// Sync sandbox statuses from child to App level (system-wide data).
+				for k, v := range a.repos[i].model.modeStatuses {
+					a.sbxStatuses[k] = v
+				}
+
+				// After sandbox removal succeeds, remove the mode from the group.
+				if rm, ok := msg.(sandboxRemovedMsg); ok && rm.err == nil {
+					a.removeSandboxModeFromGroup(i, rm.sandboxName)
+				}
+
 				return a, cmd
 			}
 		}
@@ -231,9 +328,94 @@ func (a App) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				a.statusMsg = ""
 				return a, nil
 			}
+			a.statusMsg = cleanStyle.Render("Validating repository...")
+			return a, doValidateRepo(input)
+		case key.Matches(msg, key.NewBinding(key.WithKeys("esc"))):
+			a.mode = appModeNormal
+			a.statusMsg = ""
+			return a, nil
+		default:
+			var cmd tea.Cmd
+			a.textInput, cmd = a.textInput.Update(msg)
+			return a, cmd
+		}
+	}
+
+	// Handle repo mode selection (regular vs sandbox).
+	if a.mode == appModeSelectRepoMode {
+		switch {
+		case key.Matches(msg, key.NewBinding(key.WithKeys("r"))):
+			// Regular mode — finalize immediately.
+			pending := a.pendingRepo
+			a.pendingRepo = nil
 			a.mode = appModeNormal
 			a.statusMsg = cleanStyle.Render("Adding repository...")
-			return a, doAddRepo(input, a.configPath)
+			return a, doFinalizeAddRepo(pending, config.ModeEntry{Type: "regular"}, a.configPath)
+		case key.Matches(msg, key.NewBinding(key.WithKeys("s"))):
+			// Sandbox mode — prompt for agent name.
+			a.mode = appModeEnrollAgent
+			a.textInput.Reset()
+			a.textInput.Placeholder = "agent (claude, codex, copilot, gemini, kiro, opencode, shell)"
+			a.textInput.Focus()
+			a.statusMsg = ""
+			return a, a.textInput.Cursor.BlinkCmd()
+		case key.Matches(msg, key.NewBinding(key.WithKeys("esc"))):
+			a.mode = appModeNormal
+			a.pendingRepo = nil
+			a.statusMsg = ""
+			return a, nil
+		}
+		return a, nil
+	}
+
+	// Handle sandbox agent name input.
+	if a.mode == appModeEnrollAgent {
+		switch {
+		case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
+			agentName := strings.TrimSpace(a.textInput.Value())
+			if agentName == "" {
+				a.mode = appModeNormal
+				a.pendingRepo = nil
+				a.statusMsg = ""
+				return a, nil
+			}
+			// Store the agent while we run the preflight check.
+			a.pendingAgent = agentName
+			a.statusMsg = cleanStyle.Render("Checking sbx readiness...")
+			return a, doSandboxPreflight()
+		case key.Matches(msg, key.NewBinding(key.WithKeys("esc"))):
+			a.mode = appModeNormal
+			a.pendingRepo = nil
+			a.statusMsg = ""
+			return a, nil
+		default:
+			var cmd tea.Cmd
+			a.textInput, cmd = a.textInput.Update(msg)
+			return a, cmd
+		}
+	}
+
+	// Handle add sandbox mode to existing repo.
+	if a.mode == appModeAddSandboxMode {
+		switch {
+		case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
+			agentName := strings.TrimSpace(a.textInput.Value())
+			if agentName == "" {
+				a.mode = appModeNormal
+				a.statusMsg = ""
+				return a, nil
+			}
+			// Store for preflight flow.
+			if a.active < len(a.repos) {
+				rg := a.repos[a.active]
+				a.pendingEnrollPath = rg.path
+				a.pendingEnrollAgent = agentName
+				a.mode = appModeNormal
+				a.statusMsg = cleanStyle.Render("Checking sbx readiness...")
+				return a, doSandboxPreflight()
+			}
+			a.mode = appModeNormal
+			return a, nil
 		case key.Matches(msg, key.NewBinding(key.WithKeys("esc"))):
 			a.mode = appModeNormal
 			a.statusMsg = ""
@@ -250,15 +432,52 @@ func (a App) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, key.NewBinding(key.WithKeys("y", "Y"))):
 			if a.active >= 0 && a.active < len(a.repos) {
-				rt := a.repos[a.active]
-				// Remove from config. Errors are non-fatal — the in-memory state is canonical.
-				cfg, err := config.Load(a.configPath)
-				if err == nil {
-					cfg.Remove(rt.path)
-					_ = config.Save(a.configPath, cfg)
+				rg := a.repos[a.active]
+				activeMode := rg.modes[rg.activeMode]
+
+				if len(rg.modes) > 1 {
+					// Multiple modes: remove just the active mode.
+					cfg, err := config.Load(a.configPath)
+					if err == nil {
+						cfg.RemoveMode(rg.path, activeMode)
+						_ = config.Save(a.configPath, cfg)
+					}
+					// Update in-memory modes.
+					rg.modes = append(rg.modes[:rg.activeMode], rg.modes[rg.activeMode+1:]...)
+					if rg.activeMode >= len(rg.modes) {
+						rg.activeMode = len(rg.modes) - 1
+					}
+					updated, cmd := rg.model.SetActiveMode(&rg.modes[rg.activeMode])
+					rg.model = updated
+					a.statusMsg = cleanStyle.Render("Mode removed")
+					a.mode = appModeNormal
+					return a, cmd
 				}
 
-				// Remove from repos slice.
+				if activeMode.Type == "sandbox" {
+					// Last mode is sandbox: convert to regular instead of removing.
+					regularMode := config.ModeEntry{Type: "regular"}
+					cfg, err := config.Load(a.configPath)
+					if err == nil {
+						cfg.RemoveMode(rg.path, activeMode)
+						cfg.Add(rg.path, rg.name, regularMode)
+						_ = config.Save(a.configPath, cfg)
+					}
+					rg.modes = []config.ModeEntry{regularMode}
+					rg.activeMode = 0
+					updated, cmd := rg.model.SetActiveMode(&rg.modes[0])
+					rg.model = updated
+					a.statusMsg = cleanStyle.Render("Sandbox removed — repo converted to host mode")
+					a.mode = appModeNormal
+					return a, cmd
+				}
+
+				// Last mode is regular: remove the entire repo.
+				cfg, err := config.Load(a.configPath)
+				if err == nil {
+					cfg.Remove(rg.path)
+					_ = config.Save(a.configPath, cfg)
+				}
 				a.repos = append(a.repos[:a.active], a.repos[a.active+1:]...)
 				if a.active >= len(a.repos) && len(a.repos) > 0 {
 					a.active = len(a.repos) - 1
@@ -369,15 +588,31 @@ func (a App) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	leftWidth := a.leftPanelWidth()
 
 	if msg.X < leftWidth {
-		// Click in left panel — focus it and select the repo at this row.
+		// Click in left panel — focus it and find which mode was clicked.
 		a.focus = focusLeft
-		// Repo cards start at: header height + 1 (panel border) + 1 ("Repos" label).
-		// Each card is repoCardHeight lines tall. Add scroll offset.
+		// Tree content starts at: header height + 1 (panel border) + 1 ("Repos" label).
 		contentY := msg.Y - hh - 2
 		if contentY >= 0 {
-			cardIdx := contentY/repoCardHeight + a.repoScrollOffset
-			if cardIdx >= 0 && cardIdx < len(a.repos) && cardIdx != a.active {
-				return a.switchRepo(cardIdx)
+			// Iterate through groups to find which line was clicked.
+			lineIdx := 0
+			for gi, rg := range a.repos {
+				// Clicking the group header selects its first mode.
+				if lineIdx == contentY {
+					if gi != a.active || rg.activeMode != 0 {
+						return a.switchMode(gi, 0)
+					}
+					return a, nil
+				}
+				lineIdx++ // group header line
+				for mi := range rg.modes {
+					if lineIdx == contentY {
+						if gi != a.active || mi != rg.activeMode {
+							return a.switchMode(gi, mi)
+						}
+						return a, nil
+					}
+					lineIdx++
+				}
 			}
 		}
 		return a, nil
@@ -399,13 +634,9 @@ func (a App) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 func (a App) handleLeftPanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, key.NewBinding(key.WithKeys("up", "k"))):
-		if a.active > 0 {
-			return a.switchRepo(a.active - 1)
-		}
+		return a.moveModeUp()
 	case key.Matches(msg, key.NewBinding(key.WithKeys("down", "j"))):
-		if a.active < len(a.repos)-1 {
-			return a.switchRepo(a.active + 1)
-		}
+		return a.moveModeDown()
 	case key.Matches(msg, key.NewBinding(key.WithKeys("a"))):
 		a.mode = appModeAddRepo
 		a.textInput.Reset()
@@ -413,6 +644,16 @@ func (a App) handleLeftPanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.textInput.Focus()
 		a.statusMsg = ""
 		return a, a.textInput.Cursor.BlinkCmd()
+	case key.Matches(msg, key.NewBinding(key.WithKeys("n"))):
+		if len(a.repos) > 0 && a.active < len(a.repos) {
+			a.mode = appModeAddSandboxMode
+			a.textInput.Reset()
+			a.textInput.Placeholder = "agent (claude, codex, copilot, gemini, kiro, opencode, shell)"
+			a.textInput.Focus()
+			a.statusMsg = ""
+			return a, a.textInput.Cursor.BlinkCmd()
+		}
+		return a, nil
 	case key.Matches(msg, key.NewBinding(key.WithKeys("x"))):
 		if len(a.repos) > 0 && a.active < len(a.repos) {
 			a.mode = appModeConfirmRemove
@@ -425,6 +666,97 @@ func (a App) handleLeftPanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 	}
+	return a, nil
+}
+
+// removeSandboxModeFromGroup removes a sandbox mode by name from a group.
+// If it was the last sandbox, converts to regular. Updates config.
+func (a App) removeSandboxModeFromGroup(groupIdx int, sbxName string) {
+	rg := a.repos[groupIdx]
+
+	// Find and remove the mode.
+	var remaining []config.ModeEntry
+	for _, m := range rg.modes {
+		if m.Type == "sandbox" && m.SandboxName == sbxName {
+			continue
+		}
+		remaining = append(remaining, m)
+	}
+
+	if len(remaining) == len(rg.modes) {
+		return // mode not found, nothing to do
+	}
+
+	// If no modes left, convert to regular.
+	if len(remaining) == 0 {
+		remaining = []config.ModeEntry{{Type: "regular"}}
+	}
+
+	// Update config.
+	cfg, err := config.Load(a.configPath)
+	if err == nil {
+		cfg.RemoveMode(rg.path, config.ModeEntry{Type: "sandbox", SandboxName: sbxName})
+		if len(remaining) == 1 && remaining[0].Type == "regular" {
+			cfg.Add(rg.path, rg.name, remaining[0])
+		}
+		_ = config.Save(a.configPath, cfg)
+	}
+
+	// Update in-memory group.
+	rg.modes = remaining
+	if rg.activeMode >= len(rg.modes) {
+		rg.activeMode = len(rg.modes) - 1
+	}
+	updated, _ := rg.model.SetActiveMode(&rg.modes[rg.activeMode])
+	rg.model = updated
+}
+
+// finalizeCardEnrollment converts an existing regular repo to sandbox mode.
+func (a App) finalizeCardEnrollment() (tea.Model, tea.Cmd) {
+	repoPath := a.pendingEnrollPath
+	agentName := a.pendingEnrollAgent
+	a.pendingEnrollPath = ""
+	a.pendingEnrollAgent = ""
+
+	// Find the repo and update it.
+	for i, rt := range a.repos {
+		if rt.path == repoPath {
+			sbxName := sandbox.SanitizeName(rt.name, agentName)
+			newMode := config.ModeEntry{Type: "sandbox", SandboxName: sbxName, Agent: agentName}
+
+			// Update config: add sandbox mode (replaces regular if present).
+			cfg, _ := config.Load(a.configPath)
+			cfg.Add(repoPath, rt.name, newMode)
+			_ = config.Save(a.configPath, cfg)
+
+			// Reload modes from config (cfg.Add handles dedup/replace logic).
+			idx := cfg.IndexOf(repoPath)
+			if idx >= 0 {
+				a.repos[i].modes = cfg.Repos[idx].Modes
+			}
+			// Select the newly added mode.
+			newModeIdx := len(a.repos[i].modes) - 1
+			a.repos[i].activeMode = newModeIdx
+			a.repos[i].model.activeMode = &a.repos[i].modes[newModeIdx]
+			a.repos[i].model.statusMsg = cleanStyle.Render("Creating sandbox (this may take a few minutes)...")
+
+			// Create the sandbox.
+			sbxArgs := sandbox.CreateArgs(sbxName, agentName, repoPath)
+			return a, doCreateSandbox(sbxArgs, rt.name)
+		}
+	}
+	return a, nil
+}
+
+func (a App) handleRepoValidatedMsg(msg repoValidatedMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		a.statusMsg = errorStyle.Render("Error: " + msg.err.Error())
+		a.mode = appModeNormal
+		return a, nil
+	}
+	a.pendingRepo = &msg
+	a.mode = appModeSelectRepoMode
+	a.statusMsg = ""
 	return a, nil
 }
 
@@ -441,18 +773,30 @@ func (a App) handleAddRepoMsg(msg addRepoMsg) (tea.Model, tea.Cmd) {
 
 	// Create the child model (starts unpaused — it's the new active).
 	m := newEmbedded(msg.repo, a.detector, a.ideDetector, a.procLister, a.refreshInterval)
-	rt := &repoTab{
+	modes := []config.ModeEntry{msg.mode}
+	m.activeMode = &modes[0]
+	rg := &repoGroup{
 		path:  msg.path,
 		name:  msg.name,
+		modes: modes,
 		model: m,
 	}
-	a.repos = append(a.repos, rt)
+	a.repos = append(a.repos, rg)
 	a.active = len(a.repos) - 1
 	a.focus = focusRight
 	a.statusMsg = cleanStyle.Render("Repository added: " + msg.name)
 
-	// Resize the new child and start its refresh cycle.
-	return a, tea.Batch(rt.model.Init(), a.resizeActiveChild())
+	var cmds []tea.Cmd
+	cmds = append(cmds, rg.model.Init(), a.resizeActiveChild())
+
+	// For sandbox repos, create the sandbox in the background.
+	// The preflight check already confirmed sbx is ready (no interactive prompts).
+	if msg.mode.Type == "sandbox" && msg.mode.Agent != "" {
+		sbxArgs := sandbox.CreateArgs(msg.mode.SandboxName, msg.mode.Agent, msg.path)
+		cmds = append(cmds, doCreateSandbox(sbxArgs, msg.name))
+	}
+
+	return a, tea.Batch(cmds...)
 }
 
 // appTitleStyle is the title style for the App header — no MarginBottom,
@@ -511,12 +855,21 @@ func (a App) View() string {
 	b.WriteString("\n")
 	b.WriteString(columns)
 
-	if a.mode == appModeAddRepo {
+	switch a.mode {
+	case appModeAddRepo:
 		b.WriteString("\n")
 		b.WriteString(inputPromptStyle.Render("  Repository path: ") + a.textInput.View())
-	} else if a.statusMsg != "" {
+	case appModeSelectRepoMode:
 		b.WriteString("\n")
-		b.WriteString(a.statusMsg)
+		b.WriteString(inputPromptStyle.Render("  Mode: [s] Sandbox (recommended)  [r] Regular  [esc] Cancel"))
+	case appModeEnrollAgent, appModeAddSandboxMode:
+		b.WriteString("\n")
+		b.WriteString(inputPromptStyle.Render("  Agent: ") + a.textInput.View())
+	default:
+		if a.statusMsg != "" {
+			b.WriteString("\n")
+			b.WriteString(a.statusMsg)
+		}
 	}
 
 	result := b.String()
@@ -525,9 +878,19 @@ func (a App) View() string {
 	if a.mode == appModeConfirmRemove {
 		popup := a.renderConfirmRemovePopup()
 		result = overlayCenter(result, popup, a.width, a.height)
-	} else if a.active >= 0 && a.active < len(a.repos) && a.repos[a.active].model.mode == modeConfirmDelete {
-		popup := a.repos[a.active].model.renderConfirmPopup()
-		result = overlayCenter(result, popup, a.width, a.height)
+	} else if a.active >= 0 && a.active < len(a.repos) {
+		child := a.repos[a.active].model
+		switch child.mode {
+		case modeConfirmDelete:
+			popup := child.renderConfirmPopup()
+			result = overlayCenter(result, popup, a.width, a.height)
+		case modeConfirmCreateSandbox:
+			popup := child.renderConfirmCreateSandboxPopup()
+			result = overlayCenter(result, popup, a.width, a.height)
+		case modeConfirmRemoveSandbox:
+			popup := child.renderConfirmRemoveSandboxPopup()
+			result = overlayCenter(result, popup, a.width, a.height)
+		}
 	}
 
 	return result
@@ -547,8 +910,13 @@ func (a App) renderEmptyState() string {
 	title := titleStyle.Render("gwaim - Git Worktree Agent Manager")
 	body := "\n\nNo repositories registered.\nPress 'a' to add a repository.\n"
 
-	if a.mode == appModeAddRepo {
+	switch a.mode {
+	case appModeAddRepo:
 		body += "\n" + inputPromptStyle.Render("  Repository path: ") + a.textInput.View() + "\n"
+	case appModeSelectRepoMode:
+		body += "\n" + inputPromptStyle.Render("  Mode: [s] Sandbox (recommended)  [r] Regular  [esc] Cancel") + "\n"
+	case appModeEnrollAgent, appModeAddSandboxMode:
+		body += "\n" + inputPromptStyle.Render("  Agent: ") + a.textInput.View() + "\n"
 	}
 	if a.statusMsg != "" {
 		body += "\n" + a.statusMsg + "\n"
@@ -558,74 +926,96 @@ func (a App) renderEmptyState() string {
 	return title + body + "\n" + help
 }
 
-// repoCardHeight is the number of lines each repo card occupies
-// (top border + content + bottom border).
-const repoCardHeight = 3
+// repoGroupHeight returns the number of lines a group occupies in the tree:
+// 1 header line + 1 line per mode.
+func repoGroupHeight(rg *repoGroup) int {
+	return 1 + len(rg.modes)
+}
+
+// totalTreeLines returns the total number of lines all repo groups occupy.
+func (a App) totalTreeLines() int {
+	total := 0
+	for _, rg := range a.repos {
+		total += repoGroupHeight(rg)
+	}
+	return total
+}
 
 func (a App) renderRepoList(width, panelHeight int) string {
-	innerWidth := width - 4 // panel border + padding
+	innerWidth := width - 4
 	if innerWidth < 10 {
 		innerWidth = 10
 	}
-
-	// Card content width: innerWidth minus card border(2) and card padding(2).
-	cardContentWidth := innerWidth - 4
-	// Name max: card content minus marker(2).
-	maxNameWidth := cardContentWidth - 2
+	maxNameWidth := innerWidth - 4 // margin for marker + emoji
 	if maxNameWidth < 5 {
 		maxNameWidth = 5
 	}
 
-	// Calculate visible range based on scroll offset.
-	visibleCards := (panelHeight - 2) / repoCardHeight // -2 for header + help
-	if visibleCards < 1 {
-		visibleCards = 1
-	}
-	start := a.repoScrollOffset
-	end := start + visibleCards
-	if end > len(a.repos) {
-		end = len(a.repos)
-	}
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("245"))
+	repoNameStyle := lipgloss.NewStyle().Faint(true)
 
-	// Top section: header + visible repo cards.
 	var parts []string
-	parts = append(parts, lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("245")).Render("Repos"))
+	parts = append(parts, headerStyle.Render("Repos"))
 
-	for i := start; i < end; i++ {
-		rt := a.repos[i]
-		marker := "  "
-		if i == a.active {
-			marker = "▸ "
-		}
-
-		name := rt.name
+	for gi, rg := range a.repos {
+		// Group header: repo name (dimmed, not selectable).
+		name := rg.name
 		if len(name) > maxNameWidth {
 			name = name[:maxNameWidth-1] + "…"
 		}
+		parts = append(parts, repoNameStyle.Render(name))
 
-		nameStyle := unselectedRepoStyle
-		cs := repoCardStyle.Width(cardContentWidth)
-		if i == a.active {
-			nameStyle = selectedRepoStyle
-			cs = selectedRepoCardStyle.Width(cardContentWidth)
+		// Mode children: one line each.
+		for mi, mode := range rg.modes {
+			isSelected := gi == a.active && mi == rg.activeMode
+			marker := "  "
+			if isSelected {
+				marker = "▸ "
+			}
+
+			var label string
+			if mode.Type == "sandbox" {
+				agent := mode.Agent
+				if agent == "" {
+					agent = "sbx"
+				}
+				// Status dot: green=running, yellow=stopped, red=not found.
+				status := sandbox.StatusNotFound
+				if s, ok := a.sbxStatuses[mode.SandboxName]; ok {
+					status = s
+				}
+				var dot string
+				switch status {
+				case sandbox.StatusRunning:
+					dot = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("●")
+				case sandbox.StatusStopped:
+					dot = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render("●")
+				default:
+					dot = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render("●")
+				}
+				label = "🐳 [" + agent + "] " + dot
+			} else {
+				label = "📂 [host]"
+			}
+
+			style := unselectedRepoStyle
+			if isSelected {
+				style = selectedRepoStyle
+			}
+			parts = append(parts, style.Render(marker+label))
 		}
-
-		parts = append(parts, cs.Render(marker+nameStyle.Render(name)))
 	}
 
 	topContent := strings.Join(parts, "\n")
 
-	// Bottom section: help hint.
-	help := repoPanelHelpStyle.Render("[a]dd [x]rm")
+	help := repoPanelHelpStyle.Render("[a]dd [n]ew sandbox [x]rm")
 
-	// Combine top and bottom with fill space between them.
 	content := lipgloss.JoinVertical(lipgloss.Left,
 		topContent,
 		lipgloss.NewStyle().Height(panelHeight-lipgloss.Height(topContent)-1).Render(""),
 		help,
 	)
 
-	// Hard-clamp to panelHeight lines so it never exceeds the panel.
 	lines := strings.Split(content, "\n")
 	if len(lines) > panelHeight {
 		lines = lines[:panelHeight]
@@ -640,46 +1030,128 @@ func (a App) renderDashboard(width int) string {
 	return ""
 }
 
-// switchRepo pauses the current repo's ticks, changes active, and resumes the new one.
-// Returns the App and a tea.Cmd that starts the new repo's tick chains + resize.
-func (a App) switchRepo(newIdx int) (App, tea.Cmd) {
-	if newIdx == a.active || newIdx < 0 || newIdx >= len(a.repos) {
+// moveModeDown moves to the next mode child in the tree. If at the last mode
+// of a group, moves to the first mode of the next group.
+func (a App) moveModeDown() (tea.Model, tea.Cmd) {
+	if len(a.repos) == 0 {
 		return a, nil
 	}
-	// Pause old.
+	gi := a.active
+	mi := a.repos[gi].activeMode
+
+	// Try next mode in current group.
+	if mi+1 < len(a.repos[gi].modes) {
+		return a.switchMode(gi, mi+1)
+	}
+	// Try first mode of next group.
+	if gi+1 < len(a.repos) {
+		return a.switchMode(gi+1, 0)
+	}
+	return a, nil
+}
+
+// moveModeUp moves to the previous mode child in the tree. If at the first mode
+// of a group, moves to the last mode of the previous group.
+func (a App) moveModeUp() (tea.Model, tea.Cmd) {
+	if len(a.repos) == 0 {
+		return a, nil
+	}
+	gi := a.active
+	mi := a.repos[gi].activeMode
+
+	// Try previous mode in current group.
+	if mi > 0 {
+		return a.switchMode(gi, mi-1)
+	}
+	// Try last mode of previous group.
+	if gi > 0 {
+		prevGroup := a.repos[gi-1]
+		return a.switchMode(gi-1, len(prevGroup.modes)-1)
+	}
+	return a, nil
+}
+
+// switchMode switches the active group and/or mode. If the group changes,
+// the old model is paused and the new one resumed.
+// seedModelStatuses copies App-level sandbox statuses into a model's modeStatuses
+// so SetActiveMode reads correct status without waiting for a refresh.
+func (a App) seedModelStatuses(groupIdx int) {
+	if groupIdx < 0 || groupIdx >= len(a.repos) {
+		return
+	}
+	for k, v := range a.sbxStatuses {
+		a.repos[groupIdx].model.modeStatuses[k] = v
+	}
+}
+
+func (a App) switchMode(groupIdx, modeIdx int) (tea.Model, tea.Cmd) {
+	if groupIdx < 0 || groupIdx >= len(a.repos) {
+		return a, nil
+	}
+	rg := a.repos[groupIdx]
+	if modeIdx < 0 || modeIdx >= len(rg.modes) {
+		return a, nil
+	}
+
+	// Seed the target model's modeStatuses from App-level cache so
+	// SetActiveMode reads correct status without waiting for a refresh.
+	a.seedModelStatuses(groupIdx)
+
+	if groupIdx == a.active {
+		// Same group: just update mode, no pause/resume.
+		a.repos[groupIdx].activeMode = modeIdx
+		updated, cmd := a.repos[groupIdx].model.SetActiveMode(&a.repos[groupIdx].modes[modeIdx])
+		a.repos[groupIdx].model = updated
+		a = a.ensureActiveRepoVisible()
+		return a, cmd
+	}
+
+	// Different group: pause old, resume new.
 	if a.active < len(a.repos) {
 		a.repos[a.active].model = a.repos[a.active].model.Pause()
 	}
-	a.active = newIdx
+	a.active = groupIdx
+	a.repos[groupIdx].activeMode = modeIdx
 	a = a.ensureActiveRepoVisible()
-	// Resume new.
-	resumed, cmd := a.repos[a.active].model.Resume()
-	a.repos[a.active].model = resumed
-	return a, tea.Batch(cmd, a.resizeActiveChild())
+	resumed, cmd := a.repos[groupIdx].model.Resume()
+	a.repos[groupIdx].model = resumed
+	updated, modeCmd := a.repos[groupIdx].model.SetActiveMode(&a.repos[groupIdx].modes[modeIdx])
+	a.repos[groupIdx].model = updated
+	return a, tea.Batch(cmd, modeCmd, a.resizeActiveChild())
 }
 
-// visibleRepoCards returns how many repo cards fit in the left panel.
-func (a App) visibleRepoCards() int {
+
+// visibleRepoLines returns how many content lines fit in the left panel.
+func (a App) visibleRepoLines() int {
 	contentH := a.height - a.headerHeight() - 2 // -2 for panel border
 	if contentH < 1 {
 		contentH = 1
 	}
 	// Subtract 2 for "Repos" header (1) + help footer (1).
-	v := (contentH - 2) / repoCardHeight
+	v := contentH - 2
 	if v < 1 {
 		v = 1
 	}
 	return v
 }
 
-// ensureActiveRepoVisible adjusts repoScrollOffset so the active repo is visible.
+// ensureActiveRepoVisible adjusts repoScrollOffset so the active group is visible.
 func (a App) ensureActiveRepoVisible() App {
-	visible := a.visibleRepoCards()
-	if a.active < a.repoScrollOffset {
-		a.repoScrollOffset = a.active
+	// Compute the line offset of the active group's active mode.
+	targetLine := 0
+	for i, rg := range a.repos {
+		if i == a.active {
+			targetLine += 1 + rg.activeMode // header + mode offset
+			break
+		}
+		targetLine += repoGroupHeight(rg)
 	}
-	if a.active >= a.repoScrollOffset+visible {
-		a.repoScrollOffset = a.active - visible + 1
+	visible := a.visibleRepoLines()
+	if targetLine < a.repoScrollOffset {
+		a.repoScrollOffset = targetLine
+	}
+	if targetLine >= a.repoScrollOffset+visible {
+		a.repoScrollOffset = targetLine - visible + 1
 	}
 	a = a.clampRepoScroll()
 	return a
@@ -687,8 +1159,8 @@ func (a App) ensureActiveRepoVisible() App {
 
 // clampRepoScroll ensures repoScrollOffset is within valid bounds.
 func (a App) clampRepoScroll() App {
-	visible := a.visibleRepoCards()
-	maxOffset := len(a.repos) - visible
+	visible := a.visibleRepoLines()
+	maxOffset := a.totalTreeLines() - visible
 	if maxOffset < 0 {
 		maxOffset = 0
 	}
@@ -704,8 +1176,8 @@ func (a App) clampRepoScroll() App {
 // repoScrollState returns the scroll state for the left panel scrollbar.
 func (a App) repoScrollState() panelScroll {
 	return panelScroll{
-		total:   len(a.repos),
-		visible: a.visibleRepoCards(),
+		total:   a.totalTreeLines(),
+		visible: a.visibleRepoLines(),
 		offset:  a.repoScrollOffset,
 	}
 }
@@ -882,32 +1354,79 @@ func extractRepoPath(msg tea.Msg) string {
 		return m.repoPath
 	case netFlashDoneMsg:
 		return m.repoPath
+	case sandboxCreatedFromCardMsg:
+		return m.repoPath
+	case sandboxStartedMsg:
+		return m.repoPath
+	case sandboxStoppedCmdMsg:
+		return m.repoPath
+	case sandboxRemovedMsg:
+		return m.repoPath
+	case enrollSandboxRequestMsg:
+		return m.repoPath
 	case cliCheckMsg:
 		return m.repoPath
 	}
 	return ""
 }
 
-// doAddRepo validates a path and opens it as a git repository.
-func doAddRepo(input, configPath string) tea.Cmd {
+// doValidateRepo validates a repo path without saving to config.
+// Returns a repoValidatedMsg so the user can choose regular/sandbox mode.
+func doValidateRepo(input string) tea.Cmd {
 	return func() tea.Msg {
 		root, err := git.RepoRoot(input)
 		if err != nil {
-			return addRepoMsg{err: fmt.Errorf("not a git repository: %s", input)}
+			return repoValidatedMsg{err: fmt.Errorf("not a git repository: %s", input)}
 		}
 
 		repo, err := git.OpenRepository(root)
 		if err != nil {
-			return addRepoMsg{err: fmt.Errorf("cannot open repository: %w", err)}
+			return repoValidatedMsg{err: fmt.Errorf("cannot open repository: %w", err)}
 		}
 
-		name := repo.RepoName()
+		return repoValidatedMsg{path: root, name: repo.RepoName(), repo: repo}
+	}
+}
 
-		// Persist to config.
+// doFinalizeAddRepo persists a validated repo to config and returns an addRepoMsg.
+func doFinalizeAddRepo(pending *repoValidatedMsg, mode config.ModeEntry, configPath string) tea.Cmd {
+	return func() tea.Msg {
 		cfg, _ := config.Load(configPath)
-		cfg.Add(root, name)
+		cfg.Add(pending.path, pending.name, mode)
 		_ = config.Save(configPath, cfg)
 
-		return addRepoMsg{path: root, name: name, repo: repo}
+		return addRepoMsg{
+			path: pending.path,
+			name: pending.name,
+			repo: pending.repo,
+			mode: mode,
+		}
+	}
+}
+
+// sandboxPreflightMsg carries the result of the sbx readiness check.
+type sandboxPreflightMsg struct {
+	err error // nil if sbx is ready
+}
+
+// doSandboxPreflight checks if sbx is bootstrapped (auth, daemon, policy).
+func doSandboxPreflight() tea.Cmd {
+	return func() tea.Msg {
+		return sandboxPreflightMsg{err: sandbox.Preflight()}
+	}
+}
+
+// sandboxCreatedMsg is sent after sbx create completes.
+type sandboxCreatedMsg struct {
+	repoName string
+	output   string
+	err      error
+}
+
+// doCreateSandbox runs sbx create in the background.
+func doCreateSandbox(args []string, repoName string) tea.Cmd {
+	return func() tea.Msg {
+		out, err := sandbox.Create(args)
+		return sandboxCreatedMsg{repoName: repoName, output: out, err: err}
 	}
 }

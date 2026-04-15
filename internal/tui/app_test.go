@@ -11,10 +11,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/mdelapenya/gwaim/internal/agent"
+	"github.com/mdelapenya/gwaim/internal/config"
 	"github.com/mdelapenya/gwaim/internal/git"
 )
 
-// testApp creates an App with n pre-populated repoTabs using fake data.
+// testApp creates an App with n pre-populated repoGroups using fake data.
 func testApp(n int) App {
 	ti := textinput.New()
 	ti.Placeholder = "/path/to/repository"
@@ -34,9 +35,12 @@ func testApp(n int) App {
 		m := testModel(2)
 		m.embedded = true
 		m.worktrees[0].Path = path
-		app.repos = append(app.repos, &repoTab{
+		modes := []config.ModeEntry{{Type: "regular"}}
+		m.activeMode = &modes[0]
+		app.repos = append(app.repos, &repoGroup{
 			path:  path,
 			name:  "owner/repo-" + name,
+			modes: modes,
 			model: m,
 		})
 	}
@@ -441,7 +445,7 @@ func TestAppAddRepoMsg_Success(t *testing.T) {
 	app := updated.(App)
 
 	// Repo won't actually be added because msg.repo is nil and New(nil, ...) creates a model.
-	// But the repoTab will be created.
+	// But the repoGroup will be created.
 	if len(app.repos) != 1 {
 		t.Errorf("expected 1 repo after add, got %d", len(app.repos))
 	}
@@ -496,7 +500,7 @@ func TestAppInitMsg(t *testing.T) {
 	a.height = 40
 
 	// Simulate what Init() produces.
-	repos := []*repoTab{
+	repos := []*repoGroup{
 		{path: "/tmp/repo-a", name: "owner/repo-a", model: testModel(2)},
 		{path: "/tmp/repo-b", name: "owner/repo-b", model: testModel(3)},
 	}
@@ -517,7 +521,7 @@ func TestAppInitMsg_ResizesChildren(t *testing.T) {
 	a.width = 120
 	a.height = 40
 
-	repos := []*repoTab{
+	repos := []*repoGroup{
 		{path: "/tmp/repo-a", name: "owner/repo-a", model: testModel(2)},
 	}
 	msg := appInitMsg{repos: repos, cmds: nil}
@@ -594,7 +598,8 @@ func TestAppMouseClickLeftPanel_SelectsRepo(t *testing.T) {
 	a.focus = focusRight
 	a.active = 0
 
-	// Second repo card starts at Y=6 (header=1 + border=1 + "Repos"=1 + card0=3).
+	// Second repo's mode: Y = headerHeight(1) + panelBorder(1) + "Repos"(1) + group0_header(1) + group0_mode(1) + group1_header(1) = 6.
+	// contentY=3 maps to group1 mode0.
 	msg := tea.MouseMsg{X: 5, Y: 6, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
 	updated, _ := a.Update(msg)
 	app := updated.(App)
@@ -841,5 +846,163 @@ func TestAppConfirmDeleteRendersPopup(t *testing.T) {
 	}
 	if !strings.Contains(view, "[y] confirm") {
 		t.Errorf("App.View should show [y] confirm hint, got:\n%s", view)
+	}
+}
+
+// --- Sandbox enrollment flow tests ---
+
+func TestAppAddRepoValidation_EntersSelectRepoMode(t *testing.T) {
+	a := testApp(0)
+	a.mode = appModeAddRepo
+
+	// Simulate receiving a repoValidatedMsg.
+	validated := repoValidatedMsg{path: "/tmp/test-repo", name: "owner/test", repo: nil}
+	updated, _ := a.Update(validated)
+	app := updated.(App)
+
+	if app.mode != appModeSelectRepoMode {
+		t.Errorf("mode = %d, want appModeSelectRepoMode", app.mode)
+	}
+	if app.pendingRepo == nil {
+		t.Error("pendingRepo should be set after validation")
+	}
+}
+
+func TestAppAddRepoValidation_ErrorStaysNormal(t *testing.T) {
+	a := testApp(0)
+	a.mode = appModeAddRepo
+
+	validated := repoValidatedMsg{err: fmt.Errorf("not a git repo")}
+	updated, _ := a.Update(validated)
+	app := updated.(App)
+
+	if app.mode != appModeNormal {
+		t.Errorf("mode = %d, want appModeNormal on error", app.mode)
+	}
+	if !strings.Contains(app.statusMsg, "not a git repo") {
+		t.Errorf("statusMsg should contain error, got %q", app.statusMsg)
+	}
+}
+
+func TestAppSelectRepoMode_Regular(t *testing.T) {
+	a := testApp(0)
+	a.mode = appModeSelectRepoMode
+	a.pendingRepo = &repoValidatedMsg{path: "/tmp/repo", name: "owner/repo"}
+
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}}
+	updated, cmd := a.Update(msg)
+	app := updated.(App)
+
+	if app.mode != appModeNormal {
+		t.Errorf("mode = %d, want appModeNormal after 'r'", app.mode)
+	}
+	if app.pendingRepo != nil {
+		t.Error("pendingRepo should be cleared after selection")
+	}
+	if cmd == nil {
+		t.Error("expected a cmd to finalize repo addition")
+	}
+}
+
+func TestAppSelectRepoMode_Sandbox(t *testing.T) {
+	a := testApp(0)
+	a.mode = appModeSelectRepoMode
+	a.pendingRepo = &repoValidatedMsg{path: "/tmp/repo", name: "owner/repo"}
+
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}
+	updated, _ := a.Update(msg)
+	app := updated.(App)
+
+	if app.mode != appModeEnrollAgent {
+		t.Errorf("mode = %d, want appModeEnrollAgent after 's'", app.mode)
+	}
+	if app.pendingRepo == nil {
+		t.Error("pendingRepo should still be set during agent input")
+	}
+}
+
+func TestAppSelectRepoMode_Escape(t *testing.T) {
+	a := testApp(0)
+	a.mode = appModeSelectRepoMode
+	a.pendingRepo = &repoValidatedMsg{path: "/tmp/repo", name: "owner/repo"}
+
+	msg := tea.KeyMsg{Type: tea.KeyEsc}
+	updated, _ := a.Update(msg)
+	app := updated.(App)
+
+	if app.mode != appModeNormal {
+		t.Errorf("mode = %d, want appModeNormal after esc", app.mode)
+	}
+	if app.pendingRepo != nil {
+		t.Error("pendingRepo should be cleared after esc")
+	}
+}
+
+func TestAppEnrollAgent_Escape(t *testing.T) {
+	a := testApp(0)
+	a.mode = appModeEnrollAgent
+	a.pendingRepo = &repoValidatedMsg{path: "/tmp/repo", name: "owner/repo"}
+
+	msg := tea.KeyMsg{Type: tea.KeyEsc}
+	updated, _ := a.Update(msg)
+	app := updated.(App)
+
+	if app.mode != appModeNormal {
+		t.Errorf("mode = %d, want appModeNormal after esc", app.mode)
+	}
+	if app.pendingRepo != nil {
+		t.Error("pendingRepo should be cleared after esc")
+	}
+}
+
+func TestAppAddRepoMsg_SandboxFlag(t *testing.T) {
+	a := testApp(0)
+
+	msg := addRepoMsg{
+		path: "/tmp/sbx-repo",
+		name: "owner/sbx-repo",
+		mode: config.ModeEntry{Type: "sandbox", SandboxName: "owner-sbx-repo-claude", Agent: "claude"},
+	}
+	updated, _ := a.Update(msg)
+	app := updated.(App)
+
+	if len(app.repos) != 1 {
+		t.Fatalf("expected 1 repo, got %d", len(app.repos))
+	}
+	if !app.repos[0].model.isSandbox() {
+		t.Error("model should be in sandbox mode")
+	}
+	if app.repos[0].model.sbxName() != "owner-sbx-repo-claude" {
+		t.Errorf("sbxName = %q, want %q", app.repos[0].model.sbxName(), "owner-sbx-repo-claude")
+	}
+}
+
+func TestAppRepoListShowsSandboxIndicator(t *testing.T) {
+	a := testApp(1)
+	a.repos[0].model.activeMode = &config.ModeEntry{Type: "sandbox", SandboxName: "my-sbx", Agent: "claude"}
+
+	view := a.View()
+	if !strings.Contains(view, "🐳") {
+		t.Errorf("repo list should show docker whale icon for sandbox repos, got:\n%s", view)
+	}
+}
+
+func TestAppSelectRepoModeRendering(t *testing.T) {
+	a := testApp(1)
+	a.mode = appModeSelectRepoMode
+
+	view := a.View()
+	if !strings.Contains(view, "Regular") || !strings.Contains(view, "Sandbox") {
+		t.Errorf("should show Regular/Sandbox choices, got:\n%s", view)
+	}
+}
+
+func TestAppEnrollAgentRendering(t *testing.T) {
+	a := testApp(1)
+	a.mode = appModeEnrollAgent
+
+	view := a.View()
+	if !strings.Contains(view, "Agent:") {
+		t.Errorf("should show Agent: prompt, got:\n%s", view)
 	}
 }

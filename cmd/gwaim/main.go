@@ -47,7 +47,7 @@ func main() {
 			repo, openErr := git.OpenRepository(repoRoot)
 			if openErr == nil {
 				cfg, _ := config.Load(configPath)
-				if cfg.Add(repoRoot, repo.RepoName()) {
+				if cfg.Add(repoRoot, repo.RepoName(), config.ModeEntry{Type: "regular"}) {
 					_ = config.Save(configPath, cfg)
 				}
 			}
