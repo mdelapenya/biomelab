@@ -986,6 +986,26 @@ func TestSendPR(t *testing.T) {
 		}
 	})
 
+	t.Run("P key blocked when PR already exists", func(t *testing.T) {
+		m := testModel(3)
+		m.cursor = 1
+		m.cliAvail = provider.CLIAvailable
+		m.prs = provider.PRResult{
+			"branch-b": &provider.PRInfo{Number: 42, URL: "https://github.com/test/repo/pull/42"},
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'P'}}
+		updated, _ := m.Update(msg)
+		model := updated.(Model)
+
+		if model.mode != modeNormal {
+			t.Errorf("mode = %d, want modeNormal (PR already exists)", model.mode)
+		}
+		if !strings.Contains(model.statusMsg, "#42") {
+			t.Errorf("expected PR number in status, got %q", model.statusMsg)
+		}
+	})
+
 	t.Run("P key blocked on detached HEAD", func(t *testing.T) {
 		m := testModel(3)
 		m.cursor = 1

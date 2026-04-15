@@ -1027,6 +1027,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.statusMsg = errorStyle.Render("Unsupported git provider for PR creation")
 			return m, nil
 		}
+		// Check if a PR already exists for this branch.
+		if pr, ok := m.prs[wt.Branch]; ok && pr != nil {
+			m.statusMsg = cleanStyle.Render(fmt.Sprintf("PR already exists: #%d %s", pr.Number, pr.URL))
+			return m, nil
+		}
 		// Gather state for send-PR flow.
 		remotes, err := m.repo.ListRemotes()
 		if err != nil || len(remotes) == 0 {
@@ -1436,7 +1441,7 @@ func (m Model) renderSendPRPopup() string {
 	switch m.sendPR.phase {
 	case sendPRConfirmDirty:
 		b.WriteString("Warning\n\n")
-		b.WriteString(fmt.Sprintf("Branch %q has uncommitted changes:\n", m.sendPR.branch))
+		fmt.Fprintf(&b, "Branch %q has uncommitted changes:\n", m.sendPR.branch)
 		if m.sendPR.dirty {
 			b.WriteString("  \u2022 modified files\n")
 		}
@@ -1458,7 +1463,7 @@ func (m Model) renderSendPRPopup() string {
 			} else if r.URL != "" {
 				label += "  (" + r.URL + ")"
 			}
-			b.WriteString(fmt.Sprintf("[%d] %s\n", i+1, label))
+			fmt.Fprintf(&b, "[%d] %s\n", i+1, label)
 		}
 		b.WriteString("\n[Esc] cancel")
 	}
