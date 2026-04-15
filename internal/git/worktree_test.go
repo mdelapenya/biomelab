@@ -799,6 +799,17 @@ func TestPush(t *testing.T) {
 		if !strings.Contains(out, branch) {
 			t.Errorf("expected branch %q in bare repo, got %q", branch, out)
 		}
+
+		// Verify upstream tracking was set.
+		trackingRemote := runGit(t, dir, "config", "--get", fmt.Sprintf("branch.%s.remote", branch))
+		if trackingRemote != "origin" {
+			t.Errorf("tracking remote = %q, want origin", trackingRemote)
+		}
+		trackingMerge := runGit(t, dir, "config", "--get", fmt.Sprintf("branch.%s.merge", branch))
+		wantMerge := "refs/heads/" + branch
+		if trackingMerge != wantMerge {
+			t.Errorf("tracking merge = %q, want %q", trackingMerge, wantMerge)
+		}
 	})
 
 	t.Run("push already up to date", func(t *testing.T) {

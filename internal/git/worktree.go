@@ -708,9 +708,12 @@ func (r *Repository) ListRemotes() ([]RemoteInfo, error) {
 	return result, nil
 }
 
-// Push pushes a local branch to a remote.
+// Push pushes a local branch to a remote and sets the upstream tracking branch.
 // Uses the same auth-retry pattern as Fetch and Pull: tries without credentials
 // first, then resolves via git credential helpers on auth failure.
+// After a successful push, configures branch.<name>.remote and branch.<name>.merge
+// so that subsequent git/gh operations know the tracking branch (equivalent to
+// git push --set-upstream).
 func (r *Repository) Push(remoteName, branchName string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -735,23 +738,45 @@ func (r *Repository) Push(remoteName, branchName string) error {
 	}
 
 	err = remote.PushContext(ctx, opts)
-	if err == nil || err == gogit.NoErrAlreadyUpToDate {
-		return nil
+	if err != nil && err != gogit.NoErrAlreadyUpToDate {
+		if isAuthError(err) {
+			auth, credErr := r.resolveCredentialsForRemote(remote)
+			if credErr != nil {
+				return fmt.Errorf("push auth: %w", credErr)
+			}
+			opts.Auth = auth
+			err = remote.PushContext(ctx, opts)
+			if err != nil && err != gogit.NoErrAlreadyUpToDate {
+				return fmt.Errorf("push %s to %s: %w", branchName, remoteName, err)
+			}
+		} else {
+			return fmt.Errorf("push %s to %s: %w", branchName, remoteName, err)
+		}
 	}
 
-	if isAuthError(err) {
-		auth, credErr := r.resolveCredentialsForRemote(remote)
-		if credErr != nil {
-			return fmt.Errorf("push auth: %w", credErr)
-		}
-		opts.Auth = auth
-		err = remote.PushContext(ctx, opts)
-		if err == nil || err == gogit.NoErrAlreadyUpToDate {
-			return nil
-		}
-	}
+	// Set upstream tracking branch (equivalent to --set-upstream).
+	r.setUpstreamTracking(remoteName, branchName)
 
-	return fmt.Errorf("push %s to %s: %w", branchName, remoteName, err)
+	return nil
+}
+
+// setUpstreamTracking configures the branch to track the remote branch.
+// This is equivalent to what "git push --set-upstream" does:
+//
+//	[branch "<name>"]
+//	    remote = <remoteName>
+//	    merge = refs/heads/<name>
+func (r *Repository) setUpstreamTracking(remoteName, branchName string) {
+	cfg, err := r.repo.Config()
+	if err != nil {
+		return
+	}
+	cfg.Branches[branchName] = &config.Branch{
+		Name:   branchName,
+		Remote: remoteName,
+		Merge:  plumbing.NewBranchReferenceName(branchName),
+	}
+	_ = r.repo.Storer.SetConfig(cfg)
 }
 
 // HasStash returns true if the repository has any stash entries.

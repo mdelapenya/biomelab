@@ -57,15 +57,18 @@ type sendPRPhase int
 const (
 	sendPRConfirmDirty sendPRPhase = iota // warn about dirty/stash, y/n
 	sendPRSelectRemote                    // pick from multiple remotes
+	sendPRConfirm                         // final confirmation before dispatch
 )
 
 // sendPRState holds transient state for the send-PR flow.
 type sendPRState struct {
-	remotes  []git.RemoteInfo
-	dirty    bool
-	hasStash bool
-	branch   string
-	phase    sendPRPhase
+	remotes        []git.RemoteInfo
+	selectedRemote int // index into remotes (-1 = not yet selected)
+	dirty          bool
+	hasStash       bool
+	branch         string
+	phase          sendPRPhase
+	existingPR     *provider.PRInfo // non-nil when a PR already exists (push-only mode)
 }
 
 // Model is the top-level bubbletea model for biomelab.
@@ -565,8 +568,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		rp := m.repoPath()
 		if msg.err != nil {
 			m.statusMsg = errorStyle.Render("PR: " + msg.err.Error())
-		} else {
+		} else if msg.url != "" {
 			m.statusMsg = cleanStyle.Render("PR created: " + msg.url)
+		} else {
+			m.statusMsg = cleanStyle.Render("Pushed")
 		}
 		return m, doNetworkRefresh(m.repo, m.detector, m.ideDetector, m.procLister, m.prProv, m.cliAvail, rp, m.sbxName())
 
@@ -799,14 +804,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.sendPR.phase = sendPRSelectRemote
 					return m, nil
 				}
-				// Single remote: dispatch immediately.
-				remote := m.sendPR.remotes[0]
-				branch := m.sendPR.branch
-				m.mode = modeNormal
-				m.statusMsg = cleanStyle.Render("Pushing and creating PR...")
-				cmd := doSendPR(m.repo, m.prProv, m.repoPath(), branch, remote)
-				m.sendPR = nil
-				return m, cmd
+				// Single remote: go to final confirmation.
+				m.sendPR.selectedRemote = 0
+				m.sendPR.phase = sendPRConfirm
+				return m, nil
 			default:
 				m.mode = modeNormal
 				m.sendPR = nil
@@ -820,18 +821,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.statusMsg = ""
 				return m, nil
 			}
-			// Number keys 1-9 select a remote.
-			for i, remote := range m.sendPR.remotes {
+			// Number keys 1-9 select a remote → go to final confirmation.
+			for i := range m.sendPR.remotes {
 				if i >= 9 {
 					break
 				}
 				if key.Matches(msg, key.NewBinding(key.WithKeys(fmt.Sprintf("%d", i+1)))) {
-					branch := m.sendPR.branch
-					m.mode = modeNormal
-					m.statusMsg = cleanStyle.Render("Pushing and creating PR...")
-					cmd := doSendPR(m.repo, m.prProv, m.repoPath(), branch, remote)
-					m.sendPR = nil
-					return m, cmd
+					m.sendPR.selectedRemote = i
+					m.sendPR.phase = sendPRConfirm
+					return m, nil
 				}
 			}
 			// Any unrecognized key cancels.
@@ -839,6 +837,26 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.sendPR = nil
 			m.statusMsg = ""
 			return m, nil
+		case sendPRConfirm:
+			switch {
+			case key.Matches(msg, key.NewBinding(key.WithKeys("y", "Y"))):
+				remote := m.sendPR.remotes[m.sendPR.selectedRemote]
+				branch := m.sendPR.branch
+				pushOnly := m.sendPR.existingPR != nil
+				m.mode = modeNormal
+				m.sendPR = nil
+				if pushOnly {
+					m.statusMsg = cleanStyle.Render("Pushing...")
+					return m, doPushBranch(m.repo, m.repoPath(), branch, remote)
+				}
+				m.statusMsg = cleanStyle.Render("Pushing and creating PR...")
+				return m, doSendPR(m.repo, m.prProv, m.repoPath(), branch, remote)
+			default:
+				m.mode = modeNormal
+				m.sendPR = nil
+				m.statusMsg = ""
+				return m, nil
+			}
 		}
 	}
 
@@ -1027,12 +1045,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.statusMsg = errorStyle.Render("Unsupported git provider for PR creation")
 			return m, nil
 		}
-		// Check if a PR already exists for this branch.
-		if pr, ok := m.prs[wt.Branch]; ok && pr != nil {
-			m.statusMsg = cleanStyle.Render(fmt.Sprintf("PR already exists: #%d %s", pr.Number, pr.URL))
+		// Gather state for send-PR flow.
+		if m.repo == nil {
+			m.statusMsg = errorStyle.Render("No repository available")
 			return m, nil
 		}
-		// Gather state for send-PR flow.
 		remotes, err := m.repo.ListRemotes()
 		if err != nil || len(remotes) == 0 {
 			m.statusMsg = errorStyle.Render("No remotes configured")
@@ -1041,26 +1058,40 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		hasStash, _ := m.repo.HasStash()
 		needsWarning := wt.IsDirty || hasStash
 
+		// Check if a PR already exists for this branch (push-only mode).
+		var existingPR *provider.PRInfo
+		if pr, ok := m.prs[wt.Branch]; ok && pr != nil {
+			existingPR = pr
+		}
+
 		state := &sendPRState{
-			remotes:  remotes,
-			dirty:    wt.IsDirty,
-			hasStash: hasStash,
-			branch:   wt.Branch,
+			remotes:        remotes,
+			selectedRemote: 0, // default to first remote
+			dirty:          wt.IsDirty,
+			hasStash:       hasStash,
+			branch:         wt.Branch,
+			existingPR:     existingPR,
 		}
 
-		// Fast path: clean + single remote → dispatch immediately.
-		if !needsWarning && len(remotes) == 1 {
-			m.statusMsg = cleanStyle.Render("Pushing and creating PR...")
-			return m, doSendPR(m.repo, m.prProv, m.repoPath(), wt.Branch, remotes[0])
-		}
-
-		// Need user interaction.
 		m.sendPR = state
 		m.mode = modeSendPR
-		if needsWarning {
+
+		// When a PR exists, skip straight to confirmation (push only).
+		if existingPR != nil {
+			if needsWarning {
+				m.sendPR.phase = sendPRConfirmDirty
+			} else if len(remotes) > 1 {
+				m.sendPR.phase = sendPRSelectRemote
+			} else {
+				m.sendPR.phase = sendPRConfirm
+			}
+		} else if needsWarning {
 			m.sendPR.phase = sendPRConfirmDirty
-		} else {
+		} else if len(remotes) > 1 {
 			m.sendPR.phase = sendPRSelectRemote
+		} else {
+			// Clean + single remote → skip to final confirmation.
+			m.sendPR.phase = sendPRConfirm
 		}
 		return m, nil
 	}
@@ -1466,6 +1497,25 @@ func (m Model) renderSendPRPopup() string {
 			fmt.Fprintf(&b, "[%d] %s\n", i+1, label)
 		}
 		b.WriteString("\n[Esc] cancel")
+
+	case sendPRConfirm:
+		remote := m.sendPR.remotes[m.sendPR.selectedRemote]
+		if m.sendPR.existingPR != nil {
+			fmt.Fprintf(&b, "PR #%d already exists\n\n", m.sendPR.existingPR.Number)
+			b.WriteString("Push new commits to update?\n\n")
+		} else {
+			b.WriteString("Send PR\n\n")
+		}
+		fmt.Fprintf(&b, "  Branch:  %s\n", m.sendPR.branch)
+		if remote.Repo != "" {
+			fmt.Fprintf(&b, "  Remote:  %s (%s)\n", remote.Name, remote.Repo)
+		} else {
+			fmt.Fprintf(&b, "  Remote:  %s\n", remote.Name)
+		}
+		if m.sendPR.dirty || m.sendPR.hasStash {
+			b.WriteString("\n  \u26a0 uncommitted changes won't be included\n")
+		}
+		b.WriteString("\n[y]es  [Esc] cancel")
 	}
 
 	return popupStyle.Render(b.String())
@@ -1881,6 +1931,17 @@ func doSendPR(repo *git.Repository, prProv provider.PRProvider, repoPath, branch
 		}
 
 		return prSentMsg{repoPath: repoPath, url: pr.URL}
+	}
+}
+
+// doPushBranch pushes a branch to a remote without creating a PR.
+// Used when a PR already exists and the user wants to push new commits.
+func doPushBranch(repo *git.Repository, repoPath, branch string, remote git.RemoteInfo) tea.Cmd {
+	return func() tea.Msg {
+		if err := repo.Push(remote.Name, branch); err != nil {
+			return prSentMsg{repoPath: repoPath, err: fmt.Errorf("push: %w", err)}
+		}
+		return prSentMsg{repoPath: repoPath, url: ""}
 	}
 }
 

@@ -986,23 +986,24 @@ func TestSendPR(t *testing.T) {
 		}
 	})
 
-	t.Run("P key blocked when PR already exists", func(t *testing.T) {
+	t.Run("P key with existing PR enters push-only confirm", func(t *testing.T) {
+		// Set up sendPR state directly since testModel has no real repo.
 		m := testModel(3)
-		m.cursor = 1
-		m.cliAvail = provider.CLIAvailable
-		m.prs = provider.PRResult{
-			"branch-b": &provider.PRInfo{Number: 42, URL: "https://github.com/test/repo/pull/42"},
+		m.mode = modeSendPR
+		m.sendPR = &sendPRState{
+			remotes:        []git.RemoteInfo{{Name: "origin", Repo: "test/repo"}},
+			selectedRemote: 0,
+			branch:         "branch-b",
+			phase:          sendPRConfirm,
+			existingPR:     &provider.PRInfo{Number: 42, URL: "https://github.com/test/repo/pull/42"},
 		}
 
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'P'}}
-		updated, _ := m.Update(msg)
-		model := updated.(Model)
-
-		if model.mode != modeNormal {
-			t.Errorf("mode = %d, want modeNormal (PR already exists)", model.mode)
+		// Verify the state represents push-only mode.
+		if m.sendPR.existingPR == nil {
+			t.Fatal("expected existingPR to be set")
 		}
-		if !strings.Contains(model.statusMsg, "#42") {
-			t.Errorf("expected PR number in status, got %q", model.statusMsg)
+		if m.sendPR.existingPR.Number != 42 {
+			t.Errorf("existingPR.Number = %d, want 42", m.sendPR.existingPR.Number)
 		}
 	})
 
@@ -1048,7 +1049,7 @@ func TestSendPR(t *testing.T) {
 		}
 	})
 
-	t.Run("sendPR confirm dirty y with single remote dispatches", func(t *testing.T) {
+	t.Run("sendPR confirm dirty y with single remote goes to confirm", func(t *testing.T) {
 		m := testModel(3)
 		m.mode = modeSendPR
 		m.sendPR = &sendPRState{
@@ -1060,17 +1061,17 @@ func TestSendPR(t *testing.T) {
 		}
 
 		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}}
-		updated, cmd := m.Update(msg)
+		updated, _ := m.Update(msg)
 		model := updated.(Model)
 
-		if model.mode != modeNormal {
-			t.Errorf("mode = %d, want modeNormal after confirm", model.mode)
+		if model.mode != modeSendPR {
+			t.Errorf("mode = %d, want modeSendPR (should transition to confirm)", model.mode)
 		}
-		if cmd == nil {
-			t.Error("expected command to be dispatched")
+		if model.sendPR == nil || model.sendPR.phase != sendPRConfirm {
+			t.Error("expected phase to be sendPRConfirm")
 		}
-		if model.sendPR != nil {
-			t.Error("expected sendPR state to be cleared")
+		if model.sendPR.selectedRemote != 0 {
+			t.Errorf("selectedRemote = %d, want 0", model.sendPR.selectedRemote)
 		}
 	})
 
@@ -1121,7 +1122,7 @@ func TestSendPR(t *testing.T) {
 		}
 	})
 
-	t.Run("sendPR select remote dispatches on number key", func(t *testing.T) {
+	t.Run("sendPR select remote goes to confirm on number key", func(t *testing.T) {
 		m := testModel(3)
 		m.mode = modeSendPR
 		m.sendPR = &sendPRState{
@@ -1134,17 +1135,17 @@ func TestSendPR(t *testing.T) {
 		}
 
 		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}}
-		updated, cmd := m.Update(msg)
+		updated, _ := m.Update(msg)
 		model := updated.(Model)
 
-		if model.mode != modeNormal {
-			t.Errorf("mode = %d, want modeNormal after remote select", model.mode)
+		if model.mode != modeSendPR {
+			t.Errorf("mode = %d, want modeSendPR (should transition to confirm)", model.mode)
 		}
-		if cmd == nil {
-			t.Error("expected command to be dispatched")
+		if model.sendPR == nil || model.sendPR.phase != sendPRConfirm {
+			t.Error("expected phase to be sendPRConfirm")
 		}
-		if model.sendPR != nil {
-			t.Error("expected sendPR state to be cleared")
+		if model.sendPR.selectedRemote != 1 {
+			t.Errorf("selectedRemote = %d, want 1", model.sendPR.selectedRemote)
 		}
 	})
 
@@ -1169,6 +1170,144 @@ func TestSendPR(t *testing.T) {
 		}
 		if model.sendPR != nil {
 			t.Error("expected sendPR state to be cleared")
+		}
+	})
+
+	t.Run("sendPR confirm y dispatches", func(t *testing.T) {
+		m := testModel(3)
+		m.mode = modeSendPR
+		m.sendPR = &sendPRState{
+			remotes:        []git.RemoteInfo{{Name: "origin", Repo: "test/repo"}},
+			selectedRemote: 0,
+			branch:         "feature",
+			phase:          sendPRConfirm,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}}
+		updated, cmd := m.Update(msg)
+		model := updated.(Model)
+
+		if model.mode != modeNormal {
+			t.Errorf("mode = %d, want modeNormal after confirm", model.mode)
+		}
+		if cmd == nil {
+			t.Error("expected command to be dispatched")
+		}
+		if model.sendPR != nil {
+			t.Error("expected sendPR state to be cleared")
+		}
+	})
+
+	t.Run("sendPR confirm esc cancels", func(t *testing.T) {
+		m := testModel(3)
+		m.mode = modeSendPR
+		m.sendPR = &sendPRState{
+			remotes:        []git.RemoteInfo{{Name: "origin"}},
+			selectedRemote: 0,
+			branch:         "feature",
+			phase:          sendPRConfirm,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ := m.Update(msg)
+		model := updated.(Model)
+
+		if model.mode != modeNormal {
+			t.Errorf("mode = %d, want modeNormal after esc", model.mode)
+		}
+		if model.sendPR != nil {
+			t.Error("expected sendPR state to be cleared")
+		}
+	})
+
+	t.Run("sendPR confirm y with existing PR dispatches push only", func(t *testing.T) {
+		m := testModel(3)
+		m.mode = modeSendPR
+		m.sendPR = &sendPRState{
+			remotes:        []git.RemoteInfo{{Name: "origin", Repo: "test/repo"}},
+			selectedRemote: 0,
+			branch:         "feature",
+			phase:          sendPRConfirm,
+			existingPR:     &provider.PRInfo{Number: 42},
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}}
+		updated, cmd := m.Update(msg)
+		model := updated.(Model)
+
+		if model.mode != modeNormal {
+			t.Errorf("mode = %d, want modeNormal", model.mode)
+		}
+		if cmd == nil {
+			t.Error("expected command to be dispatched")
+		}
+		if !strings.Contains(model.statusMsg, "Pushing") {
+			t.Errorf("expected 'Pushing' status, got %q", model.statusMsg)
+		}
+		// Should NOT say "creating PR" for push-only.
+		if strings.Contains(model.statusMsg, "creating") {
+			t.Errorf("push-only should not mention 'creating', got %q", model.statusMsg)
+		}
+	})
+
+	t.Run("prSentMsg push only shows Pushed", func(t *testing.T) {
+		m := testModel(2)
+
+		msg := prSentMsg{url: ""}
+		updated, _ := m.Update(msg)
+		model := updated.(Model)
+
+		if !strings.Contains(model.statusMsg, "Pushed") {
+			t.Errorf("expected 'Pushed' in statusMsg, got %q", model.statusMsg)
+		}
+	})
+
+	t.Run("renderSendPRPopup confirm phase with existing PR", func(t *testing.T) {
+		m := testModel(3)
+		m.mode = modeSendPR
+		m.sendPR = &sendPRState{
+			remotes:        []git.RemoteInfo{{Name: "origin", Repo: "test/repo"}},
+			selectedRemote: 0,
+			branch:         "my-feature",
+			phase:          sendPRConfirm,
+			existingPR:     &provider.PRInfo{Number: 99},
+		}
+
+		popup := m.renderSendPRPopup()
+		if !strings.Contains(popup, "#99") {
+			t.Error("expected PR number in push-only popup")
+		}
+		if !strings.Contains(popup, "already exists") {
+			t.Error("expected 'already exists' in push-only popup")
+		}
+		if !strings.Contains(popup, "Push") {
+			t.Error("expected 'Push' in push-only popup")
+		}
+	})
+
+	t.Run("renderSendPRPopup confirm phase", func(t *testing.T) {
+		m := testModel(3)
+		m.mode = modeSendPR
+		m.sendPR = &sendPRState{
+			remotes:        []git.RemoteInfo{{Name: "origin", Repo: "test/repo"}},
+			selectedRemote: 0,
+			dirty:          true,
+			branch:         "my-feature",
+			phase:          sendPRConfirm,
+		}
+
+		popup := m.renderSendPRPopup()
+		if !strings.Contains(popup, "my-feature") {
+			t.Error("expected branch name in confirm popup")
+		}
+		if !strings.Contains(popup, "origin") {
+			t.Error("expected remote name in confirm popup")
+		}
+		if !strings.Contains(popup, "test/repo") {
+			t.Error("expected repo in confirm popup")
+		}
+		if !strings.Contains(popup, "uncommitted") {
+			t.Error("expected dirty warning in confirm popup")
 		}
 	})
 
