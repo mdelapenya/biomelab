@@ -80,7 +80,9 @@ func Load(path string) (*Config, error) {
 			if err := Save(path, &cfg); err != nil {
 				return nil, err
 			}
-			_ = os.RemoveAll(filepath.Dir(legacy))
+			if err := os.RemoveAll(filepath.Dir(legacy)); err != nil {
+				return nil, err
+			}
 			return &cfg, nil
 		}
 		return nil, err
@@ -90,6 +92,12 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	cfg.migrate()
+	// Clean up legacy gwaim config directory if it still exists.
+	if legacyDir := filepath.Dir(legacyPathFn()); dirExists(legacyDir) {
+		if err := os.RemoveAll(legacyDir); err != nil {
+			return nil, err
+		}
+	}
 	return &cfg, nil
 }
 
@@ -214,6 +222,11 @@ func (c *Config) Remove(path string) bool {
 		}
 	}
 	return false
+}
+
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 // IndexOf returns the index of the repo with the given path, or -1 if not found.
