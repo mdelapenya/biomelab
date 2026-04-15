@@ -1001,6 +1001,12 @@ func (m *Model) renderFixedTop() string {
 		body.WriteString("\n")
 		currentY += h + 1
 
+		// Main card contextual help line.
+		mainHelp := m.renderMainCardHelp()
+		body.WriteString(mainHelp)
+		body.WriteString("\n")
+		currentY++
+
 		if m.mode == modeCreate {
 			body.WriteString(inputPromptStyle.Render("  New branch name: "))
 			body.WriteString(m.textInput.View())
@@ -1195,20 +1201,7 @@ func (m Model) viewContent() string {
 	if m.mouseOn {
 		mouseLabel = "m mouse:on"
 	}
-	var sbxLabel string
-	if m.isSandbox() {
-		switch m.sandboxStatus {
-		case sandbox.StatusRunning:
-			sbxLabel = "S stop • "
-		case sandbox.StatusStopped:
-			sbxLabel = "s start • "
-		case sandbox.StatusNotFound:
-			sbxLabel = "n new sandbox • "
-		}
-	} else {
-		sbxLabel = "n new sandbox • "
-	}
-	helpText := "←→↑↓ navigate • ↵ open tab • e editor • p pull • r refresh • " + sbxLabel + "c create • f fetch PR • d delete • " + mouseLabel + " • q quit"
+	helpText := "←→↑↓ navigate • ↵ open tab • e editor • r refresh • d delete • p pull • " + mouseLabel + " • q quit"
 	help := helpStyle.MaxWidth(m.width).Render(helpText)
 
 	if m.ready {
@@ -1216,6 +1209,33 @@ func (m Model) viewContent() string {
 	}
 
 	return m.fixedTopContent + m.renderLinkedCards() + "\n" + help
+}
+
+// renderMainCardHelp returns a styled help line for main-card-specific actions.
+// The content adapts to sandbox status; the style highlights when cursor is on the main card.
+func (m Model) renderMainCardHelp() string {
+	parts := []string{"c create", "f fetch PR"}
+
+	if m.isSandbox() {
+		switch m.sandboxStatus {
+		case sandbox.StatusRunning:
+			parts = append(parts, "S stop", "d rm sandbox")
+		case sandbox.StatusStopped:
+			parts = append(parts, "s start", "d rm sandbox")
+		case sandbox.StatusNotFound:
+			parts = append(parts, "n create sandbox")
+		}
+	} else {
+		parts = append(parts, "n new sandbox")
+	}
+
+	text := strings.Join(parts, " • ")
+
+	style := mainCardHelpFaintStyle
+	if m.cursor == 0 {
+		style = mainCardHelpActiveStyle
+	}
+	return style.Render(text)
 }
 
 // renderConfirmCreateSandboxPopup renders a confirmation popup for sandbox creation.
