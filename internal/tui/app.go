@@ -86,7 +86,7 @@ type addRepoMsg struct {
 func NewApp(configPath string, detector *agent.Detector, ideDetector *ide.Detector, procLister process.Lister, refreshInterval time.Duration) App {
 	ti := textinput.New()
 	ti.Placeholder = "/path/to/repository"
-	ti.CharLimit = 256
+	ti.CharLimit = 1024
 	ti.Width = 50
 
 	if refreshInterval <= 0 {
@@ -197,6 +197,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
+		a.textInput.Width = a.textInputWidth()
 		// Forward adjusted size to active child.
 		if len(a.repos) > 0 && a.active < len(a.repos) {
 			w, h := a.childDimensions()
@@ -356,6 +357,7 @@ func (a App) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.mode = appModeEnrollAgent
 			a.textInput.Reset()
 			a.textInput.Placeholder = "agent (claude, codex, copilot, gemini, kiro, opencode, shell)"
+			a.textInput.Width = a.textInputWidth()
 			a.textInput.Focus()
 			a.statusMsg = ""
 			return a, a.textInput.Cursor.BlinkCmd()
@@ -641,6 +643,7 @@ func (a App) handleLeftPanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.mode = appModeAddRepo
 		a.textInput.Reset()
 		a.textInput.Placeholder = "/path/to/repository"
+		a.textInput.Width = a.textInputWidth()
 		a.textInput.Focus()
 		a.statusMsg = ""
 		return a, a.textInput.Cursor.BlinkCmd()
@@ -649,6 +652,7 @@ func (a App) handleLeftPanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.mode = appModeAddSandboxMode
 			a.textInput.Reset()
 			a.textInput.Placeholder = "agent (claude, codex, copilot, gemini, kiro, opencode, shell)"
+			a.textInput.Width = a.textInputWidth()
 			a.textInput.Focus()
 			a.statusMsg = ""
 			return a, a.textInput.Cursor.BlinkCmd()
@@ -1201,6 +1205,17 @@ func (a App) leftPanelWidth() int {
 // dashWidth returns the width of the dashboard panel.
 func (a App) dashWidth() int {
 	return a.width - a.leftPanelWidth()
+}
+
+// textInputWidth returns the width for the text input based on the current
+// terminal width, leaving room for the prompt label and padding.
+func (a App) textInputWidth() int {
+	// "  Repository path: " is the longest label (~20 chars); add some margin.
+	w := a.width - 24
+	if w < 50 {
+		w = 50
+	}
+	return w
 }
 
 // childDimensions returns the width and height for a child model's content area.

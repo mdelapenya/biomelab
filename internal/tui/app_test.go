@@ -19,7 +19,7 @@ import (
 func testApp(n int) App {
 	ti := textinput.New()
 	ti.Placeholder = "/path/to/repository"
-	ti.CharLimit = 256
+	ti.CharLimit = 1024
 	ti.Width = 50
 
 	app := App{
