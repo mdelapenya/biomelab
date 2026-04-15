@@ -2,6 +2,7 @@ package provider
 
 import (
 	"encoding/json"
+	"fmt"
 	"os/exec"
 	"strings"
 )
@@ -31,6 +32,35 @@ func (g *GitHubProvider) Name() string { return "GitHub" }
 
 // Provider returns ProviderGitHub.
 func (g *GitHubProvider) Provider() Provider { return ProviderGitHub }
+
+// CreatePR creates a pull request on GitHub using the gh CLI.
+// It runs "gh pr create --fill --head <branch>" with an optional "--repo <targetRepo>".
+// After creation, it fetches full PR info via "gh pr view".
+func (g *GitHubProvider) CreatePR(repoDir, branch, targetRepo string) (*PRInfo, error) {
+	args := []string{"pr", "create", "--fill", "--head", branch}
+	if targetRepo != "" {
+		args = append(args, "--repo", targetRepo)
+	}
+	cmd := exec.Command("gh", args...)
+	cmd.Dir = repoDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("gh pr create: %s", strings.TrimSpace(string(out)))
+	}
+
+	// gh pr create prints the PR URL on success. Fetch full info via gh pr view.
+	pr := fetchGitHubPR(repoDir, branch)
+	if pr == nil {
+		// Fallback: return minimal info from the create output (URL on last line).
+		url := strings.TrimSpace(string(out))
+		// Extract last line which is typically the URL.
+		if lines := strings.Split(url, "\n"); len(lines) > 0 {
+			url = strings.TrimSpace(lines[len(lines)-1])
+		}
+		return &PRInfo{URL: url, State: "open"}, nil
+	}
+	return pr, nil
+}
 
 func fetchGitHubPR(repoDir, branch string) *PRInfo {
 	cmd := exec.Command("gh", "pr", "view", branch,

@@ -488,10 +488,10 @@ func TestColumns(t *testing.T) {
 		width    int
 		wantCols int
 	}{
-		{0, 2},     // default
-		{44, 1},    // just one card
-		{88, 2},    // two cards
-		{132, 3},   // three cards
+		{0, 2},   // default
+		{44, 1},  // just one card
+		{88, 2},  // two cards
+		{132, 3}, // three cards
 	}
 
 	for _, tt := range tests {
@@ -952,4 +952,272 @@ func TestViewContent_BottomBarNoMainCardActions(t *testing.T) {
 			t.Errorf("bottom help bar should contain %q, got: %s", present, helpLine)
 		}
 	}
+}
+
+func TestSendPR(t *testing.T) {
+	t.Run("P key blocked on main card", func(t *testing.T) {
+		m := testModel(3)
+		m.cursor = 0
+		m.cliAvail = provider.CLIAvailable
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'P'}}
+		updated, _ := m.Update(msg)
+		model := updated.(Model)
+
+		if model.mode != modeNormal {
+			t.Errorf("mode = %d, want modeNormal (P blocked on main card)", model.mode)
+		}
+	})
+
+	t.Run("P key blocked without CLI", func(t *testing.T) {
+		m := testModel(3)
+		m.cursor = 1
+		m.cliAvail = provider.CLINotFound
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'P'}}
+		updated, _ := m.Update(msg)
+		model := updated.(Model)
+
+		if model.mode != modeNormal {
+			t.Errorf("mode = %d, want modeNormal (CLI not available)", model.mode)
+		}
+		if model.statusMsg == "" {
+			t.Error("expected error status message")
+		}
+	})
+
+	t.Run("P key blocked on detached HEAD", func(t *testing.T) {
+		m := testModel(3)
+		m.cursor = 1
+		m.cliAvail = provider.CLIAvailable
+		m.worktrees[1].Detached = true
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'P'}}
+		updated, _ := m.Update(msg)
+		model := updated.(Model)
+
+		if model.mode != modeNormal {
+			t.Errorf("mode = %d, want modeNormal (detached HEAD)", model.mode)
+		}
+		if !strings.Contains(model.statusMsg, "detached") {
+			t.Errorf("expected detached error, got %q", model.statusMsg)
+		}
+	})
+
+	t.Run("prSentMsg success shows URL", func(t *testing.T) {
+		m := testModel(2)
+
+		msg := prSentMsg{url: "https://github.com/test/repo/pull/42"}
+		updated, _ := m.Update(msg)
+		model := updated.(Model)
+
+		if !strings.Contains(model.statusMsg, "https://github.com/test/repo/pull/42") {
+			t.Errorf("expected PR URL in statusMsg, got %q", model.statusMsg)
+		}
+	})
+
+	t.Run("prSentMsg error shows error", func(t *testing.T) {
+		m := testModel(2)
+
+		msg := prSentMsg{err: fmt.Errorf("push failed: auth error")}
+		updated, _ := m.Update(msg)
+		model := updated.(Model)
+
+		if !strings.Contains(model.statusMsg, "push failed") {
+			t.Errorf("expected push error in statusMsg, got %q", model.statusMsg)
+		}
+	})
+
+	t.Run("sendPR confirm dirty y with single remote dispatches", func(t *testing.T) {
+		m := testModel(3)
+		m.mode = modeSendPR
+		m.sendPR = &sendPRState{
+			remotes:  []git.RemoteInfo{{Name: "origin", URL: "https://github.com/test/repo.git", Repo: "test/repo"}},
+			dirty:    true,
+			hasStash: false,
+			branch:   "feature",
+			phase:    sendPRConfirmDirty,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}}
+		updated, cmd := m.Update(msg)
+		model := updated.(Model)
+
+		if model.mode != modeNormal {
+			t.Errorf("mode = %d, want modeNormal after confirm", model.mode)
+		}
+		if cmd == nil {
+			t.Error("expected command to be dispatched")
+		}
+		if model.sendPR != nil {
+			t.Error("expected sendPR state to be cleared")
+		}
+	})
+
+	t.Run("sendPR confirm dirty y with multiple remotes transitions", func(t *testing.T) {
+		m := testModel(3)
+		m.mode = modeSendPR
+		m.sendPR = &sendPRState{
+			remotes: []git.RemoteInfo{
+				{Name: "origin", URL: "https://github.com/user/fork.git", Repo: "user/fork"},
+				{Name: "upstream", URL: "https://github.com/org/repo.git", Repo: "org/repo"},
+			},
+			dirty:  true,
+			branch: "feature",
+			phase:  sendPRConfirmDirty,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}}
+		updated, _ := m.Update(msg)
+		model := updated.(Model)
+
+		if model.mode != modeSendPR {
+			t.Errorf("mode = %d, want modeSendPR (should transition to remote select)", model.mode)
+		}
+		if model.sendPR == nil || model.sendPR.phase != sendPRSelectRemote {
+			t.Error("expected phase to be sendPRSelectRemote")
+		}
+	})
+
+	t.Run("sendPR confirm dirty esc cancels", func(t *testing.T) {
+		m := testModel(3)
+		m.mode = modeSendPR
+		m.sendPR = &sendPRState{
+			remotes: []git.RemoteInfo{{Name: "origin"}},
+			dirty:   true,
+			branch:  "feature",
+			phase:   sendPRConfirmDirty,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ := m.Update(msg)
+		model := updated.(Model)
+
+		if model.mode != modeNormal {
+			t.Errorf("mode = %d, want modeNormal after esc", model.mode)
+		}
+		if model.sendPR != nil {
+			t.Error("expected sendPR state to be cleared")
+		}
+	})
+
+	t.Run("sendPR select remote dispatches on number key", func(t *testing.T) {
+		m := testModel(3)
+		m.mode = modeSendPR
+		m.sendPR = &sendPRState{
+			remotes: []git.RemoteInfo{
+				{Name: "origin", URL: "https://github.com/user/fork.git", Repo: "user/fork"},
+				{Name: "upstream", URL: "https://github.com/org/repo.git", Repo: "org/repo"},
+			},
+			branch: "feature",
+			phase:  sendPRSelectRemote,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}}
+		updated, cmd := m.Update(msg)
+		model := updated.(Model)
+
+		if model.mode != modeNormal {
+			t.Errorf("mode = %d, want modeNormal after remote select", model.mode)
+		}
+		if cmd == nil {
+			t.Error("expected command to be dispatched")
+		}
+		if model.sendPR != nil {
+			t.Error("expected sendPR state to be cleared")
+		}
+	})
+
+	t.Run("sendPR select remote esc cancels", func(t *testing.T) {
+		m := testModel(3)
+		m.mode = modeSendPR
+		m.sendPR = &sendPRState{
+			remotes: []git.RemoteInfo{
+				{Name: "origin"},
+				{Name: "upstream"},
+			},
+			branch: "feature",
+			phase:  sendPRSelectRemote,
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ := m.Update(msg)
+		model := updated.(Model)
+
+		if model.mode != modeNormal {
+			t.Errorf("mode = %d, want modeNormal after esc", model.mode)
+		}
+		if model.sendPR != nil {
+			t.Error("expected sendPR state to be cleared")
+		}
+	})
+
+	t.Run("renderSendPRPopup dirty phase", func(t *testing.T) {
+		m := testModel(3)
+		m.mode = modeSendPR
+		m.sendPR = &sendPRState{
+			remotes:  []git.RemoteInfo{{Name: "origin"}},
+			dirty:    true,
+			hasStash: true,
+			branch:   "my-feature",
+			phase:    sendPRConfirmDirty,
+		}
+
+		popup := m.renderSendPRPopup()
+		if !strings.Contains(popup, "my-feature") {
+			t.Error("expected branch name in popup")
+		}
+		if !strings.Contains(popup, "modified") {
+			t.Error("expected modified file warning")
+		}
+		if !strings.Contains(popup, "stash") {
+			t.Error("expected stash warning")
+		}
+	})
+
+	t.Run("renderSendPRPopup select remote phase", func(t *testing.T) {
+		m := testModel(3)
+		m.mode = modeSendPR
+		m.sendPR = &sendPRState{
+			remotes: []git.RemoteInfo{
+				{Name: "origin", Repo: "user/fork"},
+				{Name: "upstream", Repo: "org/repo"},
+			},
+			branch: "feature",
+			phase:  sendPRSelectRemote,
+		}
+
+		popup := m.renderSendPRPopup()
+		if !strings.Contains(popup, "origin") {
+			t.Error("expected origin in popup")
+		}
+		if !strings.Contains(popup, "upstream") {
+			t.Error("expected upstream in popup")
+		}
+		if !strings.Contains(popup, "user/fork") {
+			t.Error("expected user/fork repo in popup")
+		}
+		if !strings.Contains(popup, "[1]") || !strings.Contains(popup, "[2]") {
+			t.Error("expected numbered remote options")
+		}
+	})
+
+	t.Run("help bar includes PR", func(t *testing.T) {
+		m := testModel(3)
+		m.width = 120
+		m.height = 40
+
+		content := m.viewContent()
+		lines := strings.Split(content, "\n")
+		var helpLine string
+		for i := len(lines) - 1; i >= 0; i-- {
+			if strings.TrimSpace(lines[i]) != "" {
+				helpLine = lines[i]
+				break
+			}
+		}
+		if !strings.Contains(helpLine, "[P]R") {
+			t.Errorf("bottom help bar should contain [P]R, got: %s", helpLine)
+		}
+	})
 }

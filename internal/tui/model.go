@@ -48,54 +48,73 @@ const (
 	modeConfirmCreateSandbox
 	modeConfirmRemoveSandbox
 	modeEnrollSandboxFromCard // non-sandbox repo: prompt for agent to enroll
+	modeSendPR                // push branch + create PR flow
 )
+
+// sendPRPhase tracks sub-phases within modeSendPR.
+type sendPRPhase int
+
+const (
+	sendPRConfirmDirty sendPRPhase = iota // warn about dirty/stash, y/n
+	sendPRSelectRemote                    // pick from multiple remotes
+)
+
+// sendPRState holds transient state for the send-PR flow.
+type sendPRState struct {
+	remotes  []git.RemoteInfo
+	dirty    bool
+	hasStash bool
+	branch   string
+	phase    sendPRPhase
+}
 
 // Model is the top-level bubbletea model for biomelab.
 type Model struct {
-	repo         *git.Repository
-	detector     *agent.Detector
-	ideDetector  *ide.Detector
-	procLister   process.Lister
-	worktrees    []git.Worktree
-	agents       agent.DetectionResult
-	ides         ide.DetectionResult
-	prs          provider.PRResult
-	cliAvail  provider.CLIAvailability
-	prProv    provider.PRProvider
-	cursor    int
-	width     int
-	height    int
-	keys      keyMap
-	mode      mode
-	viewport  viewport.Model
-	textInput textinput.Model
-	err       error
-	statusMsg string
-	ready     bool
+	repo        *git.Repository
+	detector    *agent.Detector
+	ideDetector *ide.Detector
+	procLister  process.Lister
+	worktrees   []git.Worktree
+	agents      agent.DetectionResult
+	ides        ide.DetectionResult
+	prs         provider.PRResult
+	cliAvail    provider.CLIAvailability
+	prProv      provider.PRProvider
+	cursor      int
+	width       int
+	height      int
+	keys        keyMap
+	mode        mode
+	viewport    viewport.Model
+	textInput   textinput.Model
+	err         error
+	statusMsg   string
+	ready       bool
 	// cardZones tracks bounding rects for click detection.
 	// Each entry maps worktree index -> {x, y, width, height} in body coordinates.
-	cardZones      []zone
-	mouseOn         bool // default true, toggled with 'm'
-	deleteConfirmed bool // true after user types 'y' in confirm-delete mode
-	refreshInterval time.Duration
-	localFlash        bool      // true while showing ✓ after a local refresh
-	netFlash          bool      // true while showing ✓ after a network refresh
-	lastLocalRefresh  time.Time // time of last completed local refresh
-	lastNetworkRefresh time.Time // time of last completed network refresh
-	embedded          bool      // true when used inside App (no header in viewport calc)
-	paused            bool      // true when repo is not the active tab; ticks stop self-scheduling
-	fixedTopHeight  int    // lines occupied by the fixed top section (main card + input)
-	fixedTopContent string // cached render of fixed top (set in syncViewport, read in viewContent)
-	activeMode     *config.ModeEntry    // current mode (nil means regular)
-	allWorktrees   []git.Worktree       // unfiltered worktree list from git
-	sandboxStatus  sandbox.Status              // active mode's sandbox status
-	sandboxVersion sandbox.VersionInfo         // sbx client/server versions
-	modeStatuses   map[string]sandbox.Status   // all sandbox name → status (for tree dots)
+	cardZones          []zone
+	mouseOn            bool // default true, toggled with 'm'
+	deleteConfirmed    bool // true after user types 'y' in confirm-delete mode
+	refreshInterval    time.Duration
+	localFlash         bool                      // true while showing ✓ after a local refresh
+	netFlash           bool                      // true while showing ✓ after a network refresh
+	lastLocalRefresh   time.Time                 // time of last completed local refresh
+	lastNetworkRefresh time.Time                 // time of last completed network refresh
+	embedded           bool                      // true when used inside App (no header in viewport calc)
+	paused             bool                      // true when repo is not the active tab; ticks stop self-scheduling
+	fixedTopHeight     int                       // lines occupied by the fixed top section (main card + input)
+	fixedTopContent    string                    // cached render of fixed top (set in syncViewport, read in viewContent)
+	activeMode         *config.ModeEntry         // current mode (nil means regular)
+	allWorktrees       []git.Worktree            // unfiltered worktree list from git
+	sandboxStatus      sandbox.Status            // active mode's sandbox status
+	sandboxVersion     sandbox.VersionInfo       // sbx client/server versions
+	modeStatuses       map[string]sandbox.Status // all sandbox name → status (for tree dots)
+	sendPR             *sendPRState              // transient state for send-PR flow (nil when inactive)
 }
 
 type zone struct {
-	idx            int
-	x, y, w, h    int
+	idx        int
+	x, y, w, h int
 }
 
 // New creates a new TUI model. refreshInterval controls how often network
@@ -539,6 +558,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Pull changes local state only; sync status will update on next network tick.
 		return m, tea.Batch(doQuickRefresh(m.repo, rp), doLocalRefresh(m.repo, m.detector, m.ideDetector, m.procLister, rp, m.sbxName()))
 
+	case prSentMsg:
+		if m.isStale(msg.repoPath) {
+			return m, nil
+		}
+		rp := m.repoPath()
+		if msg.err != nil {
+			m.statusMsg = errorStyle.Render("PR: " + msg.err.Error())
+		} else {
+			m.statusMsg = cleanStyle.Render("PR created: " + msg.url)
+		}
+		return m, doNetworkRefresh(m.repo, m.detector, m.ideDetector, m.procLister, m.prProv, m.cliAvail, rp, m.sbxName())
+
 	case cardRefreshMsg:
 		if m.isStale(msg.repoPath) {
 			return m, nil
@@ -758,6 +789,59 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Handle send PR mode.
+	if m.mode == modeSendPR && m.sendPR != nil {
+		switch m.sendPR.phase {
+		case sendPRConfirmDirty:
+			switch {
+			case key.Matches(msg, key.NewBinding(key.WithKeys("y", "Y"))):
+				if len(m.sendPR.remotes) > 1 {
+					m.sendPR.phase = sendPRSelectRemote
+					return m, nil
+				}
+				// Single remote: dispatch immediately.
+				remote := m.sendPR.remotes[0]
+				branch := m.sendPR.branch
+				m.mode = modeNormal
+				m.statusMsg = cleanStyle.Render("Pushing and creating PR...")
+				cmd := doSendPR(m.repo, m.prProv, m.repoPath(), branch, remote)
+				m.sendPR = nil
+				return m, cmd
+			default:
+				m.mode = modeNormal
+				m.sendPR = nil
+				m.statusMsg = ""
+				return m, nil
+			}
+		case sendPRSelectRemote:
+			if key.Matches(msg, key.NewBinding(key.WithKeys("esc"))) {
+				m.mode = modeNormal
+				m.sendPR = nil
+				m.statusMsg = ""
+				return m, nil
+			}
+			// Number keys 1-9 select a remote.
+			for i, remote := range m.sendPR.remotes {
+				if i >= 9 {
+					break
+				}
+				if key.Matches(msg, key.NewBinding(key.WithKeys(fmt.Sprintf("%d", i+1)))) {
+					branch := m.sendPR.branch
+					m.mode = modeNormal
+					m.statusMsg = cleanStyle.Render("Pushing and creating PR...")
+					cmd := doSendPR(m.repo, m.prProv, m.repoPath(), branch, remote)
+					m.sendPR = nil
+					return m, cmd
+				}
+			}
+			// Any unrecognized key cancels.
+			m.mode = modeNormal
+			m.sendPR = nil
+			m.statusMsg = ""
+			return m, nil
+		}
+	}
+
 	// Normal mode.
 	// Navigation: cursor 0 = main worktree (own row), cursor 1+ = linked grid.
 	switch {
@@ -922,6 +1006,58 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.statusMsg = cleanStyle.Render("Stopping sandbox...")
 			return m, doStopSandbox(m.sbxName(), m.repoPath())
 		}
+
+	case key.Matches(msg, m.keys.SendPR):
+		if m.cursor == 0 {
+			return m, nil // send PR only from linked worktrees
+		}
+		if m.cursor < 0 || m.cursor >= len(m.worktrees) {
+			return m, nil
+		}
+		wt := m.worktrees[m.cursor]
+		if wt.Detached {
+			m.statusMsg = errorStyle.Render("Cannot create PR from detached HEAD")
+			return m, nil
+		}
+		if m.cliAvail != provider.CLIAvailable {
+			m.statusMsg = errorStyle.Render("CLI tool required for PR creation")
+			return m, nil
+		}
+		if m.prProv.Provider() == provider.ProviderUnknown {
+			m.statusMsg = errorStyle.Render("Unsupported git provider for PR creation")
+			return m, nil
+		}
+		// Gather state for send-PR flow.
+		remotes, err := m.repo.ListRemotes()
+		if err != nil || len(remotes) == 0 {
+			m.statusMsg = errorStyle.Render("No remotes configured")
+			return m, nil
+		}
+		hasStash, _ := m.repo.HasStash()
+		needsWarning := wt.IsDirty || hasStash
+
+		state := &sendPRState{
+			remotes:  remotes,
+			dirty:    wt.IsDirty,
+			hasStash: hasStash,
+			branch:   wt.Branch,
+		}
+
+		// Fast path: clean + single remote → dispatch immediately.
+		if !needsWarning && len(remotes) == 1 {
+			m.statusMsg = cleanStyle.Render("Pushing and creating PR...")
+			return m, doSendPR(m.repo, m.prProv, m.repoPath(), wt.Branch, remotes[0])
+		}
+
+		// Need user interaction.
+		m.sendPR = state
+		m.mode = modeSendPR
+		if needsWarning {
+			m.sendPR.phase = sendPRConfirmDirty
+		} else {
+			m.sendPR.phase = sendPRSelectRemote
+		}
+		return m, nil
 	}
 
 	return m, nil
@@ -1203,7 +1339,7 @@ func (m Model) viewContent() string {
 	if m.mouseOn {
 		mouseLabel = "[m]ouse:on"
 	}
-	helpText := "←→↑↓ nav • [↵]open • [e]ditor • [r]efresh • [d]elete • [p]ull • " + mouseLabel + " • [q]uit"
+	helpText := "←→↑↓ nav • [↵]open • [e]ditor • [r]efresh • [d]elete • [p]ull • [P]R • " + mouseLabel + " • [q]uit"
 	help := lipgloss.NewStyle().Faint(true).MaxWidth(m.width).Render(helpText)
 
 	var body string
@@ -1288,6 +1424,48 @@ func (m Model) renderConfirmPopup() string {
 	return popupStyle.Render(msg)
 }
 
+// renderSendPRPopup renders the popup for the send-PR flow.
+// Content depends on the current phase: dirty warning or remote selection.
+func (m Model) renderSendPRPopup() string {
+	if m.sendPR == nil {
+		return ""
+	}
+
+	var b strings.Builder
+
+	switch m.sendPR.phase {
+	case sendPRConfirmDirty:
+		b.WriteString("Warning\n\n")
+		b.WriteString(fmt.Sprintf("Branch %q has uncommitted changes:\n", m.sendPR.branch))
+		if m.sendPR.dirty {
+			b.WriteString("  \u2022 modified files\n")
+		}
+		if m.sendPR.hasStash {
+			b.WriteString("  \u2022 stash entries present\n")
+		}
+		b.WriteString("\nThese won't be included in the PR.\n\n")
+		b.WriteString("[y]es  [Esc] cancel")
+
+	case sendPRSelectRemote:
+		b.WriteString("Select target remote:\n\n")
+		for i, r := range m.sendPR.remotes {
+			if i >= 9 {
+				break
+			}
+			label := r.Name
+			if r.Repo != "" {
+				label += "  (" + r.Repo + ")"
+			} else if r.URL != "" {
+				label += "  (" + r.URL + ")"
+			}
+			b.WriteString(fmt.Sprintf("[%d] %s\n", i+1, label))
+		}
+		b.WriteString("\n[Esc] cancel")
+	}
+
+	return popupStyle.Render(b.String())
+}
+
 // overlayCenter renders a popup centered on a full-screen scrim that
 // replaces the base content. True transparency is not possible in terminal
 // emulators, so the scrim is a solid dark background that visually separates
@@ -1299,7 +1477,6 @@ func overlayCenter(_, popup string, width, height int) string {
 		lipgloss.WithWhitespaceBackground(lipgloss.Color("233")),
 	)
 }
-
 
 // ScrollState returns the viewport's scroll state for external scrollbar rendering.
 // Returns totalLines, visibleLines, yOffset.
@@ -1681,6 +1858,24 @@ func doFetchPRSandbox(repo *git.Repository, input, repoPath, sandboxName string)
 		_ = out
 
 		return prFetchedMsg{repoPath: repoPath, branchName: branchName}
+	}
+}
+
+// doSendPR pushes a branch to a remote and creates a PR via the provider CLI.
+func doSendPR(repo *git.Repository, prProv provider.PRProvider, repoPath, branch string, remote git.RemoteInfo) tea.Cmd {
+	return func() tea.Msg {
+		// Step 1: Push branch to the selected remote.
+		if err := repo.Push(remote.Name, branch); err != nil {
+			return prSentMsg{repoPath: repoPath, err: fmt.Errorf("push: %w", err)}
+		}
+
+		// Step 2: Create PR via provider CLI.
+		pr, err := prProv.CreatePR(repo.Root(), branch, remote.Repo)
+		if err != nil {
+			return prSentMsg{repoPath: repoPath, err: err}
+		}
+
+		return prSentMsg{repoPath: repoPath, url: pr.URL}
 	}
 }
 

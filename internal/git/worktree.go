@@ -674,6 +674,102 @@ func (r *Repository) pruneWorktrees() {
 	}
 }
 
+// RemoteInfo holds the name and URL of a git remote.
+type RemoteInfo struct {
+	Name string // remote name (e.g. "origin")
+	URL  string // first URL of the remote
+	Repo string // parsed "owner/repo" from URL, or empty
+}
+
+// ListRemotes returns information about all configured remotes.
+func (r *Repository) ListRemotes() ([]RemoteInfo, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if err := r.reopen(); err != nil {
+		return nil, err
+	}
+
+	remotes, err := r.repo.Remotes()
+	if err != nil {
+		return nil, fmt.Errorf("listing remotes: %w", err)
+	}
+
+	var result []RemoteInfo
+	for _, remote := range remotes {
+		cfg := remote.Config()
+		ri := RemoteInfo{Name: cfg.Name}
+		if len(cfg.URLs) > 0 {
+			ri.URL = cfg.URLs[0]
+			ri.Repo = parseRepoName(cfg.URLs[0])
+		}
+		result = append(result, ri)
+	}
+	return result, nil
+}
+
+// Push pushes a local branch to a remote.
+// Uses the same auth-retry pattern as Fetch and Pull: tries without credentials
+// first, then resolves via git credential helpers on auth failure.
+func (r *Repository) Push(remoteName, branchName string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if err := r.reopen(); err != nil {
+		return err
+	}
+
+	remote, err := r.repo.Remote(remoteName)
+	if err != nil {
+		return fmt.Errorf("remote %q: %w", remoteName, err)
+	}
+
+	refSpec := config.RefSpec(fmt.Sprintf("refs/heads/%s:refs/heads/%s", branchName, branchName))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	opts := &gogit.PushOptions{
+		RemoteName: remoteName,
+		RefSpecs:   []config.RefSpec{refSpec},
+	}
+
+	err = remote.PushContext(ctx, opts)
+	if err == nil || err == gogit.NoErrAlreadyUpToDate {
+		return nil
+	}
+
+	if isAuthError(err) {
+		auth, credErr := r.resolveCredentialsForRemote(remote)
+		if credErr != nil {
+			return fmt.Errorf("push auth: %w", credErr)
+		}
+		opts.Auth = auth
+		err = remote.PushContext(ctx, opts)
+		if err == nil || err == gogit.NoErrAlreadyUpToDate {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("push %s to %s: %w", branchName, remoteName, err)
+}
+
+// HasStash returns true if the repository has any stash entries.
+func (r *Repository) HasStash() (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if err := r.reopen(); err != nil {
+		return false, err
+	}
+
+	_, err := r.repo.Reference(plumbing.ReferenceName("refs/stash"), false)
+	if err != nil {
+		return false, nil // no stash ref means no stash entries
+	}
+	return true, nil
+}
+
 // RepoRoot finds the root of the git repository containing the given path.
 func RepoRoot(path string) (string, error) {
 	r, err := gogit.PlainOpenWithOptions(path, &gogit.PlainOpenOptions{
@@ -690,4 +786,3 @@ func RepoRoot(path string) (string, error) {
 
 	return wt.Filesystem.Root(), nil
 }
-

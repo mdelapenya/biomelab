@@ -657,3 +657,184 @@ func TestParseRepoName(t *testing.T) {
 	}
 }
 
+func TestListRemotes(t *testing.T) {
+	t.Run("no remotes", func(t *testing.T) {
+		dir, _ := setupTestRepo(t)
+		repo, err := OpenRepository(dir)
+		if err != nil {
+			t.Fatalf("failed to open: %v", err)
+		}
+
+		remotes, err := repo.ListRemotes()
+		if err != nil {
+			t.Fatalf("ListRemotes failed: %v", err)
+		}
+		if len(remotes) != 0 {
+			t.Errorf("expected 0 remotes, got %d", len(remotes))
+		}
+	})
+
+	t.Run("with origin", func(t *testing.T) {
+		dir, _ := setupTestRepo(t)
+		runGit(t, dir, "remote", "add", "origin", "https://github.com/test/repo.git")
+
+		repo, err := OpenRepository(dir)
+		if err != nil {
+			t.Fatalf("failed to open: %v", err)
+		}
+
+		remotes, err := repo.ListRemotes()
+		if err != nil {
+			t.Fatalf("ListRemotes failed: %v", err)
+		}
+		if len(remotes) != 1 {
+			t.Fatalf("expected 1 remote, got %d", len(remotes))
+		}
+		if remotes[0].Name != "origin" {
+			t.Errorf("remote name = %q, want origin", remotes[0].Name)
+		}
+		if remotes[0].Repo != "test/repo" {
+			t.Errorf("remote repo = %q, want test/repo", remotes[0].Repo)
+		}
+	})
+
+	t.Run("multiple remotes", func(t *testing.T) {
+		dir, _ := setupTestRepo(t)
+		runGit(t, dir, "remote", "add", "origin", "https://github.com/user/fork.git")
+		runGit(t, dir, "remote", "add", "upstream", "https://github.com/org/repo.git")
+
+		repo, err := OpenRepository(dir)
+		if err != nil {
+			t.Fatalf("failed to open: %v", err)
+		}
+
+		remotes, err := repo.ListRemotes()
+		if err != nil {
+			t.Fatalf("ListRemotes failed: %v", err)
+		}
+		if len(remotes) != 2 {
+			t.Fatalf("expected 2 remotes, got %d", len(remotes))
+		}
+
+		names := map[string]bool{}
+		for _, r := range remotes {
+			names[r.Name] = true
+		}
+		if !names["origin"] || !names["upstream"] {
+			t.Errorf("expected origin and upstream, got %v", names)
+		}
+	})
+}
+
+func TestHasStash(t *testing.T) {
+	t.Run("no stash", func(t *testing.T) {
+		dir, _ := setupTestRepo(t)
+		repo, err := OpenRepository(dir)
+		if err != nil {
+			t.Fatalf("failed to open: %v", err)
+		}
+
+		has, err := repo.HasStash()
+		if err != nil {
+			t.Fatalf("HasStash failed: %v", err)
+		}
+		if has {
+			t.Error("expected no stash entries")
+		}
+	})
+
+	t.Run("with stash", func(t *testing.T) {
+		dir, _ := setupTestRepo(t)
+
+		// Create a file and stash it.
+		if err := os.WriteFile(filepath.Join(dir, "stashed.txt"), []byte("stash me"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		runGit(t, dir, "add", "stashed.txt")
+		runGit(t, dir, "stash")
+
+		repo, err := OpenRepository(dir)
+		if err != nil {
+			t.Fatalf("failed to open: %v", err)
+		}
+
+		has, err := repo.HasStash()
+		if err != nil {
+			t.Fatalf("HasStash failed: %v", err)
+		}
+		if !has {
+			t.Error("expected stash entries")
+		}
+	})
+}
+
+func TestPush(t *testing.T) {
+	t.Run("push to bare remote", func(t *testing.T) {
+		// Create a bare repo as the remote.
+		bareDir := t.TempDir()
+		runGit(t, bareDir, "init", "--bare")
+
+		// Create a working repo with the bare as origin.
+		dir, _ := setupTestRepo(t)
+		runGit(t, dir, "remote", "add", "origin", bareDir)
+
+		repo, err := OpenRepository(dir)
+		if err != nil {
+			t.Fatalf("failed to open: %v", err)
+		}
+
+		// Push should succeed (main/master branch).
+		wts, err := repo.ListWorktrees()
+		if err != nil {
+			t.Fatalf("ListWorktrees failed: %v", err)
+		}
+		branch := wts[0].Branch
+
+		if err := repo.Push("origin", branch); err != nil {
+			t.Fatalf("Push failed: %v", err)
+		}
+
+		// Verify the branch exists in the bare repo.
+		out := runGit(t, bareDir, "branch", "--list")
+		if !strings.Contains(out, branch) {
+			t.Errorf("expected branch %q in bare repo, got %q", branch, out)
+		}
+	})
+
+	t.Run("push already up to date", func(t *testing.T) {
+		bareDir := t.TempDir()
+		runGit(t, bareDir, "init", "--bare")
+
+		dir, _ := setupTestRepo(t)
+		runGit(t, dir, "remote", "add", "origin", bareDir)
+
+		repo, err := OpenRepository(dir)
+		if err != nil {
+			t.Fatalf("failed to open: %v", err)
+		}
+
+		wts, _ := repo.ListWorktrees()
+		branch := wts[0].Branch
+
+		// Push twice. Second should succeed (already up to date).
+		if err := repo.Push("origin", branch); err != nil {
+			t.Fatalf("first Push failed: %v", err)
+		}
+		if err := repo.Push("origin", branch); err != nil {
+			t.Fatalf("second Push failed (should be no-op): %v", err)
+		}
+	})
+
+	t.Run("push to unknown remote fails", func(t *testing.T) {
+		dir, _ := setupTestRepo(t)
+		repo, err := OpenRepository(dir)
+		if err != nil {
+			t.Fatalf("failed to open: %v", err)
+		}
+
+		err = repo.Push("nonexistent", "master")
+		if err == nil {
+			t.Fatal("expected error pushing to unknown remote")
+		}
+	})
+}

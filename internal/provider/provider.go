@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 )
@@ -83,6 +84,11 @@ type PRProvider interface {
 	// Returns results for branches that have an associated PR/MR.
 	FetchPRs(repoDir string, branches []string) PRResult
 
+	// CreatePR pushes the branch (if needed) and creates a PR/MR.
+	// targetRepo is "owner/repo" derived from the selected remote;
+	// if empty, the CLI's default repo detection is used.
+	CreatePR(repoDir, branch, targetRepo string) (*PRInfo, error)
+
 	// Name returns the display name of the provider (e.g., "GitHub", "GitLab").
 	Name() string
 
@@ -136,6 +142,11 @@ func (u *UnsupportedProvider) CheckCLI() CLIAvailability {
 // FetchPRs always returns an empty result.
 func (u *UnsupportedProvider) FetchPRs(_ string, _ []string) PRResult {
 	return make(PRResult)
+}
+
+// CreatePR always returns an error for unsupported providers.
+func (u *UnsupportedProvider) CreatePR(_, _, _ string) (*PRInfo, error) {
+	return nil, fmt.Errorf("PR creation not supported for %s", u.provider)
 }
 
 // Name returns the provider name.

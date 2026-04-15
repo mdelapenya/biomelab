@@ -2,6 +2,7 @@ package provider
 
 import (
 	"encoding/json"
+	"fmt"
 	"os/exec"
 	"strings"
 )
@@ -31,6 +32,33 @@ func (g *GitLabProvider) Name() string { return "GitLab" }
 
 // Provider returns ProviderGitLab.
 func (g *GitLabProvider) Provider() Provider { return ProviderGitLab }
+
+// CreatePR creates a merge request on GitLab using the glab CLI.
+// It runs "glab mr create --fill --source-branch <branch>" with an optional "--repo <targetRepo>".
+// After creation, it fetches full MR info via "glab mr view".
+func (g *GitLabProvider) CreatePR(repoDir, branch, targetRepo string) (*PRInfo, error) {
+	args := []string{"mr", "create", "--fill", "--source-branch", branch}
+	if targetRepo != "" {
+		args = append(args, "--repo", targetRepo)
+	}
+	cmd := exec.Command("glab", args...)
+	cmd.Dir = repoDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("glab mr create: %s", strings.TrimSpace(string(out)))
+	}
+
+	// glab mr create prints the MR URL on success. Fetch full info via glab mr view.
+	mr := fetchGitLabMR(repoDir, branch)
+	if mr == nil {
+		url := strings.TrimSpace(string(out))
+		if lines := strings.Split(url, "\n"); len(lines) > 0 {
+			url = strings.TrimSpace(lines[len(lines)-1])
+		}
+		return &PRInfo{URL: url, State: "open"}, nil
+	}
+	return mr, nil
+}
 
 func fetchGitLabMR(repoDir, branch string) *PRInfo {
 	cmd := exec.Command("glab", "mr", "view", branch,

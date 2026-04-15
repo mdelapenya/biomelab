@@ -3,22 +3,23 @@ package tui
 import "github.com/charmbracelet/bubbles/key"
 
 type keyMap struct {
-	Left           key.Binding
-	Right          key.Binding
-	Up             key.Binding
-	Down           key.Binding
-	Create         key.Binding
-	FetchPR        key.Binding
-	Delete         key.Binding
-	Pull           key.Binding
-	Refresh        key.Binding
-	Editor         key.Binding
-	Mouse          key.Binding
-	Enter          key.Binding
-	Quit           key.Binding
-	CreateSandbox  key.Binding
-	StartSandbox   key.Binding
-	StopSandbox    key.Binding
+	Left          key.Binding
+	Right         key.Binding
+	Up            key.Binding
+	Down          key.Binding
+	Create        key.Binding
+	FetchPR       key.Binding
+	Delete        key.Binding
+	Pull          key.Binding
+	Refresh       key.Binding
+	Editor        key.Binding
+	Mouse         key.Binding
+	Enter         key.Binding
+	Quit          key.Binding
+	SendPR        key.Binding
+	CreateSandbox key.Binding
+	StartSandbox  key.Binding
+	StopSandbox   key.Binding
 }
 
 func defaultKeyMap() keyMap {
@@ -74,6 +75,10 @@ func defaultKeyMap() keyMap {
 		Quit: key.NewBinding(
 			key.WithKeys("q", "ctrl+c"),
 			key.WithHelp("q", "quit"),
+		),
+		SendPR: key.NewBinding(
+			key.WithKeys("P"),
+			key.WithHelp("P", "send PR"),
 		),
 		CreateSandbox: key.NewBinding(
 			key.WithKeys("n"),
