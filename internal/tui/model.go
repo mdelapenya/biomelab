@@ -976,6 +976,7 @@ func (m *Model) renderFixedTop() string {
 			sbxInfo = &card.SandboxInfo{
 				Name:          m.sbxName(),
 				Status:        card.SandboxStatus(m.sandboxStatus),
+				Agent:         m.sbxAgent(),
 				ClientVersion: m.sandboxVersion.Client,
 				ServerVersion: m.sandboxVersion.Server,
 			}
@@ -1055,7 +1056,7 @@ func (m *Model) renderLinkedCards() string {
 			wtIDEs := m.ides[wt.Path]
 			var linkedSbx *card.SandboxInfo
 			if m.isSandbox() {
-				linkedSbx = &card.SandboxInfo{Name: m.sbxName(), Status: card.SandboxStatus(m.sandboxStatus)}
+				linkedSbx = &card.SandboxInfo{Name: m.sbxName(), Status: card.SandboxStatus(m.sandboxStatus), Agent: m.sbxAgent()}
 			}
 			content := card.Render(wt, agents, wtIDEs, m.prs[wt.Branch], m.cliAvail, prov, linkedSbx)
 
