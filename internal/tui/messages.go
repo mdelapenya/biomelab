@@ -1,11 +1,11 @@
 package tui
 
 import (
-	"github.com/mdelapenya/gwaim/internal/agent"
-	"github.com/mdelapenya/gwaim/internal/config"
-	"github.com/mdelapenya/gwaim/internal/git"
-	"github.com/mdelapenya/gwaim/internal/ide"
-	"github.com/mdelapenya/gwaim/internal/provider"
+	"github.com/mdelapenya/biomelab/internal/agent"
+	"github.com/mdelapenya/biomelab/internal/config"
+	"github.com/mdelapenya/biomelab/internal/git"
+	"github.com/mdelapenya/biomelab/internal/ide"
+	"github.com/mdelapenya/biomelab/internal/provider"
 )
 
 // refreshSource identifies which refresh path produced a refreshMsg.

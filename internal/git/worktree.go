@@ -369,7 +369,7 @@ func (r *Repository) linkedWorktree(name string) (*Worktree, error) {
 	// The gitdir file contains the path to the worktree's .git file.
 	wtPath, err := readWorktreePath(wtMetaDir)
 	if err != nil {
-		// Fallback: assume gwaim-worktrees directory.
+		// Fallback: assume biomelab-worktrees directory.
 		wtPath = filepath.Join(r.worktreesDir(), name)
 	}
 
@@ -428,11 +428,11 @@ func readWorktreePath(wtMetaDir string) (string, error) {
 	return filepath.Dir(gitdir), nil
 }
 
-// worktreesDir returns the directory where gwaim stores linked worktrees.
-// Uses .gwaim-worktrees/ in the repo root. Users must add this directory
+// worktreesDir returns the directory where biomelab stores linked worktrees.
+// Uses .biomelab-worktrees/ in the repo root. Users must add this directory
 // to their global gitignore (~/.config/git/ignore or core.excludesFile).
 func (r *Repository) worktreesDir() string {
-	return filepath.Join(r.repoRoot, ".gwaim-worktrees")
+	return filepath.Join(r.repoRoot, ".biomelab-worktrees")
 }
 
 // sanitizeWorktreeName replaces path separators with dashes so the name is safe
@@ -623,7 +623,7 @@ func (r *Repository) RemoveWorktree(name string) error {
 	wtMetaDir := filepath.Join(r.repoRoot, ".git", "worktrees", name)
 	wtPath, err := readWorktreePath(wtMetaDir)
 	if err != nil {
-		// Fallback: assume gwaim-worktrees directory.
+		// Fallback: assume biomelab-worktrees directory.
 		wtPath = filepath.Join(r.worktreesDir(), name)
 	}
 

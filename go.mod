@@ -1,4 +1,4 @@
-module github.com/mdelapenya/gwaim
+module github.com/mdelapenya/biomelab
 
 go 1.25.6
 

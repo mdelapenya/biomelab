@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/mdelapenya/gwaim/internal/process"
+	"github.com/mdelapenya/biomelab/internal/process"
 )
 
 type mockLister struct {
@@ -304,21 +304,21 @@ func TestDetect_CmdlineMatchesMostSpecificPath(t *testing.T) {
 	// worktree, not the parent repo.
 	lister := &mockLister{
 		procs: []process.Info{
-			{PID: 100, PPID: 1, Name: "code", Cmdline: "code /repo/.gwaim-worktrees/feature", Cwd: "/"},
+			{PID: 100, PPID: 1, Name: "code", Cmdline: "code /repo/.biomelab-worktrees/feature", Cwd: "/"},
 		},
 	}
 
 	d := NewDetectorWithLister(lister)
-	result := d.Detect([]string{"/repo", "/repo/.gwaim-worktrees/feature"})
+	result := d.Detect([]string{"/repo", "/repo/.biomelab-worktrees/feature"})
 
 	if len(result["/repo"]) != 0 {
 		t.Errorf("expected 0 IDEs for parent /repo, got %d", len(result["/repo"]))
 	}
-	if len(result["/repo/.gwaim-worktrees/feature"]) != 1 {
-		t.Fatalf("expected 1 IDE for worktree, got %d", len(result["/repo/.gwaim-worktrees/feature"]))
+	if len(result["/repo/.biomelab-worktrees/feature"]) != 1 {
+		t.Fatalf("expected 1 IDE for worktree, got %d", len(result["/repo/.biomelab-worktrees/feature"]))
 	}
-	if result["/repo/.gwaim-worktrees/feature"][0].Kind != VSCode {
-		t.Errorf("expected vscode, got %s", result["/repo/.gwaim-worktrees/feature"][0].Kind)
+	if result["/repo/.biomelab-worktrees/feature"][0].Kind != VSCode {
+		t.Errorf("expected vscode, got %s", result["/repo/.biomelab-worktrees/feature"][0].Kind)
 	}
 }
 
@@ -328,12 +328,12 @@ func TestDetect_CWDMatchNotAffectedByMostSpecificCmdline(t *testing.T) {
 	lister := &mockLister{
 		procs: []process.Info{
 			{PID: 100, PPID: 1, Name: "nvim", Cwd: "/repo"},
-			{PID: 200, PPID: 1, Name: "code", Cmdline: "code /repo/.gwaim-worktrees/feature", Cwd: "/"},
+			{PID: 200, PPID: 1, Name: "code", Cmdline: "code /repo/.biomelab-worktrees/feature", Cwd: "/"},
 		},
 	}
 
 	d := NewDetectorWithLister(lister)
-	result := d.Detect([]string{"/repo", "/repo/.gwaim-worktrees/feature"})
+	result := d.Detect([]string{"/repo", "/repo/.biomelab-worktrees/feature"})
 
 	if len(result["/repo"]) != 1 {
 		t.Fatalf("expected 1 IDE for /repo (CWD match), got %d", len(result["/repo"]))
@@ -341,10 +341,10 @@ func TestDetect_CWDMatchNotAffectedByMostSpecificCmdline(t *testing.T) {
 	if result["/repo"][0].Kind != Neovim {
 		t.Errorf("expected neovim, got %s", result["/repo"][0].Kind)
 	}
-	if len(result["/repo/.gwaim-worktrees/feature"]) != 1 {
-		t.Fatalf("expected 1 IDE for worktree, got %d", len(result["/repo/.gwaim-worktrees/feature"]))
+	if len(result["/repo/.biomelab-worktrees/feature"]) != 1 {
+		t.Fatalf("expected 1 IDE for worktree, got %d", len(result["/repo/.biomelab-worktrees/feature"]))
 	}
-	if result["/repo/.gwaim-worktrees/feature"][0].Kind != VSCode {
-		t.Errorf("expected vscode, got %s", result["/repo/.gwaim-worktrees/feature"][0].Kind)
+	if result["/repo/.biomelab-worktrees/feature"][0].Kind != VSCode {
+		t.Errorf("expected vscode, got %s", result["/repo/.biomelab-worktrees/feature"][0].Kind)
 	}
 }

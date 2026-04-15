@@ -8,12 +8,12 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/mdelapenya/gwaim/internal/agent"
-	"github.com/mdelapenya/gwaim/internal/config"
-	"github.com/mdelapenya/gwaim/internal/git"
-	"github.com/mdelapenya/gwaim/internal/ide"
-	"github.com/mdelapenya/gwaim/internal/process"
-	"github.com/mdelapenya/gwaim/internal/tui"
+	"github.com/mdelapenya/biomelab/internal/agent"
+	"github.com/mdelapenya/biomelab/internal/config"
+	"github.com/mdelapenya/biomelab/internal/git"
+	"github.com/mdelapenya/biomelab/internal/ide"
+	"github.com/mdelapenya/biomelab/internal/process"
+	"github.com/mdelapenya/biomelab/internal/tui"
 )
 
 var version = "dev"
@@ -28,7 +28,7 @@ func main() {
 	flag.Parse()
 
 	if versionFlag {
-		fmt.Println("gwaim", version)
+		fmt.Println("biomelab", version)
 		return
 	}
 
@@ -63,15 +63,15 @@ func main() {
 	}
 }
 
-// resolveRefreshInterval applies the precedence: CLI flag → GWAIM_REFRESH env → default.
+// resolveRefreshInterval applies the precedence: CLI flag → BIOME_REFRESH env → default.
 func resolveRefreshInterval(flagVal time.Duration) time.Duration {
 	if flagVal != 0 {
 		return flagVal
 	}
-	if val := os.Getenv("GWAIM_REFRESH"); val != "" {
+	if val := os.Getenv("BIOME_REFRESH"); val != "" {
 		d, err := time.ParseDuration(val)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "invalid GWAIM_REFRESH value %q: %v\n", val, err)
+			fmt.Fprintf(os.Stderr, "invalid BIOME_REFRESH value %q: %v\n", val, err)
 			os.Exit(1)
 		}
 		return d

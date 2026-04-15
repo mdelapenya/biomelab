@@ -10,12 +10,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/mdelapenya/gwaim/internal/agent"
-	"github.com/mdelapenya/gwaim/internal/config"
-	"github.com/mdelapenya/gwaim/internal/git"
-	"github.com/mdelapenya/gwaim/internal/ide"
-	"github.com/mdelapenya/gwaim/internal/process"
-	"github.com/mdelapenya/gwaim/internal/sandbox"
+	"github.com/mdelapenya/biomelab/internal/agent"
+	"github.com/mdelapenya/biomelab/internal/config"
+	"github.com/mdelapenya/biomelab/internal/git"
+	"github.com/mdelapenya/biomelab/internal/ide"
+	"github.com/mdelapenya/biomelab/internal/process"
+	"github.com/mdelapenya/biomelab/internal/sandbox"
 )
 
 type focusPanel int
@@ -816,7 +816,7 @@ func (a App) View() string {
 	}
 
 	// --- Top header: title only (timestamps are inside the right panel) ---
-	header := appTitleStyle.Render("gwaim - Git Worktree Agent Manager")
+	header := appTitleStyle.Render("biomelab - Git Worktree Agent Manager")
 
 	// --- Two-column layout with manual borders ---
 	leftWidth := a.leftPanelWidth()
@@ -907,7 +907,7 @@ func (a App) renderConfirmRemovePopup() string {
 }
 
 func (a App) renderEmptyState() string {
-	title := titleStyle.Render("gwaim - Git Worktree Agent Manager")
+	title := titleStyle.Render("biomelab - Git Worktree Agent Manager")
 	body := "\n\nNo repositories registered.\nPress 'a' to add a repository.\n"
 
 	switch a.mode {
@@ -1184,7 +1184,7 @@ func (a App) repoScrollState() panelScroll {
 
 // headerHeight returns the number of visible rows the header occupies.
 func (a App) headerHeight() int {
-	return lipgloss.Height(appTitleStyle.Render("gwaim - Git Worktree Agent Manager"))
+	return lipgloss.Height(appTitleStyle.Render("biomelab - Git Worktree Agent Manager"))
 }
 
 // leftPanelWidth returns the width of the repo list panel (15%, min 20).

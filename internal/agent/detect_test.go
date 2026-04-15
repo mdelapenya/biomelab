@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mdelapenya/gwaim/internal/process"
+	"github.com/mdelapenya/biomelab/internal/process"
 )
 
 type mockLister struct {
