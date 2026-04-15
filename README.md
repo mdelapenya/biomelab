@@ -358,54 +358,10 @@ The main card shows real-time sandbox status (checked every 5s):
 - **Yellow**: `🐳 sandbox: name (stopped)` + status bar: `Sandbox stopped — run: sbx run <name>`
 - **Red**: `🐳 sandbox: name (not found)` + status bar: `Sandbox not found — press 'n' to create it`
 
-## Architecture
+## Contributing
 
-biomelab is structured into the following internal packages:
-
-- **`cmd/biomelab`** -- Entry point. Loads the repo config, auto-adds the current directory's repo if applicable, creates the agent detector, and starts the Bubbletea program with the `App` model.
-- **`internal/config`** -- Persists the list of registered repositories to `~/.config/biomelab/repos.json`. Each `RepoEntry` has a `Path`, `Name`, and `Modes []ModeEntry` (each mode is `regular` or `sandbox` with optional agent/sandbox name). Provides `Load`/`Save`/`Add`/`Remove`/`AddMode`/`RemoveMode` with atomic writes (write to `.tmp`, rename). Deduplicates by repo path. Auto-migrates the old flat config format (with `Sandbox bool` fields) on load.
-- **`internal/git`** -- Git operations using [go-git v6](https://github.com/go-git/go-git). Handles repository opening, worktree listing (main + linked), creation, removal, pruning, pull, fetch, and sync status computation. Uses the `x/plumbing/worktree` extension for linked worktree management. Credentials are resolved via `git credential fill`.
-- **`internal/agent`** -- Detects coding agent processes using [gopsutil](https://github.com/shirou/gopsutil). Enumerates all processes, filters by known agent patterns, resolves their CWDs, and matches them to worktree paths. Reports PID, process state, and start time.
-- **`internal/provider`** -- Multi-provider PR/MR abstraction. Defines a `PRProvider` interface and auto-detects the hosting provider (GitHub, GitLab) from the origin remote URL. Includes `GitHubProvider` (via `gh` CLI), `GitLabProvider` (via `glab` CLI), and `UnsupportedProvider` (graceful fallback for unknown hosts). Runs lookups concurrently (up to 4 at a time). Extracts PR/MR number, title, state, draft status, and CI check/pipeline status.
-- **`internal/github`** -- GitHub-specific PR helpers: `ParsePRRef` (parses `"123"` or `"owner/repo#123"`) and `ValidatePR` (confirms a PR exists via `gh` and returns its head branch) for the fetch-PR flow.
-- **`internal/sandbox`** -- Docker Sandbox (`sbx`) CLI wrapper. Provides `Preflight()` to verify sbx is bootstrapped, `CheckStatus()` for real-time sandbox state monitoring (running/stopped/not found), `CreateArgs()`/`RunDetachedWithBranchArgs()`/`RunWithBranchArgs()` to build CLI commands, `SanitizeName()` for safe sandbox names, and `Create()`/`RunDetached()` for background execution.
-- **`internal/tui`** -- Two-layer Bubbletea TUI:
-  - **`App`** (`app.go`): Top-level model managing multiple repos. Renders a two-column layout with manually-drawn borders (`buildPanels()`). Left panel shows a tree of repo groups (header + indented mode lines), right panel shows the active mode's worktree dashboard. Each `repoGroup` holds `modes []config.ModeEntry` and `activeMode int`; there is one `Model` per repo with filtered views. Handles focus switching (`Tab`/`Shift+Tab`/mouse click), mode navigation (up/down traverses modes across groups), repo add/remove, and routes async messages to the correct child by `repoPath`.
-  - **`Model`** (`model.go`): Per-repo worktree dashboard. Has `activeMode *config.ModeEntry` and `allWorktrees`/`worktrees` (unfiltered/filtered). Regular mode shows `.biomelab-worktrees/` worktrees; sandbox mode shows `.sbx/<sandboxName>-worktrees/` worktrees; the main worktree is always shown. The main card is pinned at the top (`renderFixedTop`); linked worktree cards scroll in a viewport (`renderLinkedCards`). Manages card grid layout, hierarchical navigation, input modes (normal, create, fetch-PR, confirm-delete, confirm-create-sandbox, confirm-remove-sandbox, enroll-sandbox-from-card), mouse toggle, periodic refresh, and two-zone click detection. When embedded inside `App`, skips its own header rendering (the App renders it above both panels).
-- **`internal/tui/card`** -- Pure render function that produces card content for a single worktree. Displays branch, path, PR status, agent info, dirty status, and sync status using lipgloss styles.
-- **`internal/warp`** -- Terminal tab/panel management. Creates named repo tabs and split panels. Supports Warp, iTerm, Terminal.app on macOS; gnome-terminal, konsole, xfce4-terminal on Linux.
-
-### Data flow
-
-1. On startup, `App.Init()` loads the repo config and opens each repository. The current directory's repo is auto-added by `main.go` before launch.
-2. Each repo's `Model.Init()` starts its own refresh cycles: quick refresh (branch names), local refresh (dirty + agents every 5s), and network refresh (fetch + PRs at configurable interval).
-3. All async messages carry a `repoPath` field. `App.Update` routes each message to the matching child `Model` by path (matched against `repoGroup.path`). Messages for removed repos are silently discarded.
-4. `Model.renderFixedTop` produces the pinned main card section; `Model.renderLinkedCards` produces the scrollable worktree card grid. Both record card bounding zones for click detection.
-5. `Model.syncViewport` caches the fixed-top content and pushes linked cards into the viewport, dynamically sizing the viewport height.
-6. `App.View` composes: header (title only, 1 row) + two bordered panels (repo list + dashboard) using manually-rendered border characters for pixel-perfect height matching. Refresh timestamps are rendered inside the right panel by the embedded Model's `renderFixedTop`, not in the App header.
-
-## Testing
-
-Run all tests:
-
-```
-task test
-```
-
-Run tests with the race detector:
-
-```
-task test-race
-```
-
-The test suite covers:
-
-- **Git operations** -- Real temporary repositories created with go-git. Tests worktree listing, creation, removal, dirty detection.
-- **Agent detection** -- Mock `ProcessLister` interface returns canned process data. Tests PID matching, CWD resolution, and kind identification.
-- **TUI model** -- Synthetic messages injected into `Update`. Tests navigation, mode transitions, cursor clamping, and key bindings.
-- **Card rendering** -- Asserts that rendered output contains expected branch names, agent info, and status indicators.
-
-See `docs/testing-tui-design.md` for the full testing strategy and design document.
+For internal architecture, package layout, design decisions, state machines, and
+testing patterns, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## License
 
