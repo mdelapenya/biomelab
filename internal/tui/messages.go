@@ -25,13 +25,13 @@ type refreshMsg struct {
 	agents         agent.DetectionResult
 	ides           ide.DetectionResult
 	prs            provider.PRResult
-	hasPRs         bool   // true only when a network refresh attempted PR lookup
+	hasPRs         bool // true only when a network refresh attempted PR lookup
 	err            error
 	fetchErr       error
-	sandboxStatus  int                // sandbox.Status value for active mode
-	allSbxStatuses map[string]int    // all sandbox name → status (for tree dots)
-	sbxClientVer   string            // sbx client version
-	sbxServerVer   string            // sbx server version
+	sandboxStatus  int            // sandbox.Status value for active mode
+	allSbxStatuses map[string]int // all sandbox name → status (for tree dots)
+	sbxClientVer   string         // sbx client version
+	sbxServerVer   string         // sbx server version
 }
 
 // worktreeCreatedMsg is sent after a worktree is successfully created.
@@ -54,6 +54,13 @@ type prFetchedMsg struct {
 	branchName string
 	wtPath     string // actual worktree directory (may differ from branchName if sanitized)
 	err        error
+}
+
+// prSentMsg is sent after pushing a branch and creating a PR.
+type prSentMsg struct {
+	repoPath string
+	url      string // PR URL on success
+	err      error
 }
 
 // warpOpenedMsg is sent after attempting to open a Warp panel.

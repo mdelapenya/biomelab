@@ -28,12 +28,12 @@ const (
 type appMode int
 
 const (
-	appModeNormal          appMode = iota
-	appModeAddRepo                        // text input for repo path
-	appModeConfirmRemove                  // confirmation prompt for repo removal
-	appModeSelectRepoMode                 // choose regular vs sandbox after path validation
-	appModeEnrollAgent                    // text input for sandbox agent name (add-repo flow)
-	appModeAddSandboxMode                 // text input for agent to add sandbox mode to existing repo
+	appModeNormal         appMode = iota
+	appModeAddRepo                // text input for repo path
+	appModeConfirmRemove          // confirmation prompt for repo removal
+	appModeSelectRepoMode         // choose regular vs sandbox after path validation
+	appModeEnrollAgent            // text input for sandbox agent name (add-repo flow)
+	appModeAddSandboxMode         // text input for agent to add sandbox mode to existing repo
 )
 
 // repoGroup holds the state for a single registered repository with its modes.
@@ -52,25 +52,25 @@ type panelScroll struct {
 
 // App is the top-level bubbletea model that manages multiple repositories.
 type App struct {
-	repos            []*repoGroup
-	active           int        // selected repo index
-	focus            focusPanel // which panel has focus
-	detector         *agent.Detector
-	ideDetector      *ide.Detector
-	procLister       process.Lister
-	configPath       string
-	width            int
-	height           int
-	mode             appMode
-	textInput        textinput.Model
-	statusMsg        string
-	refreshInterval  time.Duration
-	repoScrollOffset    int // first visible repo card index
-	pendingRepo         *repoValidatedMsg // holds validated repo during mode/agent selection
-	pendingAgent        string            // agent name during sandbox enrollment preflight
-	pendingEnrollPath   string            // repo path for from-card sandbox enrollment
-	pendingEnrollAgent  string            // agent for from-card sandbox enrollment
-	sbxStatuses         map[string]sandbox.Status // system-wide sandbox statuses for tree dots
+	repos              []*repoGroup
+	active             int        // selected repo index
+	focus              focusPanel // which panel has focus
+	detector           *agent.Detector
+	ideDetector        *ide.Detector
+	procLister         process.Lister
+	configPath         string
+	width              int
+	height             int
+	mode               appMode
+	textInput          textinput.Model
+	statusMsg          string
+	refreshInterval    time.Duration
+	repoScrollOffset   int                       // first visible repo card index
+	pendingRepo        *repoValidatedMsg         // holds validated repo during mode/agent selection
+	pendingAgent       string                    // agent name during sandbox enrollment preflight
+	pendingEnrollPath  string                    // repo path for from-card sandbox enrollment
+	pendingEnrollAgent string                    // agent for from-card sandbox enrollment
+	sbxStatuses        map[string]sandbox.Status // system-wide sandbox statuses for tree dots
 }
 
 // addRepoMsg is returned after validating and opening a new repo.
@@ -890,6 +890,9 @@ func (a App) View() string {
 		case modeConfirmRemoveSandbox:
 			popup := child.renderConfirmRemoveSandboxPopup()
 			result = overlayCenter(result, popup, a.width, a.height)
+		case modeSendPR:
+			popup := child.renderSendPRPopup()
+			result = overlayCenter(result, popup, a.width, a.height)
 		}
 	}
 
@@ -1119,7 +1122,6 @@ func (a App) switchMode(groupIdx, modeIdx int) (tea.Model, tea.Cmd) {
 	a.repos[groupIdx].model = updated
 	return a, tea.Batch(cmd, modeCmd, a.resizeActiveChild())
 }
-
 
 // visibleRepoLines returns how many content lines fit in the left panel.
 func (a App) visibleRepoLines() int {
