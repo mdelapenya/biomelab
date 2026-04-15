@@ -80,7 +80,7 @@ func Load(path string) (*Config, error) {
 			if err := Save(path, &cfg); err != nil {
 				return nil, err
 			}
-			os.RemoveAll(filepath.Dir(legacy))
+			_ = os.RemoveAll(filepath.Dir(legacy))
 			return &cfg, nil
 		}
 		return nil, err

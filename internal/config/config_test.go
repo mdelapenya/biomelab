@@ -18,7 +18,7 @@ func TestDefaultPath(t *testing.T) {
 }
 
 func TestLoadNonExistent(t *testing.T) {
-	// Override legacy path so it doesn't find a real ~/.config/gwaim/repos.json.
+	// Override legacy path so it doesn't find a real ~/.config/biomelab/repos.json.
 	origFn := legacyPathFn
 	legacyPathFn = func() string { return filepath.Join(t.TempDir(), "no-legacy.json") }
 	t.Cleanup(func() { legacyPathFn = origFn })
