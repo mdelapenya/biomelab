@@ -28,7 +28,7 @@ internal/
   tui/styles.go             Lipgloss styles (cards, repo list, help)
   tui/messages.go           Custom tea.Msg types (all carry repoPath for stale detection)
   tui/card/card.go          Pure render function for worktree cards
-  warp/warp.go              Terminal tab/panel management
+  terminal/terminal.go      Open new terminal window (macOS Terminal.app / Linux x-terminal-emulator)
 docs/
   testing-tui-design.md     Testing strategy design document
 ```
@@ -81,9 +81,9 @@ The `internal/ide` package detects IDE processes open in each worktree, using th
 
 The `ProcessPatterns` list is ordered so that more specific patterns (e.g. "nvim") match before broader ones (e.g. "vim"). Electron-based IDEs spawn many helper processes (Code Helper Renderer/GPU/Plugin); these are grouped into process trees using PPID so each independent window is one card entry, while all tree PIDs are collected in `ExtraPIDs`. Two VS Code windows for the same worktree produce two entries. IDE processes are intentionally NOT killed on worktree deletion.
 
-### Terminal tab management
+### Terminal opening
 
-The `internal/warp` package tracks which repo tabs have been opened in the current session (in-memory map). First `Enter` creates a tab, subsequent presses split within it. macOS uses System Events AppleScript for keyboard shortcuts (Cmd+T, Cmd+Shift+D). Linux uses terminal-specific CLI flags.
+The `internal/terminal` package opens a new terminal window on each `Enter` press. No tab tracking, split panels, or focus management — every press spawns a fresh window. macOS writes a self-deleting `.command` temp file and runs `open` on it (no AppleScript, no permissions required). Linux uses `x-terminal-emulator` (system default). Users can override with `BIOME_TERMINAL` env var. Sandbox mode runs `sbx run --branch <branch> <name>`; regular mode opens a shell in the worktree directory.
 
 ### Mouse mode and click detection
 

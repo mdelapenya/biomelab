@@ -23,7 +23,7 @@ import (
 	"github.com/mdelapenya/biomelab/internal/provider"
 	"github.com/mdelapenya/biomelab/internal/sandbox"
 	"github.com/mdelapenya/biomelab/internal/tui/card"
-	"github.com/mdelapenya/biomelab/internal/warp"
+	"github.com/mdelapenya/biomelab/internal/terminal"
 )
 
 // DefaultNetworkRefreshInterval is the default interval for network operations
@@ -532,11 +532,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mode = modeNormal
 		return m, tea.Batch(doQuickRefresh(m.repo, rp), doLocalRefresh(m.repo, m.detector, m.ideDetector, m.procLister, rp, m.sbxName()))
 
-	case warpOpenedMsg:
+	case terminalOpenedMsg:
 		if msg.err != nil {
-			m.statusMsg = errorStyle.Render("Warp: " + msg.err.Error())
+			m.statusMsg = errorStyle.Render("Terminal: " + msg.err.Error())
 		} else {
-			m.statusMsg = cleanStyle.Render("Warp panel opened")
+			m.statusMsg = cleanStyle.Render("Terminal opened")
 		}
 		return m, nil
 
@@ -969,13 +969,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.cursor >= 0 && m.cursor < len(m.worktrees) {
 			wt := m.worktrees[m.cursor]
 			if m.isSandbox() {
-				// Sandbox mode: sbx run --branch knows which sandbox to enter, no cd needed.
 				args := sandbox.RunWithBranchArgs(m.sbxName(), wt.Branch)
-				sbxCmd := sandbox.CommandString(args)
-				return m, doOpenSandboxTab(m.repoName(), sbxCmd)
+				return m, doOpenTerminal("", sandbox.CommandString(args))
 			}
-			agents := m.agents[wt.Path]
-			return m, doOpenWarpPanel(m.repoName(), wt, agents)
+			return m, doOpenTerminal(wt.Path, "")
 		}
 
 	case key.Matches(msg, m.keys.Delete):
@@ -1835,14 +1832,10 @@ func doOpenEditor(dir string) tea.Cmd {
 	}
 }
 
-func doOpenWarpPanel(repoName string, wt git.Worktree, agents []agent.Info) tea.Cmd {
+func doOpenTerminal(dir, command string) tea.Cmd {
 	return func() tea.Msg {
-		agentCmd := ""
-		if len(agents) > 0 {
-			agentCmd = string(agents[0].Kind)
-		}
-		err := warp.OpenTab(repoName, wt.Path, agentCmd)
-		return warpOpenedMsg{err: err}
+		err := terminal.Open(dir, command)
+		return terminalOpenedMsg{err: err}
 	}
 }
 
@@ -1871,13 +1864,6 @@ func doCreateSandboxWorktree(sandboxName, repoPath, branch string) tea.Cmd {
 	}
 }
 
-// doOpenSandboxTab opens a terminal tab running an sbx command (no cd prefix).
-func doOpenSandboxTab(repoName, sbxCmd string) tea.Cmd {
-	return func() tea.Msg {
-		err := warp.OpenTab(repoName, "", sbxCmd)
-		return warpOpenedMsg{err: err}
-	}
-}
 
 // doFetchPRSandbox fetches a PR ref and creates the worktree inside the existing sandbox.
 // No terminal tab is opened — the user attaches later by pressing Enter on the card.

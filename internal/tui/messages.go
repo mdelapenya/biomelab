@@ -63,8 +63,8 @@ type prSentMsg struct {
 	err      error
 }
 
-// warpOpenedMsg is sent after attempting to open a Warp panel.
-type warpOpenedMsg struct {
+// terminalOpenedMsg is sent after attempting to open a terminal window.
+type terminalOpenedMsg struct {
 	err error
 }
 
