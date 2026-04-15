@@ -937,7 +937,7 @@ func (m *Model) syncViewport() {
 	m.viewport.SetContent(m.renderLinkedCards())
 
 	// Dynamically size viewport: total height minus fixed top minus footer.
-	footerH := 3 // \n + helpStyle MarginTop(1) + help text
+	footerH := 1 // help text line (pinned to bottom by viewContent)
 	vpH := m.height - m.fixedTopHeight - footerH
 	if vpH < 1 {
 		vpH = 1
@@ -1197,36 +1197,54 @@ func (m Model) ViewContent() string {
 }
 
 func (m Model) viewContent() string {
-	mouseLabel := "m mouse:off"
+	mouseLabel := "[m]ouse:off"
 	if m.mouseOn {
-		mouseLabel = "m mouse:on"
+		mouseLabel = "[m]ouse:on"
 	}
-	helpText := "←→↑↓ navigate • ↵ open tab • e editor • r refresh • d delete • p pull • " + mouseLabel + " • q quit"
-	help := helpStyle.MaxWidth(m.width).Render(helpText)
+	helpText := "←→↑↓ nav • [↵]open • [e]ditor • [r]efresh • [d]elete • [p]ull • " + mouseLabel + " • [q]uit"
+	help := lipgloss.NewStyle().Faint(true).MaxWidth(m.width).Render(helpText)
 
+	var body string
 	if m.ready {
-		return m.fixedTopContent + m.viewport.View() + "\n" + help
+		body = m.fixedTopContent + m.viewport.View()
+	} else {
+		body = m.fixedTopContent + m.renderLinkedCards()
 	}
 
-	return m.fixedTopContent + m.renderLinkedCards() + "\n" + help
+	// Pin help to the bottom of the panel.
+	bodyLines := strings.Split(strings.TrimRight(body, "\n"), "\n")
+	helpLines := strings.Split(help, "\n")
+	pad := m.height - len(bodyLines) - len(helpLines)
+	if pad < 0 {
+		pad = 0
+	}
+
+	lines := make([]string, 0, m.height)
+	lines = append(lines, bodyLines...)
+	for range pad {
+		lines = append(lines, "")
+	}
+	lines = append(lines, helpLines...)
+
+	return strings.Join(lines, "\n")
 }
 
 // renderMainCardHelp returns a styled help line for main-card-specific actions.
 // The content adapts to sandbox status; the style highlights when cursor is on the main card.
 func (m Model) renderMainCardHelp() string {
-	parts := []string{"c create", "f fetch PR"}
+	parts := []string{"[c]reate", "[f]etch PR"}
 
 	if m.isSandbox() {
 		switch m.sandboxStatus {
 		case sandbox.StatusRunning:
-			parts = append(parts, "S stop", "d rm sandbox")
+			parts = append(parts, "[S]top", "[d]el sandbox")
 		case sandbox.StatusStopped:
-			parts = append(parts, "s start", "d rm sandbox")
+			parts = append(parts, "[s]tart", "[d]el sandbox")
 		case sandbox.StatusNotFound:
-			parts = append(parts, "n create sandbox")
+			parts = append(parts, "[n]ew sandbox")
 		}
 	} else {
-		parts = append(parts, "n new sandbox")
+		parts = append(parts, "[n]ew sandbox")
 	}
 
 	text := strings.Join(parts, " • ")
@@ -1241,13 +1259,13 @@ func (m Model) renderMainCardHelp() string {
 // renderConfirmCreateSandboxPopup renders a confirmation popup for sandbox creation.
 func (m Model) renderConfirmCreateSandboxPopup() string {
 	cmd := strings.Join(sandbox.CreateArgs(m.sbxName(), m.sbxAgent(), m.repoPath()), " ")
-	msg := fmt.Sprintf("Create sandbox %q?\n\nThis may take a few minutes.\n\n%s\n\n[y] confirm  [Esc] cancel", m.sbxName(), cmd)
+	msg := fmt.Sprintf("Create sandbox %q?\n\nThis may take a few minutes.\n\n%s\n\n[y]es  [Esc] cancel", m.sbxName(), cmd)
 	return popupStyle.Render(msg)
 }
 
 // renderConfirmRemoveSandboxPopup renders a confirmation popup for sandbox removal.
 func (m Model) renderConfirmRemoveSandboxPopup() string {
-	msg := fmt.Sprintf("Remove sandbox %q?\n\nThis will stop the sandbox, remove all\nits containers and worktrees.\n\nsbx rm --force %s\n\n[y] confirm  [Esc] cancel", m.sbxName(), m.sbxName())
+	msg := fmt.Sprintf("Remove sandbox %q?\n\nThis will stop the sandbox, remove all\nits containers and worktrees.\n\nsbx rm --force %s\n\n[y]es  [Esc] cancel", m.sbxName(), m.sbxName())
 	return popupStyle.Render(msg)
 }
 
@@ -1260,9 +1278,9 @@ func (m Model) renderConfirmPopup() string {
 
 	var msg string
 	if m.deleteConfirmed {
-		msg = fmt.Sprintf("Delete worktree %q?\n\nPress Enter to confirm, Esc to cancel.", wt.Branch)
+		msg = fmt.Sprintf("Delete worktree %q?\n\n[Enter] confirm  [Esc] cancel", wt.Branch)
 	} else {
-		msg = fmt.Sprintf("Delete worktree %q?\n\nThis removes the directory, branch,\nand prunes metadata.\n\n[y] confirm  [Esc] cancel", wt.Branch)
+		msg = fmt.Sprintf("Delete worktree %q?\n\nThis removes the directory, branch,\nand prunes metadata.\n\n[y]es  [Esc] cancel", wt.Branch)
 	}
 
 	return popupStyle.Render(msg)

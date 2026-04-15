@@ -785,8 +785,8 @@ func TestRenderConfirmPopup(t *testing.T) {
 		if !strings.Contains(popup, "branch-b") {
 			t.Errorf("popup should contain branch name, got: %s", popup)
 		}
-		if !strings.Contains(popup, "[y] confirm") {
-			t.Errorf("popup should contain [y] confirm hint, got: %s", popup)
+		if !strings.Contains(popup, "[y]es") {
+			t.Errorf("popup should contain [y]es hint, got: %s", popup)
 		}
 	})
 
@@ -800,8 +800,8 @@ func TestRenderConfirmPopup(t *testing.T) {
 		if !strings.Contains(popup, "branch-b") {
 			t.Errorf("popup should contain branch name, got: %s", popup)
 		}
-		if !strings.Contains(popup, "Press Enter to confirm") {
-			t.Errorf("popup should contain Enter hint, got: %s", popup)
+		if !strings.Contains(popup, "[Enter] confirm") {
+			t.Errorf("popup should contain [Enter] confirm hint, got: %s", popup)
 		}
 	})
 
@@ -877,7 +877,7 @@ func TestRegularCreateDoesNotUseSandbox(t *testing.T) {
 func TestRenderMainCardHelp_NonSandbox(t *testing.T) {
 	m := testModel(2)
 	help := m.renderMainCardHelp()
-	for _, want := range []string{"c create", "f fetch PR", "n new sandbox"} {
+	for _, want := range []string{"[c]reate", "[f]etch PR", "[n]ew sandbox"} {
 		if !strings.Contains(help, want) {
 			t.Errorf("non-sandbox help = %q, missing %q", help, want)
 		}
@@ -889,7 +889,7 @@ func TestRenderMainCardHelp_SandboxRunning(t *testing.T) {
 	m.activeMode = &config.ModeEntry{Type: "sandbox", SandboxName: "test-sbx", Agent: "claude"}
 	m.sandboxStatus = sandbox.StatusRunning
 	help := m.renderMainCardHelp()
-	for _, want := range []string{"c create", "f fetch PR", "S stop", "d rm sandbox"} {
+	for _, want := range []string{"[c]reate", "[f]etch PR", "[S]top", "[d]el sandbox"} {
 		if !strings.Contains(help, want) {
 			t.Errorf("running sandbox help = %q, missing %q", help, want)
 		}
@@ -901,7 +901,7 @@ func TestRenderMainCardHelp_SandboxStopped(t *testing.T) {
 	m.activeMode = &config.ModeEntry{Type: "sandbox", SandboxName: "test-sbx", Agent: "claude"}
 	m.sandboxStatus = sandbox.StatusStopped
 	help := m.renderMainCardHelp()
-	for _, want := range []string{"s start", "d rm sandbox"} {
+	for _, want := range []string{"[s]tart", "[d]el sandbox"} {
 		if !strings.Contains(help, want) {
 			t.Errorf("stopped sandbox help = %q, missing %q", help, want)
 		}
@@ -913,8 +913,8 @@ func TestRenderMainCardHelp_SandboxNotFound(t *testing.T) {
 	m.activeMode = &config.ModeEntry{Type: "sandbox", SandboxName: "test-sbx", Agent: "claude"}
 	m.sandboxStatus = sandbox.StatusNotFound
 	help := m.renderMainCardHelp()
-	if !strings.Contains(help, "n create sandbox") {
-		t.Errorf("not-found sandbox help = %q, missing %q", help, "n create sandbox")
+	if !strings.Contains(help, "[n]ew sandbox") {
+		t.Errorf("not-found sandbox help = %q, missing %q", help, "[n]ew sandbox")
 	}
 }
 
@@ -923,8 +923,8 @@ func TestRenderFixedTop_ContainsMainCardHelp(t *testing.T) {
 	m.width = 120
 	m.height = 40
 	body := m.renderFixedTop()
-	if !strings.Contains(body, "c create") {
-		t.Error("renderFixedTop should include main card help line with 'c create'")
+	if !strings.Contains(body, "[c]reate") {
+		t.Error("renderFixedTop should include main card help line with '[c]reate'")
 	}
 }
 
@@ -942,12 +942,12 @@ func TestViewContent_BottomBarNoMainCardActions(t *testing.T) {
 			break
 		}
 	}
-	for _, absent := range []string{"c create", "f fetch PR", "n new sandbox", "S stop", "s start"} {
+	for _, absent := range []string{"[c]reate", "[f]etch PR", "[n]ew sandbox", "[S]top", "[s]tart"} {
 		if strings.Contains(helpLine, absent) {
 			t.Errorf("bottom help bar should not contain %q, got: %s", absent, helpLine)
 		}
 	}
-	for _, present := range []string{"d delete", "q quit", "navigate"} {
+	for _, present := range []string{"[d]elete", "[q]uit", "nav"} {
 		if !strings.Contains(helpLine, present) {
 			t.Errorf("bottom help bar should contain %q, got: %s", present, helpLine)
 		}
