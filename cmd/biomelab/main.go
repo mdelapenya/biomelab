@@ -44,7 +44,7 @@ func init() {
 				current = current + ":" + dir
 			}
 		}
-		os.Setenv("PATH", current)
+		_ = os.Setenv("PATH", current)
 	}
 }
 

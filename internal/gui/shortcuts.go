@@ -135,11 +135,6 @@ func (a *App) openDialog() func() {
 	}
 }
 
-// setActiveDialog stores a reference so Escape can call Hide().
-func (a *App) setActiveDialog(d interface{ Hide() }) {
-	a.activeDialog = d
-}
-
 // --- Navigation ---
 //
 // The linked worktree cards are in a grid (container.NewGridWrap).
