@@ -1,29 +1,59 @@
 package main
 
 import (
+	_ "embed"
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	"fyne.io/fyne/v2"
 
 	"github.com/mdelapenya/biomelab/internal/agent"
 	"github.com/mdelapenya/biomelab/internal/config"
 	"github.com/mdelapenya/biomelab/internal/git"
+	"github.com/mdelapenya/biomelab/internal/gui"
 	"github.com/mdelapenya/biomelab/internal/ide"
 	"github.com/mdelapenya/biomelab/internal/process"
-	"github.com/mdelapenya/biomelab/internal/tui"
 )
 
-var version = "dev"
+//go:embed icon.png
+var iconBytes []byte
+
+func init() {
+	// When launched as a GUI app (Spotlight, Finder, Dock), macOS gives a
+	// minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin). Tools like sbx, gh,
+	// glab, code, and go are typically in /usr/local/bin, /opt/homebrew/bin,
+	// or ~/go/bin. Expand PATH so exec.LookPath and exec.Command find them.
+	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
+		home, _ := os.UserHomeDir()
+		extra := []string{
+			"/usr/local/bin",
+			"/opt/homebrew/bin",
+			"/opt/homebrew/sbin",
+			filepath.Join(home, ".local", "bin"),
+			filepath.Join(home, "go", "bin"),
+			filepath.Join(home, ".docker", "bin"),
+		}
+		current := os.Getenv("PATH")
+		for _, dir := range extra {
+			if !strings.Contains(current, dir) {
+				current = current + ":" + dir
+			}
+		}
+		os.Setenv("PATH", current)
+	}
+}
 
 func main() {
 	var versionFlag bool
 	var refreshFlag time.Duration
 	flag.BoolVar(&versionFlag, "version", false, "Print version and exit")
 	flag.BoolVar(&versionFlag, "v", false, "Print version and exit (shorthand)")
-	flag.DurationVar(&refreshFlag, "refresh", 0, "Network refresh interval: how often to fetch from remote and look up PRs (e.g. 30s, 1m). Local state refreshes every 5s regardless.")
+	flag.DurationVar(&refreshFlag, "refresh", 0, "Network refresh interval (e.g. 30s, 1m)")
 	flag.DurationVar(&refreshFlag, "r", 0, "Network refresh interval (shorthand)")
 	flag.Parse()
 
@@ -54,27 +84,8 @@ func main() {
 		}
 	}
 
-	app := tui.NewApp(configPath, detector, ideDetector, procLister, refreshInterval)
-	p := tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	gui.AppIcon = &fyne.StaticResource{StaticName: "icon.png", StaticContent: iconBytes}
 
-	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-}
-
-// resolveRefreshInterval applies the precedence: CLI flag → BIOME_REFRESH env → default.
-func resolveRefreshInterval(flagVal time.Duration) time.Duration {
-	if flagVal != 0 {
-		return flagVal
-	}
-	if val := os.Getenv("BIOME_REFRESH"); val != "" {
-		d, err := time.ParseDuration(val)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "invalid BIOME_REFRESH value %q: %v\n", val, err)
-			os.Exit(1)
-		}
-		return d
-	}
-	return tui.DefaultNetworkRefreshInterval
+	app := gui.NewApp(configPath, detector, ideDetector, procLister, refreshInterval)
+	app.Run()
 }

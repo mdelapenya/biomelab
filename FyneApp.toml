@@ -1,0 +1,6 @@
+[Details]
+Icon = "cmd/biomelab/icon.png"
+Name = "Biomelab"
+ID = "com.mdelapenya.biomelab"
+Version = "0.1.0"
+Build = 11

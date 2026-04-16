@@ -1,5 +1,2 @@
 .task
-
-bin
-
-.goreleaser.nightly.yml
+bin/

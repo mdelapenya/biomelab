@@ -235,7 +235,20 @@ the regular entry.
 **Remove a mode:** Press `x` in the left panel. If it's the last sandbox mode,
 the repo converts to regular. If it's the last mode overall, the repo is removed.
 
-### 16. Auto-Add Current Repo
+### 16. Zoom (GUI only)
+
+The Fyne GUI supports font scaling via keyboard shortcuts:
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl+=` / `Cmd+=` | Zoom in (increase font size by 2) |
+| `Ctrl+-` / `Cmd+-` | Zoom out (decrease font size by 2) |
+| `Ctrl+0` / `Cmd+0` | Reset to default font size (14) |
+
+Font size range: 10–24. The entire UI re-renders on change, including
+the repo tree panel and all worktree cards.
+
+### 17. Auto-Add Current Repo
 
 If biomelab is launched from inside a git repository, that repo is automatically
 registered in regular mode. If launched from a non-git directory, biomelab shows

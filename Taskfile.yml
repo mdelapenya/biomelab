@@ -6,8 +6,13 @@ vars:
   GO:
     sh: eval "$(gvm {{.GO_VERSION}})" && which go
   BIN: bin/biomelab
+  APP_NAME: Biomelab
+  APP_ID: com.mdelapenya.biomelab
   VERSION:
     sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
+  # SEMVER: stripped to x.y.z for fyne package (which rejects anything else)
+  SEMVER:
+    sh: git describe --tags --always --dirty 2>/dev/null | sed 's/^v//; s/-.*//' || echo "0.0.1"
   LDFLAGS: -s -w -X main.version={{.VERSION}}
 
 tasks:
@@ -18,9 +23,18 @@ tasks:
     cmds:
       - go install github.com/andrewkroh/gvm/cmd/gvm@latest
 
+  setup-fyne:
+    desc: Install the fyne CLI packaging tool
+    status:
+      - command -v fyne
+    cmds:
+      - '{{.GO}} install fyne.io/tools/cmd/fyne@latest'
+
   build:
-    desc: Build the biomelab binary
+    desc: Build the biomelab binary for the current platform
     deps: [setup]
+    env:
+      CGO_ENABLED: "1"
     cmds:
       - '{{.GO}} build -ldflags "{{.LDFLAGS}}" -o {{.BIN}} ./cmd/biomelab'
     sources:
@@ -28,27 +42,107 @@ tasks:
     generates:
       - '{{.BIN}}'
 
+  build-darwin-arm64:
+    desc: Build for macOS arm64
+    deps: [setup]
+    env:
+      CGO_ENABLED: "1"
+      GOOS: darwin
+      GOARCH: arm64
+    cmds:
+      - '{{.GO}} build -ldflags "{{.LDFLAGS}}" -o {{.BIN}}-darwin-arm64 ./cmd/biomelab'
+
+  build-darwin-amd64:
+    desc: Build for macOS amd64
+    deps: [setup]
+    env:
+      CGO_ENABLED: "1"
+      GOOS: darwin
+      GOARCH: amd64
+    cmds:
+      - '{{.GO}} build -ldflags "{{.LDFLAGS}}" -o {{.BIN}}-darwin-amd64 ./cmd/biomelab'
+
+  build-darwin-universal:
+    desc: Build macOS universal binary (arm64 + amd64 via lipo)
+    deps: [build-darwin-arm64, build-darwin-amd64]
+    cmds:
+      - lipo -create -output {{.BIN}} {{.BIN}}-darwin-arm64 {{.BIN}}-darwin-amd64
+      - rm {{.BIN}}-darwin-arm64 {{.BIN}}-darwin-amd64
+      - lipo -info {{.BIN}}
+
+  package:
+    desc: Package biomelab for the current OS using fyne
+    deps: [setup, setup-fyne]
+    env:
+      CGO_ENABLED: "1"
+    cmds:
+      - mkdir -p bin
+      - >-
+        fyne package
+        --source-dir ./cmd/biomelab
+        --name {{.APP_NAME}}
+        --app-id {{.APP_ID}}
+        --app-version {{.SEMVER}}
+        --icon cmd/biomelab/icon.png
+        --release
+      - |
+        # Move whatever fyne package produced into bin/
+        for f in {{.APP_NAME}}.*; do
+          [ -e "$f" ] && rm -rf "bin/$f" && mv "$f" bin/
+        done
+
+  package-darwin-universal:
+    desc: Package macOS universal .app bundle
+    deps: [build-darwin-universal, setup-fyne]
+    cmds:
+      - mkdir -p bin
+      - rm -rf bin/{{.APP_NAME}}.app
+      - >-
+        fyne package
+        --executable {{.BIN}}
+        --name {{.APP_NAME}}
+        --app-id {{.APP_ID}}
+        --app-version {{.SEMVER}}
+        --icon cmd/biomelab/icon.png
+        --release
+      - mv {{.APP_NAME}}.app bin/
+
+  install-macos:
+    desc: Package and install Biomelab.app to /Applications
+    deps: [package-darwin-universal]
+    cmds:
+      - cp -R bin/{{.APP_NAME}}.app /Applications/
+      - echo "Installed to /Applications/{{.APP_NAME}}.app — find it in Spotlight"
+
   test:
     desc: Run all tests
     deps: [setup]
+    env:
+      CGO_ENABLED: "1"
     cmds:
       - '{{.GO}} test -v ./...'
 
   test-race:
     desc: Run all tests with race detector
     deps: [setup]
+    env:
+      CGO_ENABLED: "1"
     cmds:
       - '{{.GO}} test -race -v ./...'
 
   install:
     desc: Install biomelab to $GOPATH/bin
     deps: [setup]
+    env:
+      CGO_ENABLED: "1"
     cmds:
       - '{{.GO}} install -ldflags "{{.LDFLAGS}}" ./cmd/biomelab'
 
   lint:
     desc: Run golangci-lint v2
     deps: [setup]
+    env:
+      CGO_ENABLED: "1"
     cmds:
       - '{{.GO}} run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.3 run ./...'
 
