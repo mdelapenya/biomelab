@@ -2,7 +2,6 @@ name: Nightly
 
 on:
   workflow_run:
-    # workflows field matches by workflow name (the name: field in ci.yml, which is "CI").
     workflows: ["CI"]
     branches: [main]
     types: [completed]
@@ -11,9 +10,35 @@ permissions:
   contents: write
 
 jobs:
-  nightly:
-    name: Nightly Build
-    # types: [completed] fires for both success and failure, so we need this to gate on CI passing.
+  nightly-macos:
+    name: macOS (Universal)
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install Task
+        uses: go-task/setup-task@70f2430ad412f838533de8c0515c749ffb2b8bd3 # v1.1.0
+
+      - name: Package macOS universal .app
+        run: task package-darwin-universal
+
+      - name: Create zip
+        run: cd bin && zip -r Biomelab-darwin-universal.zip Biomelab.app
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: biomelab-nightly-darwin
+          path: bin/Biomelab-darwin-universal.zip
+
+  nightly-linux:
+    name: Linux (amd64)
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
@@ -24,6 +49,71 @@ jobs:
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: go.mod
+
+      - name: Install system dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc libgl1-mesa-dev xorg-dev
+
+      - name: Install Task
+        uses: go-task/setup-task@70f2430ad412f838533de8c0515c749ffb2b8bd3 # v1.1.0
+
+      - name: Package Linux
+        run: task package
+
+      - name: Prepare artifact
+        run: |
+          cd bin
+          for f in *.tar.xz; do
+            mv "$f" Biomelab-linux-amd64.tar.xz
+          done
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: biomelab-nightly-linux
+          path: bin/Biomelab-linux-amd64.tar.xz
+
+  nightly-windows:
+    name: Windows (amd64)
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install Task
+        uses: go-task/setup-task@70f2430ad412f838533de8c0515c749ffb2b8bd3 # v1.1.0
+
+      - name: Package
+        run: task package
+
+      - name: Create zip
+        shell: pwsh
+        run: Compress-Archive -Path bin/Biomelab.exe -DestinationPath Biomelab-windows-amd64.zip
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: biomelab-nightly-windows
+          path: Biomelab-windows-amd64.zip
+
+  publish:
+    name: Publish Nightly
+    needs: [nightly-macos, nightly-linux, nightly-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: artifacts
 
       - name: Compute nightly tag
         id: nightly
@@ -47,54 +137,53 @@ jobs:
           git tag "${NIGHTLY_TAG}"
           git push origin "${NIGHTLY_TAG}"
 
-      - name: Install yq
-        uses: mikefarah/yq@5a7e72a743649b1b3a47d1a1d8214f3453173c51 # v4.52.4
-
-      - name: Generate nightly goreleaser config
+      - name: Create nightly release
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NIGHTLY_TAG: ${{ steps.nightly.outputs.tag }}
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
-          cp .goreleaser.yml .goreleaser.nightly.yml
-          yq -i '.archives[0].name_template = "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"' .goreleaser.nightly.yml
-          yq -i ".builds[0].ldflags = [\"-s -w -X main.version=${NIGHTLY_TAG#v}-${SHORT_SHA}\"]" .goreleaser.nightly.yml
-          yq -i '.homebrew_casks[0].name = "biomelab-nightly"' .goreleaser.nightly.yml
-          yq -i '.homebrew_casks[0].description = "Git Worktree AI Manager (nightly) — a terminal dashboard for git worktrees and coding agents"' .goreleaser.nightly.yml
-          yq -i '.homebrew_casks[0].binary = "biomelab"' .goreleaser.nightly.yml
-          yq -i '.homebrew_casks[0].conflicts = [{"cask": "biomelab"}]' .goreleaser.nightly.yml
-          yq -i '.homebrew_casks[0].url.template = "https://github.com/mdelapenya/biomelab/releases/download/{{ .Tag }}/{{ .ArtifactName }}"' .goreleaser.nightly.yml
-          # Tell GoReleaser to generate the cask but not push it — we fix the version and push ourselves.
-          yq -i '.homebrew_casks[0].skip_upload = true' .goreleaser.nightly.yml
-          yq -i '.release.prerelease = true' .goreleaser.nightly.yml
-          yq -i '.release.make_latest = false' .goreleaser.nightly.yml
-          yq -i ".release.name_template = \"Nightly Build (${SHORT_SHA})\"" .goreleaser.nightly.yml
+          gh release create "${NIGHTLY_TAG}" \
+            --title "Nightly Build (${SHORT_SHA})" \
+            --prerelease \
+            --notes "Automated nightly build from main (${SHORT_SHA})" \
+            artifacts/biomelab-nightly-darwin/Biomelab-darwin-universal.zip \
+            artifacts/biomelab-nightly-linux/Biomelab-linux-amd64.tar.xz \
+            artifacts/biomelab-nightly-windows/Biomelab-windows-amd64.zip
 
-      - uses: goreleaser/goreleaser-action@9ed2f89a662bf1735a48bc8557fd212fa902bebf # v6.3.0
-        with:
-          version: latest
-          args: release --clean -f .goreleaser.nightly.yml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
-
-      - name: Fix and push nightly cask
+      - name: Update nightly cask
         env:
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
           NIGHTLY_TAG: ${{ steps.nightly.outputs.tag }}
         run: |
           VERSION="${NIGHTLY_TAG#v}"
-          CASK_FILE=$(find dist -name "biomelab-nightly.rb" | head -1)
+          SHA=$(sha256sum artifacts/biomelab-nightly-darwin/Biomelab-darwin-universal.zip | awk '{print $1}')
 
-          # GoReleaser mangles the version when the cask name differs from the project name,
-          # appending an extra "-nightly" suffix everywhere (version field, URLs, filenames).
-          # Replace all occurrences of the mangled version with the correct one.
-          MANGLED="${VERSION}-nightly"
-          sed -i "s/${MANGLED}/${VERSION}/g" "${CASK_FILE}"
+          cat > biomelab-nightly.rb << CASK
+          cask "biomelab-nightly" do
+            version "${VERSION}"
+            sha256 "${SHA}"
+
+            url "https://github.com/mdelapenya/biomelab/releases/download/${NIGHTLY_TAG}/Biomelab-darwin-universal.zip"
+            name "Biomelab Nightly"
+            desc "BiomeLab (nightly) — a desktop dashboard for git worktrees and coding agents"
+            homepage "https://github.com/mdelapenya/biomelab"
+
+            app "Biomelab.app"
+
+            conflicts_with cask: "biomelab"
+
+            zap trash: [
+              "~/Library/Preferences/com.mdelapenya.biomelab.plist",
+              "~/.config/biomelab",
+            ]
+          end
+          CASK
 
           cd "$(mktemp -d)"
           git clone "https://x-access-token:${HOMEBREW_TAP_GITHUB_TOKEN}@github.com/mdelapenya/homebrew-tap.git" .
           mkdir -p Casks
-          cp "${GITHUB_WORKSPACE}/${CASK_FILE}" Casks/biomelab-nightly.rb
+          cp "${GITHUB_WORKSPACE}/biomelab-nightly.rb" Casks/biomelab-nightly.rb
           git add Casks/biomelab-nightly.rb
           if git diff --cached --quiet; then
             echo "No changes to cask file."

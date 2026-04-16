@@ -3,8 +3,6 @@ package main
 import (
 	"testing"
 	"time"
-
-	"github.com/mdelapenya/biomelab/internal/tui"
 )
 
 func TestResolveRefreshInterval_FlagTakesPrecedence(t *testing.T) {
@@ -26,7 +24,7 @@ func TestResolveRefreshInterval_EnvFallback(t *testing.T) {
 func TestResolveRefreshInterval_Default(t *testing.T) {
 	t.Setenv("BIOME_REFRESH", "")
 	got := resolveRefreshInterval(0)
-	if got != tui.DefaultNetworkRefreshInterval {
-		t.Errorf("got %v, want %v (default)", got, tui.DefaultNetworkRefreshInterval)
+	if got != defaultRefreshInterval {
+		t.Errorf("got %v, want %v (default)", got, defaultRefreshInterval)
 	}
 }

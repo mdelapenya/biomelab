@@ -9,8 +9,37 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    name: Release
+  release-macos:
+    name: macOS (Universal)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install Task
+        uses: go-task/setup-task@70f2430ad412f838533de8c0515c749ffb2b8bd3 # v1.1.0
+
+      - name: Verify lipo is available
+        run: which lipo && lipo -info /usr/bin/lipo
+
+      - name: Package macOS universal .app
+        run: task package-darwin-universal
+
+      - name: Create zip
+        run: cd bin && zip -r Biomelab-darwin-universal.zip Biomelab.app
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: biomelab-darwin-universal
+          path: bin/Biomelab-darwin-universal.zip
+
+  release-linux-amd64:
+    name: Linux (amd64)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -21,10 +50,113 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: goreleaser/goreleaser-action@9ed2f89a662bf1735a48bc8557fd212fa902bebf # v6.3.0
+      - name: Install system dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc libgl1-mesa-dev xorg-dev
+
+      - name: Install Task
+        uses: go-task/setup-task@70f2430ad412f838533de8c0515c749ffb2b8bd3 # v1.1.0
+
+      - name: Package Linux
+        run: task package
+
+      - name: Prepare artifact
+        run: |
+          cd bin
+          for f in *.tar.xz; do
+            mv "$f" Biomelab-linux-amd64.tar.xz
+          done
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          version: latest
-          args: release --clean
+          name: biomelab-linux-amd64
+          path: bin/Biomelab-linux-amd64.tar.xz
+
+  release-windows-amd64:
+    name: Windows (amd64)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install Task
+        uses: go-task/setup-task@70f2430ad412f838533de8c0515c749ffb2b8bd3 # v1.1.0
+
+      - name: Package
+        run: task package
+
+      - name: Create zip
+        shell: pwsh
+        run: Compress-Archive -Path bin/Biomelab.exe -DestinationPath Biomelab-windows-amd64.zip
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: biomelab-windows-amd64
+          path: Biomelab-windows-amd64.zip
+
+  publish:
+    name: Publish Release
+    needs: [release-macos, release-linux-amd64, release-windows-amd64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.2.2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/biomelab-darwin-universal/Biomelab-darwin-universal.zip
+            artifacts/biomelab-linux-amd64/Biomelab-linux-amd64.tar.xz
+            artifacts/biomelab-windows-amd64/Biomelab-windows-amd64.zip
+
+      - name: Compute SHA256
+        id: sha
+        run: |
+          echo "darwin=$(sha256sum artifacts/biomelab-darwin-universal/Biomelab-darwin-universal.zip | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "linux=$(sha256sum artifacts/biomelab-linux-amd64/Biomelab-linux-amd64.tar.xz | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Update Homebrew Cask
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cat > biomelab.rb << CASK
+          cask "biomelab" do
+            version "${VERSION}"
+            sha256 "${{ steps.sha.outputs.darwin }}"
+
+            url "https://github.com/mdelapenya/biomelab/releases/download/${GITHUB_REF_NAME}/Biomelab-darwin-universal.zip"
+            name "Biomelab"
+            desc "BiomeLab — a desktop dashboard for git worktrees and coding agents"
+            homepage "https://github.com/mdelapenya/biomelab"
+
+            app "Biomelab.app"
+
+            zap trash: [
+              "~/Library/Preferences/com.mdelapenya.biomelab.plist",
+              "~/.config/biomelab",
+            ]
+          end
+          CASK
+
+          git clone "https://x-access-token:${HOMEBREW_TAP_GITHUB_TOKEN}@github.com/mdelapenya/homebrew-tap.git" tap
+          mkdir -p tap/Casks
+          mv biomelab.rb tap/Casks/biomelab.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/biomelab.rb
+          git commit -m "biomelab ${GITHUB_REF_NAME}"
+          git push

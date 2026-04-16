@@ -1,5 +1,5 @@
 {
-  description = "biomelab — Git Worktree AI Manager";
+  description = "biomelab — a dashboard for git worktrees and coding agents sandboxes";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -24,7 +24,7 @@
           subPackages = [ "cmd/biomelab" ];
 
           meta = with pkgs.lib; {
-            description = "Git Worktree AI Manager — a terminal dashboard for git worktrees and coding agents";
+            description = "BiomeLab — a dashboard for git worktrees and coding agents sandboxes";
             homepage = "https://github.com/mdelapenya/biomelab";
             license = licenses.mit;
             mainProgram = "biomelab";

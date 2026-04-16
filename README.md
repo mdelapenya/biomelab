@@ -1,367 +1,156 @@
 # biomelab
 
-**Git Worktree AI Manager** -- A terminal UI for managing git worktrees and the coding agents running inside them.
+**BiomeLab** -- A desktop GUI for managing git worktrees and the coding agents running inside them.
 
-> **Recommended: use [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) (`sbx`) for coding agents.** Sandbox mode gives each worktree an isolated Docker environment — its own filesystem, Docker daemon, and network — so agents can install packages, build containers, and modify files without touching the host. When adding a repo, sandbox mode is the default and recommended choice.
+> **Recommended: use [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) (`sbx`) for coding agents.** Sandbox mode gives each worktree an isolated Docker environment — its own filesystem, Docker daemon, and network — so agents can install packages, build containers, and modify files without touching the host.
 
 ## Features
 
-- **Multi-repo dashboard** -- Register multiple repositories and switch between them in a two-column layout. The left panel (15%) shows registered repos as a tree: each repo is a header (dimmed, click selects first mode) with indented mode lines below (regular `📂` or sandbox `🐳 [agent]`). The right panel (85%) shows the selected mode's worktree dashboard. A scrollbar appears when the tree overflows. Press `Tab` to switch focus between panels. The same repo can have multiple modes (e.g. regular + multiple sandbox agents).
-- **Persistent config** -- Registered repos are saved to `~/.config/biomelab/repos.json` and restored on next launch. Starting biomelab inside a git repo auto-adds it. Each repo entry has a list of modes (`regular` or `sandbox` with agent name). The old flat config format is auto-migrated on load.
-- **Start from anywhere** -- biomelab can launch from any directory, not just inside a git repo. If no repos are registered, an empty state guides you to add one.
-- **Hierarchical layout** -- The main worktree sits at the top (double-bordered card), with linked worktrees displayed in a responsive grid below.
+- **Multi-repo dashboard** -- Register multiple repositories and switch between them in a two-panel layout. The left panel shows registered repos as a tree with indented mode lines (regular `📂 [host]` or sandbox `🐳 [agent]`). The right panel shows the selected mode's worktree dashboard. Press `Tab` to switch focus between panels.
+- **Persistent config** -- Registered repos are saved to `~/.config/biomelab/repos.json` and restored on next launch. Starting biomelab inside a git repo auto-adds it.
 - **Worktree cards** -- Each card shows: branch name, path, dirty/clean status, sync status (ahead/behind/diverged/up-to-date), active agents, open IDEs, and PR info.
-- **Agent detection** -- Automatically detects coding agents (Claude, Kiro, Copilot, Codex, OpenCode, Gemini) running in each worktree by scanning system processes with gopsutil. Shows PID, process state, and start time.
-- **IDE detection** -- Detects open IDEs (VS Code, Cursor, Zed, Windsurf, GoLand, IntelliJ, PyCharm, Neovim, Vim) in each worktree. Matches by process name and worktree path (both CWD and cmdline). Electron-based IDEs (VS Code, Cursor) spawn many helper processes; biomelab groups them by process tree so each independent window appears as one card entry.
-- **PR/MR status** -- Fetches pull request (GitHub) or merge request (GitLab) information and CI check status for each branch. Shows PR/MR number, title, state (open/draft/merged/closed), and CI result (pass/fail/pending). The hosting provider is auto-detected from the origin remote URL.
-- **Sync status** -- Compares each branch against its remote tracking branches for reference remotes (`origin` and `upstream`) and shows whether it is up-to-date, ahead, behind, or diverged. Runs `git fetch` on every refresh cycle across all configured remotes to keep tracking refs current.
-- **Docker Sandbox mode** (recommended) -- When adding a repo, choose between Sandbox (recommended) and Regular mode (`[s] Sandbox (recommended)  [r] Regular  [esc] Cancel`). In sandbox mode, one sandbox (VM) is created per enrollment via `sbx create`. The agent (claude, codex, copilot, gemini, kiro, opencode, shell) is chosen at enrollment time and reused for all worktrees. The same repo can have multiple sandbox modes with different agents, each appearing as an indented `🐳 [agent]` line under the repo header in the left panel tree. Adding a sandbox to a repo with only a regular mode replaces the regular entry. The main card displays real-time sandbox status: running (green), stopped (yellow with start command), or not found (red with create command). A pre-flight check ensures `sbx` is bootstrapped before enrollment.
-- **Create worktrees** -- Press `c` from the main card to create a new linked worktree. A branch name prompt appears under the main card. In regular mode, a git worktree is created directly on the host. In sandbox mode, the worktree is created inside the existing sandbox via `sbx run -d --branch` (detached) — no new VM is created. No terminal tabs auto-open; press Enter on the card to attach.
-- **Delete worktrees** -- Press `d` on any linked worktree to delete it. A centered popup overlay shows what will happen: press `y` to arm, then `Enter` to confirm. `Esc` cancels at any point. The worktree directory is removed, the branch is deleted, and stale metadata is pruned. The main worktree cannot be deleted.
-- **Pull** -- Press `p` to pull. Fetches all configured remotes (origin, upstream, forks, etc.) first so all tracking refs are current, then merges from origin. Uses go-git with credentials resolved from your configured git credential helpers (osxkeychain, gh auth, etc.).
-- **Fetch PR into worktree** -- Press `f` from the main card to fetch a pull request into a new linked worktree. A prompt accepts a plain PR number (`123`) or a fork reference (`owner/repo#123`). biomelab validates the PR via `gh`, fetches the head branch, and creates a worktree for it. The branch ref is preserved exactly (e.g., `ralph/issue-19`), while the directory name is sanitized to be filesystem-safe.
-- **Refresh card** -- Press `r` to force-refresh the selected card's state: worktree dirty/sync status, running agents, open IDEs, and PR status. This triggers a network refresh (git fetch + PR lookup) for the selected worktree rather than waiting for the next automatic refresh cycle.
-- **Open in terminal** -- Press `Enter` to open the selected worktree in a new terminal tab. If an agent is running in the worktree, the agent command is executed automatically. The first `Enter` creates a tab named after the repo (e.g., `docker/sandboxes`); subsequent presses add split panels to that same tab.
-- **Mouse support** -- Press `m` to toggle mouse mode. When enabled, click on cards to select them. When disabled (default), normal text selection works for copying paths, branch names, etc.
-- **Scrollable viewport** -- The main worktree card stays pinned at the top; linked worktree cards scroll independently below it. A scrollbar on the right panel border shows the current scroll position. Scroll with the mouse wheel, page up/down, or arrow keys (which auto-scroll to keep the selected card visible).
+- **Agent detection** -- Automatically detects coding agents (Claude, Kiro, Copilot, Codex, OpenCode, Gemini) running in each worktree by scanning system processes.
+- **IDE detection** -- Detects open IDEs (VS Code, Cursor, Zed, Windsurf, GoLand, IntelliJ, PyCharm, Neovim, Vim) in each worktree.
+- **PR/MR status** -- Fetches pull request (GitHub) or merge request (GitLab) information and CI check status for each branch.
+- **Sync status** -- Compares each branch against remote tracking branches and shows ahead/behind/diverged status.
+- **Docker Sandbox mode** (recommended) -- One sandbox per agent per repo. Real-time status monitoring (running/stopped/not found). Create, start, stop, and remove sandboxes from the dashboard.
+- **Create/delete worktrees** -- Press `c` to create, `d` to delete (with confirmation).
+- **Fetch PR** -- Press `f` to fetch a PR into a new worktree. Accepts `123` or `owner/repo#123`.
+- **Send PR** -- Press `Shift+P` to push and create a PR (multi-phase: dirty check → remote selection → confirmation). Detects existing PRs for push-only mode.
+- **Pull** -- Press `p` to fetch all remotes and merge from origin.
+- **Open in terminal** -- Press `Enter` to open a worktree in a new terminal window.
+- **Open in editor** -- Press `e` to open in `$BIOME_EDITOR` (defaults to VS Code).
+- **Zoom** -- `Ctrl+=` / `Ctrl+-` / `Ctrl+0` to scale the UI font.
+- **System tray** -- Closing the window hides to system tray. Tray menu toggles Show/Hide.
+- **Auto-refresh** -- Local state refreshes every 5s, network state every 30s (configurable).
 
 ## Requirements
 
-- **Go 1.25+** -- Required to build from source.
-- **gh CLI** (GitHub) -- The [GitHub CLI](https://cli.github.com/) is required for pull request and CI status information on GitHub-hosted repositories. Install it and authenticate with `gh auth login`.
-- **glab CLI** (GitLab) -- The [GitLab CLI](https://gitlab.com/gitlab-org/cli) is required for merge request and CI pipeline status on GitLab-hosted repositories. Install it and authenticate with `glab auth login`.
-- **git** -- Required on the host for credential helper resolution (`git credential fill`). All other git operations use go-git natively.
-- **sbx CLI** (recommended) -- The [Docker Sandboxes CLI](https://docs.docker.com/ai/sandboxes/) is required for sandbox mode, which is the recommended way to use biomelab with coding agents. Install it and run `sbx ls` once to complete setup (Docker auth, network policy). Each sandbox gets its own isolated Docker environment.
-- **Global gitignore** -- biomelab creates worktrees in `.biomelab-worktrees/` (regular mode) and `.sbx/` (sandbox mode) directories at the repository root. You must add these to your global gitignore so they are not tracked by any repository:
+- **Go 1.25+** and CGo -- Required to build from source. Linux needs `gcc libgl1-mesa-dev xorg-dev`.
+- **gh CLI** (GitHub) -- For PR status. Install and authenticate with `gh auth login`.
+- **glab CLI** (GitLab) -- For MR status. Install and authenticate with `glab auth login`.
+- **sbx CLI** (recommended) -- For sandbox mode. Install and run `sbx ls` once to complete setup.
+- **Global gitignore** -- Add `.biomelab-worktrees` and `.sbx` to your global gitignore:
 
   ```bash
   echo ".biomelab-worktrees" >> ~/.config/git/ignore
   echo ".sbx" >> ~/.config/git/ignore
   ```
 
-  Or, if you use a custom `core.excludesFile`:
-
-  ```bash
-  echo ".biomelab-worktrees" >> "$(git config --global core.excludesFile)"
-  echo ".sbx" >> "$(git config --global core.excludesFile)"
-  ```
-
-## Supported providers
-
-biomelab auto-detects the hosting provider from the origin remote URL and adapts its PR/MR status display accordingly.
-
-| Provider       | CLI tool | PR/MR status | CI status | Notes                                          |
-|----------------|----------|--------------|-----------|-------------------------------------------------|
-| **GitHub**     | `gh`     | Supported    | Supported | Full support via `gh pr view`                   |
-| **GitLab**     | `glab`   | Supported    | Supported | MR status via `glab mr view`, pipeline status   |
-| **Other/Unknown** | --    | Not yet      | Not yet   | Falls back to GitHub CLI behavior               |
-
-Self-hosted instances are detected via hostname patterns (e.g., `gitlab.mycompany.com` is detected as GitLab).
-
-When a provider's CLI tool is not installed or not authenticated, the card shows a clear message explaining what to install or configure, rather than blank fields.
-
-## Terminal support
-
-The "open in terminal" feature works across multiple environments:
-
-| Environment       | How it works                                       |
-|-------------------|----------------------------------------------------|
-| **Warp (macOS)**  | Creates/finds a named repo tab, adds split panels  |
-| **iTerm (macOS)** | Opens a new tab via Cmd+T keyboard shortcut        |
-| **Terminal.app**  | Opens a new tab via Cmd+T keyboard shortcut        |
-| **gnome-terminal**| `--tab` with `--working-directory`                  |
-| **konsole**       | `--new-tab` with `--workdir`                        |
-| **xfce4-terminal**| `--tab` with `--working-directory`                  |
-
-On macOS, the terminal is auto-detected from the `TERM_PROGRAM` environment variable.
-
 ## Installation
 
-### Homebrew (macOS / Linux)
+### macOS (Homebrew cask)
 
 ```bash
-brew install mdelapenya/tap/biomelab
+brew install --cask mdelapenya/tap/biomelab
 ```
 
-### Nightly builds (edge)
+This installs `Biomelab.app` to `/Applications` — find it in Spotlight.
 
-Nightly builds are published automatically from `main` after every successful CI run. They let you test the latest changes before a stable release.
+### macOS (manual)
 
-**Homebrew (macOS / Linux):**
+Download `Biomelab-darwin-universal.zip` from the [latest release](https://github.com/mdelapenya/biomelab/releases/latest), unzip, and drag `Biomelab.app` to `/Applications`.
+
+> **Gatekeeper note:** The binary is not signed. Run `xattr -d com.apple.quarantine /Applications/Biomelab.app` if macOS blocks it.
+
+### Linux
+
+Download `Biomelab-linux-amd64.tar.xz` from the [latest release](https://github.com/mdelapenya/biomelab/releases/latest) and extract.
+
+### Windows
+
+Download `Biomelab-windows-amd64.zip` from the [latest release](https://github.com/mdelapenya/biomelab/releases/latest), extract, and run `Biomelab.exe`.
+
+### Nightly builds
 
 ```bash
 brew install --cask mdelapenya/tap/biomelab-nightly
+brew reinstall --cask mdelapenya/tap/biomelab-nightly  # update to latest
 ```
 
-The nightly cask installs the same `biomelab` binary — the version string identifies it (e.g., `biomelab 0.1.0-nightly-750de2a`). It conflicts with the stable `biomelab` formula, so only one can be installed at a time.
-
-To update to the latest nightly (the cask version is fixed, so `brew upgrade` won't detect changes):
-
-```bash
-brew reinstall --cask mdelapenya/tap/biomelab-nightly
-```
-
-**Pre-built binaries:**
-
-Download from the [releases page](https://github.com/mdelapenya/biomelab/releases) — look for the pre-release tagged `v<version>-nightly`. The archive names include `_nightly_` (e.g., `biomelab_nightly_darwin_arm64.tar.gz`).
-
-### Nix
-
-Run without installing:
-
-```bash
-nix run github:mdelapenya/biomelab
-```
-
-Or add to your flake inputs:
-
-```nix
-{
-  inputs.biomelab.url = "github:mdelapenya/biomelab";
-}
-```
-
-### Debian / Ubuntu (apt)
-
-Download the `.deb` package from the [latest release](https://github.com/mdelapenya/biomelab/releases/latest) and install it:
-
-```bash
-sudo dpkg -i biomelab_*.deb
-```
-
-### Fedora / RHEL (dnf)
-
-Download the `.rpm` package from the [latest release](https://github.com/mdelapenya/biomelab/releases/latest) and install it:
-
-```bash
-sudo rpm -i biomelab_*.rpm
-```
-
-### Pre-built binaries
-
-Download a pre-built binary from the [latest release](https://github.com/mdelapenya/biomelab/releases/latest):
-
-```bash
-# macOS (Apple Silicon)
-curl -L https://github.com/mdelapenya/biomelab/releases/latest/download/biomelab_darwin_arm64.tar.gz | tar xz
-sudo mv biomelab /usr/local/bin/
-
-# macOS (Intel)
-curl -L https://github.com/mdelapenya/biomelab/releases/latest/download/biomelab_darwin_amd64.tar.gz | tar xz
-sudo mv biomelab /usr/local/bin/
-
-# Linux (amd64)
-curl -L https://github.com/mdelapenya/biomelab/releases/latest/download/biomelab_linux_amd64.tar.gz | tar xz
-sudo mv biomelab /usr/local/bin/
-
-# Linux (arm64)
-curl -L https://github.com/mdelapenya/biomelab/releases/latest/download/biomelab_linux_arm64.tar.gz | tar xz
-sudo mv biomelab /usr/local/bin/
-```
-
-On **Windows**, download the `.zip` from the [releases page](https://github.com/mdelapenya/biomelab/releases/latest) and add the extracted `biomelab.exe` to your `PATH`.
-
-> **macOS Gatekeeper note:** The pre-built binaries are not signed or notarised. On macOS, you may see a warning saying *"biomelab cannot be opened because the developer cannot be verified."* To resolve this, run:
->
-> ```bash
-> xattr -d com.apple.quarantine /usr/local/bin/biomelab
-> ```
-
-### Using `go install`
-
-```
-go install github.com/mdelapenya/biomelab/cmd/biomelab@latest
-```
+Or download from the [releases page](https://github.com/mdelapenya/biomelab/releases) — look for `v<version>-nightly`.
 
 ### From source
 
-Clone the repository and use [Task](https://taskfile.dev/) to build:
+```bash
+# Linux prerequisites
+sudo apt install gcc libgl1-mesa-dev xorg-dev
 
-```
 git clone https://github.com/mdelapenya/biomelab.git
 cd biomelab
-task build
-```
-
-The binary will be placed in `bin/biomelab`. You can also install it directly to your `$GOPATH/bin`:
-
-```
-task install
+task build          # builds bin/biomelab
+task install        # installs to $GOPATH/bin
+task install-macos  # builds universal .app + installs to /Applications
 ```
 
 ## Usage
 
-Run `biomelab` from any directory:
-
-```
-biomelab
-```
-
-If started inside a git repository, it auto-adds it to the dashboard. The TUI shows a two-column layout: repo list on the left, worktree dashboard on the right. Data refreshes automatically.
-
-### Configuring the refresh interval
-
-The dashboard refresh interval can be tuned via a CLI flag or environment variable:
-
-```bash
-biomelab --refresh 10s     # refresh every 10 seconds
-biomelab -r 500ms          # refresh every 500ms
-```
-
-Or set the `BIOME_REFRESH` environment variable:
-
-```bash
-export BIOME_REFRESH=30s  # set once in shell profile
-biomelab
-```
-
-Both accept any valid Go `time.Duration` string (`1s`, `500ms`, `1m`, etc.).
-
-**Precedence order** (highest to lowest): CLI flag (`--refresh` / `-r`) → `BIOME_REFRESH` env var → default (`3s`).
-
-The current refresh interval is shown in the help bar at the bottom of the screen.
+Launch `biomelab` from any directory, or open `Biomelab.app` from Spotlight/Finder. If started inside a git repository, it auto-adds it to the dashboard.
 
 ### Environment variables
 
-| Variable         | Description                                                        | Default |
-|------------------|--------------------------------------------------------------------|---------|
-| `BIOME_REFRESH`  | Dashboard refresh interval as a Go `time.Duration` string (e.g. `10s`, `500ms`, `1m`). Overridden by the `--refresh` CLI flag. | `3s`    |
-| `BIOME_EDITOR`   | Editor command used when pressing `e` to open a worktree. Any command that accepts a directory argument works. | `code`  |
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `BIOME_REFRESH` | Network refresh interval (e.g. `30s`, `1m`) | `30s` |
+| `BIOME_EDITOR` | Editor command for `e` key | `code` |
+| `BIOME_TERMINAL` | Terminal command for `Enter` key | auto-detect |
 
 ### Keyboard shortcuts
 
-#### App-level (always available)
+#### Left panel (repo tree)
 
-| Key              | Action                                                            |
-|------------------|-------------------------------------------------------------------|
-| `Tab` / `Shift+Tab` | Switch focus between repo list (left) and worktree dashboard (right) |
-| Mouse click      | Click a panel to focus it; click a repo name to select it         |
-| `q` / `Ctrl+C`  | Quit                                                              |
+| Key | Action |
+|-----|--------|
+| `↑` / `k` | Previous mode |
+| `↓` / `j` | Next mode |
+| `a` | Add repository |
+| `n` | New sandbox mode for selected repo |
+| `x` | Remove selected mode |
+| `Enter` | Switch focus to right panel |
+| `Tab` | Switch focus to right panel |
 
-#### Repo list (left panel focused)
+#### Right panel (worktree dashboard)
 
-| Key              | Action                                                            |
-|------------------|-------------------------------------------------------------------|
-| `up` / `k`      | Select previous mode (traverses modes across repo groups)         |
-| `down` / `j`    | Select next mode (traverses modes across repo groups)             |
-| `a`              | Add a new repository (enter path, choose regular/sandbox)         |
-| `n`              | Add a sandbox mode to the selected repo (prompts for agent)       |
-| `x`              | Remove selected mode from dashboard (popup confirmation)          |
-| `Enter`          | Switch focus to worktree dashboard                                |
-
-#### Worktree dashboard (right panel focused)
-
-| Key              | Action                                                            |
-|------------------|-------------------------------------------------------------------|
-| `left` / `h`    | Move cursor to the previous linked worktree                       |
-| `right` / `l`   | Move cursor to the next linked worktree                           |
-| `up` / `k`      | Move cursor up (first linked row goes to main)                    |
-| `down` / `j`    | Move cursor down (main goes to first linked card)                 |
-| `Enter`          | Open selected worktree in a new terminal tab/panel                |
-| `n`              | New sandbox (main card, when sandbox not found or non-sandbox repo) |
-| `s`              | Start stopped sandbox (main card, sandbox mode, when stopped)     |
-| `S`              | Stop running sandbox (main card, sandbox mode, when running)      |
-| `c`              | Create a new worktree (only from the main card)                   |
-| `d` (main card)  | Remove sandbox with `sbx rm` (sandbox mode only, confirmation popup) |
-| `f`              | Fetch a PR into a new worktree (only from the main card; accepts `123` or `owner/repo#123`) |
-| `d`              | Delete the selected linked worktree (y + Enter to confirm)        |
-| `e`              | Open the selected worktree in an editor (`$BIOME_EDITOR` or `code`) |
-| `p`              | Pull from remote (fetches and merges into main branch)            |
-| `r`              | Force-refresh the selected card (worktree, agents, IDEs, PRs)     |
-| `m`              | Toggle mouse mode on/off (default: off for text selection)        |
+| Key | Action | Context |
+|-----|--------|---------|
+| `↑` / `k` | Navigate up (by row in grid) | Any card |
+| `↓` / `j` | Navigate down (by row in grid) | Any card |
+| `←` / `h` | Navigate left | Linked cards |
+| `→` / `l` | Navigate right | Linked cards |
+| `Enter` | Open in terminal | Any card |
+| `e` | Open in editor | Any card |
+| `c` | Create worktree | Main card |
+| `f` | Fetch PR/MR | Main card |
+| `d` | Delete worktree / remove sandbox | Linked: delete; Main+sandbox: remove |
+| `p` | Pull from remote | Any card |
+| `Shift+P` | Send PR (push + create) | Linked cards |
+| `r` | Refresh card | Any card |
+| `n` | Create/enroll sandbox | Main card |
+| `s` | Start stopped sandbox | Main card |
+| `Shift+S` | Stop running sandbox | Main card |
+| `Ctrl+=` | Zoom in | Global |
+| `Ctrl+-` | Zoom out | Global |
+| `Ctrl+0` | Reset zoom | Global |
+| `Esc` | Dismiss dialog / switch panel | Global |
 
 ### Navigation model
 
-The layout is hierarchical: the main worktree occupies its own row at the top, and linked worktrees form a grid below.
-
-- **Left/Right** move horizontally within the linked grid (no effect on main).
-- **Up** from the first linked row jumps to main. **Down** from main jumps to the first linked card.
-- **Up/Down** within the linked grid moves by one row (number of columns).
-
-### Mouse mode
-
-Mouse is **off by default** so you can select and copy text (branch names, paths, PR URLs) normally. Press `m` to enable mouse mode for click-to-select. Press `m` again to disable it. The help bar shows the current state: `m mouse:off` or `m mouse:on`.
-
-### Terminal tab management
-
-When you press `Enter` on a worktree card:
-
-1. **First time**: A new terminal tab is created, named after the repo (e.g., `docker/sandboxes`). The tab opens with a `cd` to the worktree directory.
-2. **Subsequent times**: A split panel is added to the existing repo tab.
-3. **Agent auto-launch**: If an agent is detected in the worktree, the agent command (e.g., `claude`) runs automatically in the new panel.
-
-The biomelab dashboard stays running in its own tab throughout.
+The main worktree sits at the top. Linked worktrees form a grid below.
+- **←/→** move horizontally within the grid
+- **↑** from first row → main card. **↓** from main → first linked card
+- **↑/↓** within the grid jump by row (column count). If no card exists directly below, jumps to the last card in the next row
 
 ## Sandbox workflows
 
-biomelab recommends Docker Sandboxes for coding agents. Here are all the ways to work with sandboxes:
+See the product-owner skill (`/product-owner`) for detailed sandbox workflows including: enrolling repos, adding agents, creating/deleting worktrees in sandboxes, and sandbox lifecycle management.
 
-### Enroll a new repo in sandbox mode
+## Release process
 
-1. **Left panel focused** → press `a` to add a repo
-2. Enter the repo path → press Enter
-3. Choose `[s] Sandbox (recommended)` 
-4. Enter the agent name (e.g., `claude`) → press Enter
-5. biomelab runs a pre-flight check (`sbx ls --json`). If sbx is not bootstrapped, you'll see an error — run `sbx ls` in a terminal first to complete Docker auth and network policy setup
-6. On success: repo appears in the tree as `🐳 [claude]`, sandbox is created via `sbx create` in the background
-
-### Add another sandbox agent to an existing repo
-
-1. **Left panel focused** → select any mode of the repo
-2. Press `n`
-3. Enter the agent name (e.g., `gemini`) → press Enter
-4. Pre-flight check runs. On success: new `🐳 [gemini]` line appears under the repo header
-5. The tree now shows multiple agents:
-   ```
-   mdelapenya/biomelab
-     🐳 [claude]
-     🐳 [gemini]
-   ```
-
-### Convert a regular repo to sandbox mode
-
-1. **Right panel focused**, main card selected → press `n`
-2. Enter the agent name → press Enter
-3. The `📂 [host]` mode is replaced by `🐳 [claude]`
-
-### Create a worktree inside a sandbox
-
-1. Select the sandbox mode in the left panel tree (e.g., `🐳 [claude]`)
-2. **Right panel** → press `c` on the main card
-3. Enter the branch name → press Enter
-4. biomelab runs `sbx run -d --branch <branch> <sandboxName>` (detached) — the worktree is created inside the existing sandbox VM
-5. The worktree card appears on the next refresh cycle (≤5s)
-6. Press Enter on the card to attach: opens a terminal with `sbx run --branch <branch> <sandboxName>`
-
-### Create sandbox when it doesn't exist
-
-If the main card shows `🐳 sandbox: name (not found)` in red:
-1. Press `n` → confirmation popup shows the full `sbx create` command
-2. Press `y` → sandbox is created in the background
-
-### Remove a sandbox
-
-1. Select the sandbox mode → **right panel**, main card selected
-2. Press `d` → confirmation popup: `sbx rm --force <name>`
-3. Press `y` → sandbox is removed (all containers and worktrees destroyed)
-
-### Remove a mode from the repo list
-
-1. **Left panel focused** → select the mode to remove
-2. Press `x` → confirmation popup
-3. Press `y` → mode is removed from config. If it was the last mode, the repo is removed entirely
-
-### Sandbox status indicators
-
-The main card shows real-time sandbox status (checked every 5s):
-- **Green**: `🐳 sandbox: name (running)` + sbx version info
-- **Yellow**: `🐳 sandbox: name (stopped)` + status bar: `Sandbox stopped — run: sbx run <name>`
-- **Red**: `🐳 sandbox: name (not found)` + status bar: `Sandbox not found — press 'n' to create it`
+See [RELEASING.md](RELEASING.md) for the full release workflow, CI pipelines, and homebrew tap management.
 
 ## Contributing
 
-For internal architecture, package layout, design decisions, state machines, and
-testing patterns, see [ARCHITECTURE.md](ARCHITECTURE.md).
+For internal architecture, package layout, and design decisions, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## License
 
