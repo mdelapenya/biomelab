@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>biomelab - Terminal dashboard for git worktrees and AI coding agents</title>
+  <meta name="description"
+    content="Manage git worktrees, Docker Sandboxes, and AI coding agents from a single terminal UI. See every branch, every agent, every PR.">
+
+  <meta property="og:title" content="biomelab - Your Worktrees. Your Agents. One Dashboard.">
+  <meta property="og:description"
+    content="A terminal dashboard for managing git worktrees and AI coding agents in parallel. Sandbox isolation, PR status, live agent detection.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://biomelab.dev">
+  <meta property="og:image" content="img/og-hero.png">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="biomelab - Your Worktrees. Your Agents. One Dashboard.">
+  <meta name="twitter:description" content="Terminal dashboard for git worktrees and AI coding agents.">
+  <meta name="twitter:image" content="img/og-hero.png">
+
+  <link rel="icon" type="image/png" href="img/icon.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap"
+    rel="stylesheet">
+
+  <link rel="stylesheet" href="css/style.css">
+
+  <script>
+    (function () {
+      var saved = localStorage.getItem('theme');
+      var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
+</head>
+
+<body>
+  <nav>
+    <div class="container">
+      <a href="#" class="nav-logo" aria-label="biomelab home">
+        <img class="nav-logo-icon" src="img/icon.png" alt="">
+        <span><strong>biome</strong>lab</span>
+      </a>
+      <button class="nav-hamburger" id="nav-hamburger" aria-label="Toggle menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <ul class="nav-links" id="nav-links">
+        <li><a href="#dashboard">Dashboard</a></li>
+        <li><a href="#sandboxes">Sandboxes</a></li>
+        <li><a href="#workflow">Workflow</a></li>
+        <li><a href="#install">Install</a></li>
+        <li>
+          <a href="https://github.com/mdelapenya/biomelab" class="nav-github" target="_blank" rel="noopener">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+            </svg>
+            GitHub
+            <span class="star-badge" id="star-count"></span>
+          </a>
+        </li>
+        <li>
+          <button class="theme-toggle" id="theme-toggle" title="Toggle theme" aria-label="Toggle dark/light theme">
+            <span class="icon-moon">☽</span>
+            <span class="icon-sun">☀</span>
+          </button>
+        </li>
+      </ul>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <div class="container">
+      <div class="hero-image">
+        <img
+          class="themed-img"
+          src="img/hero-biomelab.png"
+          data-src-dark="img/hero-biomelab.png"
+          data-src-light="img/light/hero-biomelab.png"
+          alt="Floating biome island protected by a glowing dome, with a robotic lab assembling code blocks inside"
+          loading="eager"
+        >
+      </div>
+      <div class="hero-content">
+        <div class="hero-copy">
+          <span class="eyebrow">Safe sandboxes for living code</span>
+          <h1>Monitor your AI agents <span class="accent">across worktrees</span></h1>
+          <p class="tagline">biomelab is a terminal dashboard for managing git worktrees, coding agents, and Docker
+            Sandboxes across all your repositories.</p>
+          <ul class="hero-points">
+            <li>Multi-repo visibility</li>
+            <li>Sandboxed isolation</li>
+            <li>Live PR and CI status</li>
+          </ul>
+          <div class="hero-cta">
+            <div class="install-box" id="install-copy" title="Click to copy">
+              <span class="prompt">$</span>
+              <span>brew install mdelapenya/tap/biomelab</span>
+              <svg class="copy-icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path
+                  d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" />
+                <path
+                  d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" />
+              </svg>
+            </div>
+            <a href="https://github.com/mdelapenya/biomelab" class="btn-secondary" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+              </svg>
+              View on GitHub
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="problem">
+    <div class="container">
+      <div class="problem-grid">
+        <div class="problem-text">
+          <span class="section-label">The Problem</span>
+          <h2>Agent sprawl is real</h2>
+          <blockquote>
+            You're running Claude on a feature branch, Copilot on a bug fix, and Codex on a refactor, all in the same
+            repo. Which branch is which? Is anything dirty? Did that PR pass CI? You alt-tab between terminals trying to
+            piece it together.
+          </blockquote>
+        </div>
+        <div class="problem-image">
+          <img class="themed-img" src="img/problem-agent-sprawl.png" data-src-dark="img/problem-agent-sprawl.png"
+            data-src-light="img/light/problem-agent-sprawl.png"
+            alt="Chaotic developer screen with overlapping terminals, multiple git branches, and AI agents fighting for attention"
+            loading="lazy">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="dashboard">
+    <div class="container">
+      <span class="section-label">The Dashboard</span>
+      <h2>One dashboard, every worktree</h2>
+      <p>Register all your repositories. See every branch, every agent, every PR, updating in real time.</p>
+      <div class="dashboard-features">
+        <div class="feature-card"><span class="icon">📂</span>
+          <h3>Multi-repo</h3>
+          <p>Register all your repositories. Switch between them instantly from the left panel tree.</p>
+        </div>
+        <div class="feature-card"><span class="icon">🤖</span>
+          <h3>Auto-detect agents</h3>
+          <p>Claude, Copilot, Codex, Kiro, OpenCode, Gemini. Detected by process scanning, shown on each card.</p>
+        </div>
+        <div class="feature-card"><span class="icon">💻</span>
+          <h3>Auto-detect IDEs</h3>
+          <p>VS Code, Cursor, Zed, Windsurf, GoLand, IntelliJ, PyCharm, Neovim, Vim. Tracked per worktree.</p>
+        </div>
+        <div class="feature-card"><span class="icon">⚡</span>
+          <h3>Live status</h3>
+          <p>Dirty/clean, sync status, PR/MR with CI checks. Refreshed automatically every 5 seconds.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="sandboxes" class="sandbox">
+    <div class="container">
+      <span class="section-label">Docker Sandboxes</span>
+      <h2>Isolation by default</h2>
+      <p class="sandbox-intro">Each worktree gets its own isolated Docker environment: filesystem, Docker daemon, and
+        network. Agents can install packages, build containers, and modify files without touching your host.</p>
+      <div class="sandbox-grid">
+        <div class="sandbox-card"><span class="icon">🔒</span>
+          <h3>Isolated Environments</h3>
+          <p>One sandbox VM per agent per repo. All worktrees share it, isolated from your host and from other agents.</p>
+        </div>
+        <div class="sandbox-card"><span class="icon">🧩</span>
+          <h3>One Sandbox Per Agent</h3>
+          <p>Claude gets one sandbox, Codex gets another. Clean separation of toolchains and state.</p>
+        </div>
+        <div class="sandbox-card"><span class="icon">⌨️</span>
+          <h3>Lifecycle from the Dashboard</h3>
+          <p>Create, start, stop, remove, all from keyboard shortcuts. No terminal context-switching.</p>
+        </div>
+      </div>
+      <div class="sandbox-diagram-html">
+        <h4 class="diagram-title">Docker Sandbox Isolation</h4>
+
+        <div class="sandbox-containers">
+          <div class="sbx-container sbx-claude">
+            <div class="sbx-header sbx-header-green">Claude Sandbox</div>
+            <div class="sbx-body">
+              <p class="sbx-meta">filesystem/ docker/ network/</p>
+              <p class="sbx-meta-sub">isolated &bull; no host access</p>
+              <span class="sbx-wt-label">WORKTREES</span>
+              <div class="sbx-wt" data-wt="feat/auth-flow"><span class="sbx-dot sbx-dot-green"></span><span class="sbx-branch">feat/auth-flow</span><span class="sbx-agent">&bull; claude</span></div>
+              <div class="sbx-wt" data-wt="feat/api-v2"><span class="sbx-dot sbx-dot-green"></span><span class="sbx-branch">feat/api-v2</span><span class="sbx-agent">&bull; claude</span></div>
+              <div class="sbx-wt" data-wt="fix/login"><span class="sbx-dot sbx-dot-green"></span><span class="sbx-branch">fix/login</span><span class="sbx-agent">&bull; claude</span></div>
+            </div>
+          </div>
+
+          <div class="sbx-container sbx-codex">
+            <div class="sbx-header sbx-header-blue">Codex Sandbox</div>
+            <div class="sbx-body">
+              <p class="sbx-meta">filesystem/ docker/ network/</p>
+              <p class="sbx-meta-sub">isolated &bull; no host access</p>
+              <span class="sbx-wt-label">WORKTREES</span>
+              <div class="sbx-wt" data-wt="fix/memory-leak"><span class="sbx-dot sbx-dot-blue"></span><span class="sbx-branch">fix/memory-leak</span><span class="sbx-agent">&bull; codex</span></div>
+              <div class="sbx-wt" data-wt="refactor/db"><span class="sbx-dot sbx-dot-blue"></span><span class="sbx-branch">refactor/db</span><span class="sbx-agent">&bull; codex</span></div>
+            </div>
+          </div>
+
+          <div class="sbx-container sbx-copilot">
+            <div class="sbx-header sbx-header-orange">Copilot Sandbox</div>
+            <div class="sbx-body">
+              <p class="sbx-meta">filesystem/ docker/ network/</p>
+              <p class="sbx-meta-sub">isolated &bull; no host access</p>
+              <span class="sbx-wt-label">WORKTREES</span>
+              <div class="sbx-wt" data-wt="feat/dark-mode"><span class="sbx-dot sbx-dot-orange"></span><span class="sbx-branch">feat/dark-mode</span><span class="sbx-agent">&bull; copilot</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sbx-arrows">
+          <div class="sbx-arrow"></div>
+          <div class="sbx-arrow"></div>
+          <div class="sbx-arrow"></div>
+        </div>
+
+        <div class="sbx-boundary">
+          <span>isolation boundary</span>
+        </div>
+
+        <div class="sbx-arrows sbx-arrows-up">
+          <div class="sbx-arrow"></div>
+          <div class="sbx-arrow"></div>
+          <div class="sbx-arrow"></div>
+        </div>
+
+        <div class="sbx-host">
+          <div class="sbx-host-inner">
+            <strong>Your Host Machine</strong>
+            <span class="sbx-host-safe">Untouched. Safe. Clean.</span>
+          </div>
+          <div class="sbx-octo-repo">
+            <div class="sbx-repo">git repository</div>
+            <span class="sbx-repo-note">only shared resource</span>
+          </div>
+          <div class="sbx-octopus">
+            <div class="sbx-octo-wt" data-wt="feat/auth-flow">
+              <span class="sbx-octo-dot sbx-dot-green"></span>
+              <span>feat/auth-flow</span>
+            </div>
+            <div class="sbx-octo-wt" data-wt="feat/api-v2">
+              <span class="sbx-octo-dot sbx-dot-green"></span>
+              <span>feat/api-v2</span>
+            </div>
+            <div class="sbx-octo-wt" data-wt="fix/login">
+              <span class="sbx-octo-dot sbx-dot-green"></span>
+              <span>fix/login</span>
+            </div>
+            <div class="sbx-octo-wt" data-wt="fix/memory-leak">
+              <span class="sbx-octo-dot sbx-dot-blue"></span>
+              <span>fix/memory-leak</span>
+            </div>
+            <div class="sbx-octo-wt" data-wt="refactor/db">
+              <span class="sbx-octo-dot sbx-dot-blue"></span>
+              <span>refactor/db</span>
+            </div>
+            <div class="sbx-octo-wt" data-wt="feat/dark-mode">
+              <span class="sbx-octo-dot sbx-dot-orange"></span>
+              <span>feat/dark-mode</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="workflow" class="workflow">
+    <div class="container">
+      <span class="section-label">Workflow</span>
+      <h2>From zero to PR in six keystrokes</h2>
+      <p>The core loop, from creating a worktree to shipping a pull request.</p>
+      <div class="workflow-steps">
+        <div class="step"><span class="step-number">1</span>
+          <div>
+            <h3>Register</h3>
+            <p><code>biomelab</code> auto-adds your current repo on first launch. Or press <kbd>a</kbd> to add more.</p>
+          </div>
+        </div>
+        <div class="step"><span class="step-number">2</span>
+          <div>
+            <h3>Create worktrees</h3>
+            <p>Press <kbd>c</kbd>, type a branch name, press Enter. Done.</p>
+          </div>
+        </div>
+        <div class="step"><span class="step-number">3</span>
+          <div>
+            <h3>Open in terminal</h3>
+            <p>Press <kbd>Enter</kbd>. Attaches to the sandbox session or opens a local terminal. Start your agent there.</p>
+          </div>
+        </div>
+        <div class="step"><span class="step-number">4</span>
+          <div>
+            <h3>Agent auto-detected</h3>
+            <p>biomelab picks up the running agent. Start working with it! The card will turn green.</p>
+          </div>
+        </div>
+        <div class="step"><span class="step-number">5</span>
+          <div>
+            <h3>Send PR</h3>
+            <p>Press <kbd>P</kbd> to push and create the PR in one step. Handles dirty state and multi-remote.</p>
+          </div>
+        </div>
+        <div class="step"><span class="step-number">6</span>
+          <div>
+            <h3>PR status flows in</h3>
+            <p><code>PR #42 fix auth (open) ✓</code>. CI checks, merge status, all on the card.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <section id="install">
+    <div class="container text-center">
+      <span class="section-label">Get Started</span>
+      <h2>Install in seconds</h2>
+      <p class="mx-auto">Available on macOS, Linux, and Windows. Pick your preferred method.</p>
+      <div class="install-tabs">
+        <div class="tab-bar" role="tablist">
+          <button class="tab active" role="tab" aria-selected="true" data-tab="homebrew">Homebrew</button>
+          <button class="tab" role="tab" aria-selected="false" data-tab="nix">Nix</button>
+          <button class="tab" role="tab" aria-selected="false" data-tab="go">Go</button>
+          <button class="tab" role="tab" aria-selected="false" data-tab="binary">Binaries</button>
+        </div>
+        <div class="tab-panel active" id="tab-homebrew">
+          <div class="copyable-pre">
+            <pre>brew install mdelapenya/tap/biomelab</pre>
+            <button class="copy-btn" data-copy="brew install mdelapenya/tap/biomelab" title="Copy to clipboard">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="tab-panel" id="tab-nix">
+          <div class="copyable-pre">
+            <pre>nix run github:mdelapenya/biomelab</pre>
+            <button class="copy-btn" data-copy="nix run github:mdelapenya/biomelab" title="Copy to clipboard">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="tab-panel" id="tab-go">
+          <div class="copyable-pre">
+            <pre>go install github.com/mdelapenya/biomelab/cmd/biomelab@latest</pre>
+            <button class="copy-btn" data-copy="go install github.com/mdelapenya/biomelab/cmd/biomelab@latest" title="Copy to clipboard">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="tab-panel" id="tab-binary">
+          <pre><span class="comment"># Download from GitHub Releases</span>
+<span class="comment"># .deb, .rpm, Darwin, Linux, Windows</span>
+<a href="https://github.com/mdelapenya/biomelab/releases" target="_blank" rel="noopener" style="color: var(--cyan);">github.com/mdelapenya/biomelab/releases</a></pre>
+        </div>
+      </div>
+      <div class="platforms">
+        <span class="platform-badge">macOS arm64</span>
+        <span class="platform-badge">macOS amd64</span>
+        <span class="platform-badge">Linux amd64</span>
+        <span class="platform-badge">Linux arm64</span>
+        <span class="platform-badge">Windows</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="keyboard">
+    <div class="container text-center">
+      <span class="section-label">Keyboard-First</span>
+      <h2>Mouse optional, keyboard mandatory</h2>
+      <p class="mx-auto">Every action is a single keystroke. Toggle mouse mode with <kbd>m</kbd> when you want it.</p>
+      <div class="keyboard-grid">
+        <div class="key-item"><span class="key-cap key-green">c</span><span class="key-action">Create worktree</span>
+        </div>
+        <div class="key-item"><span class="key-cap key-blue">f</span><span class="key-action">Fetch PR / MR</span></div>
+        <div class="key-item"><span class="key-cap key-red">d</span><span class="key-action">Delete worktree</span>
+        </div>
+        <div class="key-item"><span class="key-cap key-cyan">e</span><span class="key-action">Open in editor</span>
+        </div>
+        <div class="key-item"><span class="key-cap key-yellow">⏎</span><span class="key-action">Open in terminal</span>
+        </div>
+        <div class="key-item"><span class="key-cap key-orange">p</span><span class="key-action">Pull from remote</span>
+        </div>
+        <div class="key-item"><span class="key-cap key-magenta">P</span><span class="key-action">Send PR</span></div>
+        <div class="key-item"><span class="key-cap">r</span><span class="key-action">Refresh card</span></div>
+        <div class="key-item"><span class="key-cap">m</span><span class="key-action">Toggle mouse</span></div>
+        <div class="key-item"><span class="key-cap">n</span><span class="key-action">New sandbox</span></div>
+        <div class="key-item"><span class="key-cap key-green">s</span><span class="key-action">Start sandbox</span>
+        </div>
+        <div class="key-item"><span class="key-cap key-red">S</span><span class="key-action">Stop sandbox</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="from-blog">
+    <div class="container">
+      <span class="section-label">From the blog</span>
+      <blockquote class="author-quote">
+        <p>"I built biomelab because I was running multiple agents on multiple worktrees for multiple projects every day, and I kept losing track of which branch was which."</p>
+        <cite>Manuel de la Pe&ntilde;a, author</cite>
+      </blockquote>
+      <div class="blog-strip">
+        <a href="https://mdelapenya.xyz/posts/2026-03-23-level-5-in-practice-four-agents-four-worktrees-one-developer/" class="blog-card" target="_blank" rel="noopener">
+          <strong>Four agents, four worktrees, one developer</strong>
+          <span>Parallel coding in practice</span>
+        </a>
+        <a href="https://mdelapenya.xyz/posts/2026-03-21-gwaim-the-tool-that-level-5-needed/" class="blog-card" target="_blank" rel="noopener">
+          <strong>The tool that Level 5 needed</strong>
+          <span>Why biomelab exists</span>
+        </a>
+        <a href="https://mdelapenya.xyz/posts/2026-03-13-choosing-a-terminal-for-agentic-development/" class="blog-card" target="_blank" rel="noopener">
+          <strong>Choosing a terminal for agentic development</strong>
+          <span>Terminal selection for AI workflows</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="container">
+      <div class="footer-content">
+        <div class="footer-left">Made by <a href="https://mdelapenya.xyz" target="_blank" rel="noopener">Manuel de la
+            Peña</a></div>
+        <ul class="footer-links">
+          <li><a href="https://github.com/mdelapenya/biomelab" target="_blank" rel="noopener">GitHub</a></li>
+          <li><a href="https://github.com/mdelapenya/biomelab/releases" target="_blank" rel="noopener">Releases</a></li>
+          <li><a href="https://github.com/mdelapenya/biomelab/blob/main/LICENSE" target="_blank"
+              rel="noopener">License</a></li>
+          <li><a href="https://mdelapenya.xyz" target="_blank" rel="noopener">Blog</a></li>
+        </ul>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Mobile hamburger menu
+    document.getElementById('nav-hamburger').addEventListener('click', function () {
+      var nav = document.getElementById('nav-links');
+      var open = nav.classList.toggle('open');
+      this.setAttribute('aria-expanded', open);
+    });
+
+    document.getElementById('install-copy').addEventListener('click', function () {
+      var text = 'brew install mdelapenya/tap/biomelab';
+      navigator.clipboard.writeText(text).then(function () {
+        var box = document.getElementById('install-copy');
+        box.classList.add('copied');
+        var icon = box.querySelector('.copy-icon');
+        var orig = icon.innerHTML;
+        icon.innerHTML = '<path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>';
+        setTimeout(function () { box.classList.remove('copied'); icon.innerHTML = orig; }, 2000);
+      });
+    });
+
+    // Preload alternate theme images so swaps are instant (no flash).
+    var preloaded = {};
+    document.querySelectorAll('.themed-img').forEach(function (img) {
+      ['srcDark', 'srcLight'].forEach(function (key) {
+        var url = img.dataset[key];
+        if (url && !preloaded[url]) {
+          preloaded[url] = true;
+          var link = document.createElement('link');
+          link.rel = 'prefetch';
+          link.as = 'image';
+          link.href = url;
+          document.head.appendChild(link);
+        }
+      });
+    });
+
+    function applyThemeImages(theme) {
+      document.querySelectorAll('.themed-img').forEach(function (img) {
+        var src = theme === 'light' ? img.dataset.srcLight : img.dataset.srcDark;
+        if (src) img.setAttribute('src', src);
+      });
+    }
+    applyThemeImages(document.documentElement.getAttribute('data-theme'));
+
+    document.getElementById('theme-toggle').addEventListener('click', function () {
+      var html = document.documentElement;
+      var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+      applyThemeImages(next);
+    });
+
+    fetch('https://api.github.com/repos/mdelapenya/biomelab')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.stargazers_count !== undefined) {
+          document.getElementById('star-count').textContent = data.stargazers_count.toLocaleString();
+        }
+      })
+      .catch(function () { });
+
+    // Copy buttons on install tab panels
+    document.querySelectorAll('.copy-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        navigator.clipboard.writeText(btn.dataset.copy).then(function () {
+          btn.classList.add('copied');
+          var svg = btn.innerHTML;
+          btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/></svg>';
+          setTimeout(function () { btn.classList.remove('copied'); btn.innerHTML = svg; }, 2000);
+        });
+      });
+    });
+
+    document.querySelectorAll('.tab-bar .tab').forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        document.querySelectorAll('.tab-bar .tab').forEach(function (t) { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+        document.querySelectorAll('.tab-panel').forEach(function (p) { p.classList.remove('active'); });
+        tab.classList.add('active');
+        tab.setAttribute('aria-selected', 'true');
+        document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+      });
+    });
+
+    // Sandbox diagram: hover a branch in a sandbox → highlight matching worktree in host
+    document.querySelectorAll('.sbx-wt[data-wt]').forEach(function (wt) {
+      wt.addEventListener('mouseenter', function () {
+        var name = wt.dataset.wt;
+        var match = document.querySelector('.sbx-octo-wt[data-wt="' + name + '"]');
+        if (match) {
+          wt.classList.add('sbx-wt-active');
+          match.classList.add('sbx-octo-active');
+        }
+      });
+      wt.addEventListener('mouseleave', function () {
+        var name = wt.dataset.wt;
+        var match = document.querySelector('.sbx-octo-wt[data-wt="' + name + '"]');
+        if (match) {
+          wt.classList.remove('sbx-wt-active');
+          match.classList.remove('sbx-octo-active');
+        }
+      });
+    });
+
+    document.querySelectorAll('a[href^="#"]').forEach(function (anchor) {
+      anchor.addEventListener('click', function (e) {
+        e.preventDefault();
+        var target = document.querySelector(this.getAttribute('href'));
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+  </script>
+</body>
+
+</html>
