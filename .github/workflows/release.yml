@@ -30,6 +30,9 @@ jobs:
       - name: Package macOS universal .app
         run: task package-darwin-universal
 
+      - name: Verify macOS package
+        run: bin/Biomelab.app/Contents/MacOS/Biomelab --version
+
       - name: Create zip
         run: cd bin && zip -r Biomelab-darwin-universal.zip Biomelab.app
 
@@ -58,6 +61,12 @@ jobs:
 
       - name: Package Linux
         run: task package
+
+      - name: Verify Linux package
+        run: |
+          mkdir -p /tmp/verify
+          tar -xJf bin/Biomelab.tar.xz -C /tmp/verify
+          /tmp/verify/usr/local/bin/biomelab --version
 
       - name: Prepare artifact
         run: |
@@ -91,6 +100,9 @@ jobs:
 
       - name: Package
         run: task package
+
+      - name: Verify Windows package
+        run: ./bin/Biomelab.exe --version
 
       - name: Create zip
         shell: pwsh
