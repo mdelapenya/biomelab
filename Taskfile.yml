@@ -4,24 +4,53 @@ vars:
   GO_VERSION:
     sh: grep '^go ' go.mod | awk '{print $2}'
   GO:
-    sh: eval "$(gvm {{.GO_VERSION}})" && which go
-  BIN: bin/biomelab
+    sh: |
+      if command -v gvm >/dev/null 2>&1; then
+        eval "$(gvm {{.GO_VERSION}})" >/dev/null 2>&1 && which go && exit 0
+      fi
+      echo go
+  GOEXE:
+    sh: go env GOEXE 2>/dev/null || echo ""
+  BIN: bin/biomelab{{.GOEXE}}
   APP_NAME: Biomelab
   APP_ID: com.mdelapenya.biomelab
   VERSION:
     sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
   # SEMVER: stripped to x.y.z for fyne package (which rejects anything else)
   SEMVER:
-    sh: git describe --tags --always --dirty 2>/dev/null | sed 's/^v//; s/-.*//' || echo "0.0.1"
+    sh: |
+      v=$(git describe --tags --match 'v[0-9]*' 2>/dev/null | sed 's/^v//; s/-.*//')
+      [ -n "$v" ] && echo "$v" || echo "0.0.1"
   LDFLAGS: -s -w -X main.version={{.VERSION}}
 
 tasks:
   setup:
     desc: Install gvm if not present
+    cmds:
+      - task: install-gvm
+
+  install-gvm:
+    desc: Install gvm from prebuilt release binary (no Go required)
     status:
       - command -v gvm
+    preconditions:
+      - sh: command -v curl
+        msg: "curl is required but not found on PATH — install curl and retry"
+    vars:
+      GVM_VERSION: v0.6.0
+      GVM_BASE_URL: https://github.com/andrewkroh/gvm/releases/download
+      GVM_INSTALL_DIR:
+        sh: echo "${GVM_INSTALL_DIR:-${GOBIN:-$HOME/go/bin}}"
     cmds:
-      - go install github.com/andrewkroh/gvm/cmd/gvm@latest
+      - mkdir -p "{{.GVM_INSTALL_DIR}}"
+      - cmd: curl -fsSL -o "{{.GVM_INSTALL_DIR}}/gvm" "{{.GVM_BASE_URL}}/{{.GVM_VERSION}}/gvm-linux-amd64" && chmod +x "{{.GVM_INSTALL_DIR}}/gvm"
+        platforms: [linux/amd64]
+      - cmd: curl -fsSL -o "{{.GVM_INSTALL_DIR}}/gvm" "{{.GVM_BASE_URL}}/{{.GVM_VERSION}}/gvm-linux-arm64" && chmod +x "{{.GVM_INSTALL_DIR}}/gvm"
+        platforms: [linux/arm64]
+      - cmd: curl -fsSL -o "{{.GVM_INSTALL_DIR}}/gvm" "{{.GVM_BASE_URL}}/{{.GVM_VERSION}}/gvm-darwin-all" && chmod +x "{{.GVM_INSTALL_DIR}}/gvm"
+        platforms: [darwin]
+      - cmd: curl -fsSL -o "{{.GVM_INSTALL_DIR}}/gvm.exe" "{{.GVM_BASE_URL}}/{{.GVM_VERSION}}/gvm-windows-amd64.exe"
+        platforms: [windows/amd64]
 
   setup-fyne:
     desc: Install the fyne CLI packaging tool
@@ -75,6 +104,9 @@ tasks:
     deps: [setup, setup-fyne]
     env:
       CGO_ENABLED: "1"
+      # Fyne's internal go build (used on Windows to inject PE resources) picks
+      # up GOFLAGS. Values can't contain spaces, so we inject -X only.
+      GOFLAGS: '-ldflags=-X=main.version={{.VERSION}}'
     cmds:
       - mkdir -p bin
       - >-
@@ -83,12 +115,19 @@ tasks:
         --name {{.APP_NAME}}
         --app-id {{.APP_ID}}
         --app-version {{.SEMVER}}
-        --icon cmd/biomelab/icon.png
+        --icon icon.png
         --release
       - |
-        # Move whatever fyne package produced into bin/
-        for f in {{.APP_NAME}}.*; do
-          [ -e "$f" ] && rm -rf "bin/$f" && mv "$f" bin/
+        # Move whatever fyne package produced into bin/.
+        # Linux writes Biomelab.tar.xz to the repo root; macOS writes Biomelab.app
+        # to the repo root; Windows writes Biomelab.exe inside --source-dir (because
+        # fyne's validate() chdirs into srcDir and the final rename is path-relative).
+        for src in {{.APP_NAME}}.tar.xz {{.APP_NAME}}.app cmd/biomelab/{{.APP_NAME}}.exe; do
+          if [ -e "$src" ]; then
+            dest="bin/$(basename "$src")"
+            rm -rf "$dest"
+            mv "$src" "$dest"
+          fi
         done
 
   package-darwin-universal:
