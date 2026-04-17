@@ -110,7 +110,7 @@ tasks:
         --name {{.APP_NAME}}
         --app-id {{.APP_ID}}
         --app-version {{.SEMVER}}
-        --icon cmd/biomelab/icon.png
+        --icon icon.png
         --release
       - |
         # Move whatever fyne package produced into bin/
