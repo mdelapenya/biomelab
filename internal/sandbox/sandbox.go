@@ -26,10 +26,26 @@ func RunDetachedWithBranchArgs(sandboxName, branch string) []string {
 	return []string{"sbx", "run", "-d", "--branch", branch, sandboxName}
 }
 
-// RunWithBranchArgs returns the arguments for attaching to a sandbox worktree
-// (interactive): sbx run --branch <branch> <sandboxName>
+// RunWithBranchArgs returns the arguments for attaching to a *linked* sandbox
+// worktree (interactive): sbx run --branch <branch> <sandboxName> -- -c
+//
+// The trailing `-- -c` is forwarded to the sandbox agent so it resumes the
+// previous session (continue mode) instead of starting a fresh one — this
+// preserves the agent's conversation/history context across reconnects.
+//
+// Do NOT use this for the main worktree — passing `--branch main` would make
+// sbx create a new worktree called "main". Use RunArgs instead.
 func RunWithBranchArgs(sandboxName, branch string) []string {
-	return []string{"sbx", "run", "--branch", branch, sandboxName}
+	return []string{"sbx", "run", "--branch", branch, sandboxName, "--", "-c"}
+}
+
+// RunArgs returns the arguments for attaching to the main sandbox worktree
+// (interactive): sbx run <sandboxName> -- -c
+//
+// No --branch flag because the main worktree already exists at the sandbox
+// root; passing --branch would make sbx create a new linked worktree.
+func RunArgs(sandboxName string) []string {
+	return []string{"sbx", "run", sandboxName, "--", "-c"}
 }
 
 // RemoveArgs returns the arguments for removing a sandbox:
