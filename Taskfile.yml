@@ -4,7 +4,11 @@ vars:
   GO_VERSION:
     sh: grep '^go ' go.mod | awk '{print $2}'
   GO:
-    sh: eval "$(gvm {{.GO_VERSION}})" && which go
+    sh: |
+      if command -v gvm >/dev/null 2>&1; then
+        eval "$(gvm {{.GO_VERSION}})" >/dev/null 2>&1 && which go && exit 0
+      fi
+      echo go
   BIN: bin/biomelab
   APP_NAME: Biomelab
   APP_ID: com.mdelapenya.biomelab
@@ -22,6 +26,29 @@ tasks:
       - command -v gvm
     cmds:
       - go install github.com/andrewkroh/gvm/cmd/gvm@latest
+
+  install-gvm:
+    desc: Install gvm from prebuilt release binary (no Go required)
+    status:
+      - command -v gvm
+    preconditions:
+      - sh: command -v curl
+        msg: "curl is required but not found on PATH — install curl and retry"
+    vars:
+      GVM_VERSION: v0.6.0
+      GVM_BASE_URL: https://github.com/andrewkroh/gvm/releases/download
+      GVM_INSTALL_DIR:
+        sh: echo "${GVM_INSTALL_DIR:-$HOME/.local/bin}"
+    cmds:
+      - mkdir -p "{{.GVM_INSTALL_DIR}}"
+      - cmd: curl -fsSL -o "{{.GVM_INSTALL_DIR}}/gvm" "{{.GVM_BASE_URL}}/{{.GVM_VERSION}}/gvm-linux-amd64" && chmod +x "{{.GVM_INSTALL_DIR}}/gvm"
+        platforms: [linux/amd64]
+      - cmd: curl -fsSL -o "{{.GVM_INSTALL_DIR}}/gvm" "{{.GVM_BASE_URL}}/{{.GVM_VERSION}}/gvm-linux-arm64" && chmod +x "{{.GVM_INSTALL_DIR}}/gvm"
+        platforms: [linux/arm64]
+      - cmd: curl -fsSL -o "{{.GVM_INSTALL_DIR}}/gvm" "{{.GVM_BASE_URL}}/{{.GVM_VERSION}}/gvm-darwin-all" && chmod +x "{{.GVM_INSTALL_DIR}}/gvm"
+        platforms: [darwin]
+      - cmd: curl -fsSL -o "{{.GVM_INSTALL_DIR}}/gvm.exe" "{{.GVM_BASE_URL}}/{{.GVM_VERSION}}/gvm-windows-amd64.exe"
+        platforms: [windows/amd64]
 
   setup-fyne:
     desc: Install the fyne CLI packaging tool
