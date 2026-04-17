@@ -70,3 +70,16 @@ func registerZoomShortcuts(c fyne.Canvas, t *biomeTheme, a fyne.App, onZoom func
 		c.AddShortcut(&desktop.CustomShortcut{KeyName: fyne.Key0, Modifier: mod}, zoomResetFn)
 	}
 }
+
+// registerThemeToggleShortcut binds Ctrl+T (Linux/Windows) and Cmd+T (macOS)
+// to the provided callback. AddShortcut requires a non-zero modifier.
+func registerThemeToggleShortcut(c fyne.Canvas, onToggle func()) {
+	handler := func(_ fyne.Shortcut) {
+		if onToggle != nil {
+			onToggle()
+		}
+	}
+	for _, mod := range []fyne.KeyModifier{fyne.KeyModifierControl, fyne.KeyModifierSuper} {
+		c.AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyT, Modifier: mod}, handler)
+	}
+}

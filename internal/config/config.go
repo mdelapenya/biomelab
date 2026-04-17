@@ -28,9 +28,12 @@ type RepoEntry struct {
 	OldAgent       string `json:"agent,omitempty"`
 }
 
-// Config holds the list of registered repositories.
+// Config holds the list of registered repositories and user preferences.
 type Config struct {
 	Repos []RepoEntry `json:"repos"`
+	// Theme is the GUI theme variant: "dark" (default) or "light".
+	// Empty value is treated as "dark".
+	Theme string `json:"theme,omitempty"`
 }
 
 // DefaultPath returns the default config file path (~/.config/biomelab/repos.json).

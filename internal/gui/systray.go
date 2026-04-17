@@ -5,7 +5,8 @@ import (
 	"fyne.io/fyne/v2/driver/desktop"
 )
 
-// setupSystemTray creates a system tray icon with Show/Hide toggle and Quit.
+// setupSystemTray creates a system tray icon with Show/Hide toggle, Theme
+// submenu, and Quit.
 func (a *App) setupSystemTray() {
 	desk, ok := a.fyneApp.(desktop.App)
 	if !ok {
@@ -24,8 +25,22 @@ func (a *App) setupSystemTray() {
 		desk.SetSystemTrayMenu(a.trayMenu)
 	}
 
+	// Theme submenu — Light / Dark with a checkmark on the active variant.
+	a.trayThemeLight = fyne.NewMenuItem("Light", func() {
+		a.applyThemeVariant(VariantLight)
+	})
+	a.trayThemeDark = fyne.NewMenuItem("Dark", func() {
+		a.applyThemeVariant(VariantDark)
+	})
+	a.trayThemeLight.Checked = a.theme.Variant() == VariantLight
+	a.trayThemeDark.Checked = a.theme.Variant() == VariantDark
+	themeItem := fyne.NewMenuItem("Theme", nil)
+	themeItem.ChildMenu = fyne.NewMenu("", a.trayThemeLight, a.trayThemeDark)
+
 	a.trayMenu = fyne.NewMenu("biomelab",
 		toggleItem,
+		fyne.NewMenuItemSeparator(),
+		themeItem,
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Quit", func() {
 			a.stopAllRefresh()
