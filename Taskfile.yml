@@ -118,9 +118,16 @@ tasks:
         --icon icon.png
         --release
       - |
-        # Move whatever fyne package produced into bin/
-        for f in {{.APP_NAME}}.*; do
-          [ -e "$f" ] && rm -rf "bin/$f" && mv "$f" bin/
+        # Move whatever fyne package produced into bin/.
+        # Linux writes Biomelab.tar.xz to the repo root; macOS writes Biomelab.app
+        # to the repo root; Windows writes Biomelab.exe inside --source-dir (because
+        # fyne's validate() chdirs into srcDir and the final rename is path-relative).
+        for src in {{.APP_NAME}}.tar.xz {{.APP_NAME}}.app cmd/biomelab/{{.APP_NAME}}.exe; do
+          if [ -e "$src" ]; then
+            dest="bin/$(basename "$src")"
+            rm -rf "$dest"
+            mv "$src" "$dest"
+          fi
         done
 
   package-darwin-universal:
