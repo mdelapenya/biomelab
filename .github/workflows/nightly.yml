@@ -131,6 +131,7 @@ jobs:
         id: nightly
         run: |
           BASE=$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-nightly*' 2>/dev/null || echo "v0.0.0")
+          echo "base=${BASE}" >> "$GITHUB_OUTPUT"
           echo "tag=${BASE}-nightly" >> "$GITHUB_OUTPUT"
 
       - name: Delete existing nightly tags and releases
@@ -157,12 +158,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NIGHTLY_TAG: ${{ steps.nightly.outputs.tag }}
+          BASE_TAG: ${{ steps.nightly.outputs.base }}
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
           gh release create "${NIGHTLY_TAG}" \
             --title "Nightly Build (${SHORT_SHA})" \
             --prerelease \
-            --notes "Automated nightly build from main (${SHORT_SHA})" \
+            --generate-notes \
+            --notes-start-tag "${BASE_TAG}" \
             artifacts/biomelab-nightly-darwin/Biomelab-darwin-universal.zip \
             artifacts/biomelab-nightly-linux/Biomelab-linux-amd64.tar.xz \
             artifacts/biomelab-nightly-windows/Biomelab-windows-amd64.zip
