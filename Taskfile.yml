@@ -136,20 +136,23 @@ tasks:
     cmds:
       - mkdir -p bin
       - rm -rf bin/{{.APP_NAME}}.app
+      # --release enables hardened runtime, rejected with ad-hoc sign on macOS 26+.
       - >-
         fyne package
+        --source-dir ./cmd/biomelab
         --executable {{.BIN}}
         --name {{.APP_NAME}}
         --app-id {{.APP_ID}}
         --app-version {{.SEMVER}}
-        --icon cmd/biomelab/icon.png
-        --release
+        --icon icon.png
       - mv {{.APP_NAME}}.app bin/
+      - codesign --force --deep --sign - bin/{{.APP_NAME}}.app
 
   install-macos:
     desc: Package and install Biomelab.app to /Applications
     deps: [package-darwin-universal]
     cmds:
+      - rm -rf /Applications/{{.APP_NAME}}.app
       - cp -R bin/{{.APP_NAME}}.app /Applications/
       - echo "Installed to /Applications/{{.APP_NAME}}.app — find it in Spotlight"
 
