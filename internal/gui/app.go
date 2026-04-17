@@ -7,6 +7,7 @@ import (
 	fyneapp "fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/mdelapenya/biomelab/internal/agent"
@@ -43,6 +44,11 @@ type App struct {
 	refreshMgr  *RefreshManager
 	sbxStatuses map[string]sandbox.Status
 
+	// Title bar primitives that capture theme colors at construction time.
+	// Held so toggleTheme can refresh them without rebuilding the window.
+	titleBg   *canvas.Rectangle
+	titleText *canvas.Text
+
 	configPath      string
 	detector        *agent.Detector
 	ideDetector     *ide.Detector
@@ -53,6 +59,9 @@ type App struct {
 	dialogOpen   bool
 	activeDialog interface{ Hide() } // current dialog, for Escape dismissal
 	trayMenu     *fyne.Menu
+	// System tray theme submenu items, held so we can update Checked state.
+	trayThemeLight *fyne.MenuItem
+	trayThemeDark  *fyne.MenuItem
 }
 
 // NewApp creates a new biomelab Fyne application.
@@ -76,7 +85,7 @@ func NewApp(
 // Run initializes the GUI and starts the event loop. Blocks until the window is closed.
 func (a *App) Run() {
 	a.fyneApp = fyneapp.NewWithID("com.mdelapenya.biomelab")
-	a.theme = newBiomeTheme()
+	a.theme = newBiomeTheme(a.loadInitialVariant())
 	a.fyneApp.Settings().SetTheme(a.theme)
 
 	a.window = a.fyneApp.NewWindow("biomelab")
@@ -100,6 +109,9 @@ func (a *App) Run() {
 			a.dashboard.Rebuild()
 		}
 	})
+
+	// Ctrl+T / Cmd+T toggle between dark and light themes.
+	registerThemeToggleShortcut(a.window.Canvas(), a.toggleTheme)
 
 	// System tray: closing the window hides to tray instead of quitting.
 	// SetCloseIntercept is set inside setupSystemTray.
@@ -215,12 +227,12 @@ func (a *App) buildContent() fyne.CanvasObject {
 	// Start the active repo's refresh manager.
 	a.repos[0].refreshMgr.Start()
 
-	// Title bar.
-	title := monoText("biomelab", colorSelected, true)
-	title.TextSize = scaledSize(11)
-	title.Alignment = fyne.TextAlignCenter
-	titleBg := canvas.NewRectangle(colorPanelBg)
-	titleBar := container.NewStack(titleBg, container.NewPadded(title))
+	// Title bar. Kept on the App so toggleTheme can recolor without rebuild.
+	a.titleText = monoText("biomelab", colorSelected, true)
+	a.titleText.TextSize = scaledSize(11)
+	a.titleText.Alignment = fyne.TextAlignCenter
+	a.titleBg = canvas.NewRectangle(colorPanelBg)
+	titleBar := container.NewStack(a.titleBg, container.NewPadded(a.titleText))
 
 	// Two-panel layout.
 	split := container.NewHSplit(a.repoPanel.Content(), a.dashSlot)
@@ -268,6 +280,78 @@ func (a *App) switchMode(groupIdx, modeIdx int) {
 	}
 
 	re.refreshMgr.Resume()
+}
+
+// loadInitialVariant reads the saved theme variant from the config,
+// defaulting to dark.
+func (a *App) loadInitialVariant() ThemeVariant {
+	cfg, err := config.Load(a.configPath)
+	if err != nil {
+		return VariantDark
+	}
+	if cfg.Theme == string(VariantLight) {
+		return VariantLight
+	}
+	return VariantDark
+}
+
+// toggleTheme flips the theme variant. Used by the Ctrl+T shortcut.
+func (a *App) toggleTheme() {
+	next := VariantDark
+	if a.theme.Variant() == VariantDark {
+		next = VariantLight
+	}
+	a.applyThemeVariant(next)
+}
+
+// applyThemeVariant installs the given variant, refreshes the UI, syncs the
+// system tray checkmarks, and persists the choice to the config file.
+// A no-op if the variant is already active.
+func (a *App) applyThemeVariant(v ThemeVariant) {
+	if v != VariantLight && v != VariantDark {
+		return
+	}
+	if a.theme.Variant() == v {
+		return
+	}
+	a.theme.SetVariant(v)
+	a.fyneApp.Settings().SetTheme(a.theme)
+
+	if a.titleBg != nil {
+		a.titleBg.FillColor = colorPanelBg
+		a.titleBg.Refresh()
+	}
+	if a.titleText != nil {
+		a.titleText.Color = colorSelected
+		a.titleText.Refresh()
+	}
+	if a.repoPanel != nil {
+		a.repoPanel.RebuildFull()
+	}
+	if a.dashboard != nil {
+		a.dashboard.Rebuild()
+	}
+	a.refreshTrayTheme()
+
+	cfg, err := config.Load(a.configPath)
+	if err != nil {
+		return
+	}
+	cfg.Theme = string(a.theme.Variant())
+	_ = config.Save(a.configPath, cfg)
+}
+
+// refreshTrayTheme updates the system tray theme submenu checkmarks to match
+// the current theme variant.
+func (a *App) refreshTrayTheme() {
+	if a.trayThemeLight == nil || a.trayThemeDark == nil {
+		return
+	}
+	a.trayThemeLight.Checked = a.theme.Variant() == VariantLight
+	a.trayThemeDark.Checked = a.theme.Variant() == VariantDark
+	if desk, ok := a.fyneApp.(desktop.App); ok && a.trayMenu != nil {
+		desk.SetSystemTrayMenu(a.trayMenu)
+	}
 }
 
 func (a *App) emptyState() fyne.CanvasObject {

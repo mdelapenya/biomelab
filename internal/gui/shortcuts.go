@@ -1,8 +1,11 @@
 package gui
 
 import (
+	"math"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 
 	"github.com/mdelapenya/biomelab/internal/config"
 	"github.com/mdelapenya/biomelab/internal/git"
@@ -143,7 +146,9 @@ func (a *App) openDialog() func() {
 // This matches the TUI behavior (model.go:883-913).
 
 // gridColumns returns the number of columns in the linked cards grid.
-// Computed from the dashboard slot width and the card cell width.
+// Computed from the dashboard slot width and the card cell width, matching
+// the formula used by flexGridLayout so keyboard navigation tracks the
+// actual on-screen layout.
 func (a *App) gridColumns() int {
 	if a.dashSlot == nil {
 		return 2 // safe default
@@ -152,7 +157,12 @@ func (a *App) gridColumns() int {
 	if w <= 0 {
 		return 2
 	}
-	cols := int(w / cardCellSize().Width)
+	minW := cardCellSize().Width
+	if w <= minW {
+		return 1
+	}
+	padding := theme.Padding()
+	cols := int(math.Floor(float64(w+padding) / float64(minW+padding)))
 	if cols < 1 {
 		cols = 1
 	}

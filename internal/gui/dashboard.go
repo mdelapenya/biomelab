@@ -2,6 +2,7 @@ package gui
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -16,6 +17,81 @@ import (
 	"github.com/mdelapenya/biomelab/internal/provider"
 	"github.com/mdelapenya/biomelab/internal/sandbox"
 )
+
+// flexGridLayout lays out cards on a grid where the column count is determined
+// by how many min-sized cells fit in the parent width, but the actual cell
+// width is stretched so the row fills the full width (minus padding between
+// cells). Height stays at min. Column count is capped at len(objects) so a
+// small number of cards still spreads across the row.
+type flexGridLayout struct {
+	minCellSize fyne.Size
+	colCount    int
+	rowCount    int
+}
+
+func newFlexGridLayout(minCellSize fyne.Size) *flexGridLayout {
+	return &flexGridLayout{minCellSize: minCellSize, colCount: 1, rowCount: 1}
+}
+
+func (g *flexGridLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	padding := theme.Padding()
+	g.colCount = 1
+	g.rowCount = 0
+
+	if size.Width > g.minCellSize.Width {
+		g.colCount = int(math.Floor(float64(size.Width+padding) / float64(g.minCellSize.Width+padding)))
+	}
+	if g.colCount < 1 {
+		g.colCount = 1
+	}
+	if visible := countVisible(objects); g.colCount > visible && visible > 0 {
+		g.colCount = visible
+	}
+
+	cellH := g.minCellSize.Height
+	cellW := (size.Width - padding*float32(g.colCount-1)) / float32(g.colCount)
+	if cellW < g.minCellSize.Width {
+		cellW = g.minCellSize.Width
+	}
+
+	i, x, y := 0, float32(0), float32(0)
+	for _, child := range objects {
+		if !child.Visible() {
+			continue
+		}
+		if i%g.colCount == 0 {
+			g.rowCount++
+		}
+		child.Move(fyne.NewPos(x, y))
+		child.Resize(fyne.NewSize(cellW, cellH))
+		if (i+1)%g.colCount == 0 {
+			x = 0
+			y += cellH + padding
+		} else {
+			x += cellW + padding
+		}
+		i++
+	}
+}
+
+func (g *flexGridLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	rows := g.rowCount
+	if rows < 1 {
+		rows = 1
+	}
+	return fyne.NewSize(g.minCellSize.Width,
+		(g.minCellSize.Height*float32(rows))+(float32(rows-1)*theme.Padding()))
+}
+
+func countVisible(objects []fyne.CanvasObject) int {
+	n := 0
+	for _, o := range objects {
+		if o.Visible() {
+			n++
+		}
+	}
+	return n
+}
 
 // baseCardSize is the card size at the default font size (14).
 // Actual size scales proportionally with the theme text size.
@@ -273,7 +349,7 @@ func (d *Dashboard) build() fyne.CanvasObject {
 	sectionLabel := monoText("Worktrees", colorGray, true)
 	sectionLabel.TextSize = scaledSize(11)
 
-	grid := container.NewGridWrap(cardCellSize(), cards...)
+	grid := container.New(newFlexGridLayout(cardCellSize()), cards...)
 	linkedSection := container.NewVBox(sectionLabel, grid)
 	d.cards = cards
 	d.scroll = container.NewScroll(linkedSection)

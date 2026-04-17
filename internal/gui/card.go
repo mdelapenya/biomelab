@@ -110,8 +110,9 @@ func buildCardContent(
 		items = append(items, branchText)
 	}
 
-	// Path (prefix-truncated to show the unique suffix).
-	items = append(items, monoText(truncatePath(wt.Path, pathMax), colorDimGray, false))
+	// Path: prefix-truncated dynamically so it never overflows the card,
+	// regardless of how narrow the card becomes when the window is resized.
+	items = append(items, newTruncMonoText(wt.Path, colorDimGray, false, true))
 
 	// Sandbox info.
 	if sbx != nil && sbx.Name != "" {
@@ -319,3 +320,69 @@ func truncatePath(s string, max int) string {
 	}
 	return "…" + string(runes[len(runes)-max+1:])
 }
+
+// truncMonoText is a canvas.Text wrapper that re-truncates its content to fit
+// the width assigned by the parent layout. canvas.Text alone does not clip, so
+// long paths spill past their card's border; this widget recomputes how many
+// runes fit each time the renderer is laid out.
+//
+// prefixTrunc chooses the truncation style: true for prefix truncation
+// (truncatePath — keeps the suffix), false for suffix truncation (truncateStr).
+type truncMonoText struct {
+	widget.BaseWidget
+	fullText    string
+	prefixTrunc bool
+	txt         *canvas.Text
+}
+
+func newTruncMonoText(full string, c color.Color, bold, prefixTrunc bool) *truncMonoText {
+	t := &truncMonoText{
+		fullText:    full,
+		prefixTrunc: prefixTrunc,
+		txt:         monoText(full, c, bold),
+	}
+	t.ExtendBaseWidget(t)
+	return t
+}
+
+func (t *truncMonoText) CreateRenderer() fyne.WidgetRenderer {
+	return &truncMonoTextRenderer{t: t}
+}
+
+type truncMonoTextRenderer struct {
+	t *truncMonoText
+}
+
+// charWidth is an approximation of a monospace glyph width as a fraction of
+// the font size. 0.6 matches most monospace faces; using a conservative value
+// guarantees the truncated string fits inside size.Width.
+const charWidth = 0.6
+
+func (r *truncMonoTextRenderer) Layout(size fyne.Size) {
+	cw := r.t.txt.TextSize * charWidth
+	if cw <= 0 {
+		cw = 8
+	}
+	maxChars := int(size.Width / cw)
+	if maxChars < 2 {
+		maxChars = 2
+	}
+	if r.t.prefixTrunc {
+		r.t.txt.Text = truncatePath(r.t.fullText, maxChars)
+	} else {
+		r.t.txt.Text = truncateStr(r.t.fullText, maxChars)
+	}
+	r.t.txt.Resize(size)
+	r.t.txt.Refresh()
+}
+
+// MinSize reports a tiny width so the parent VBox/Border can assign any width
+// it likes without being forced to grow to the full string. Height tracks the
+// text size.
+func (r *truncMonoTextRenderer) MinSize() fyne.Size {
+	return fyne.NewSize(20, r.t.txt.TextSize*1.4)
+}
+
+func (r *truncMonoTextRenderer) Refresh()                     { r.t.txt.Refresh() }
+func (r *truncMonoTextRenderer) Destroy()                     {}
+func (r *truncMonoTextRenderer) Objects() []fyne.CanvasObject { return []fyne.CanvasObject{r.t.txt} }
