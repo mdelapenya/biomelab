@@ -101,18 +101,21 @@ tasks:
 
   package:
     desc: Package biomelab for the current OS using fyne
-    deps: [build, setup-fyne]
+    deps: [setup, setup-fyne]
     env:
       CGO_ENABLED: "1"
+      # Fyne's internal go build (used on Windows to inject PE resources) picks
+      # up GOFLAGS. Values can't contain spaces, so we inject -X only.
+      GOFLAGS: '-ldflags=-X=main.version={{.VERSION}}'
     cmds:
       - mkdir -p bin
       - >-
         fyne package
-        --executable {{.BIN}}
+        --source-dir ./cmd/biomelab
         --name {{.APP_NAME}}
         --app-id {{.APP_ID}}
         --app-version {{.SEMVER}}
-        --icon cmd/biomelab/icon.png
+        --icon icon.png
         --release
       - |
         # Move whatever fyne package produced into bin/
