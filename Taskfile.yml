@@ -22,10 +22,8 @@ vars:
 tasks:
   setup:
     desc: Install gvm if not present
-    status:
-      - command -v gvm
     cmds:
-      - go install github.com/andrewkroh/gvm/cmd/gvm@latest
+      - task: install-gvm
 
   install-gvm:
     desc: Install gvm from prebuilt release binary (no Go required)
@@ -38,7 +36,7 @@ tasks:
       GVM_VERSION: v0.6.0
       GVM_BASE_URL: https://github.com/andrewkroh/gvm/releases/download
       GVM_INSTALL_DIR:
-        sh: echo "${GVM_INSTALL_DIR:-$HOME/.local/bin}"
+        sh: echo "${GVM_INSTALL_DIR:-${GOBIN:-$HOME/go/bin}}"
     cmds:
       - mkdir -p "{{.GVM_INSTALL_DIR}}"
       - cmd: curl -fsSL -o "{{.GVM_INSTALL_DIR}}/gvm" "{{.GVM_BASE_URL}}/{{.GVM_VERSION}}/gvm-linux-amd64" && chmod +x "{{.GVM_INSTALL_DIR}}/gvm"
