@@ -9,14 +9,18 @@ vars:
         eval "$(gvm {{.GO_VERSION}})" >/dev/null 2>&1 && which go && exit 0
       fi
       echo go
-  BIN: bin/biomelab
+  GOEXE:
+    sh: go env GOEXE 2>/dev/null || echo ""
+  BIN: bin/biomelab{{.GOEXE}}
   APP_NAME: Biomelab
   APP_ID: com.mdelapenya.biomelab
   VERSION:
     sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
   # SEMVER: stripped to x.y.z for fyne package (which rejects anything else)
   SEMVER:
-    sh: git describe --tags --always --dirty 2>/dev/null | sed 's/^v//; s/-.*//' || echo "0.0.1"
+    sh: |
+      v=$(git describe --tags --match 'v[0-9]*' 2>/dev/null | sed 's/^v//; s/-.*//')
+      [ -n "$v" ] && echo "$v" || echo "0.0.1"
   LDFLAGS: -s -w -X main.version={{.VERSION}}
 
 tasks:
@@ -97,18 +101,18 @@ tasks:
 
   package:
     desc: Package biomelab for the current OS using fyne
-    deps: [setup, setup-fyne]
+    deps: [build, setup-fyne]
     env:
       CGO_ENABLED: "1"
     cmds:
       - mkdir -p bin
       - >-
         fyne package
-        --source-dir ./cmd/biomelab
+        --executable {{.BIN}}
         --name {{.APP_NAME}}
         --app-id {{.APP_ID}}
         --app-version {{.SEMVER}}
-        --icon icon.png
+        --icon cmd/biomelab/icon.png
         --release
       - |
         # Move whatever fyne package produced into bin/
