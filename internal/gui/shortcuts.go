@@ -19,6 +19,7 @@ type focusPanel int
 const (
 	focusRight focusPanel = iota
 	focusLeft
+	focusTerminal
 )
 
 // handleKeyName processes special key events (arrows, Enter, Esc, Tab).
@@ -36,6 +37,19 @@ func (a *App) handleKeyName(key fyne.KeyName) {
 		return
 	}
 	if a.dialogOpen {
+		return
+	}
+
+	// Terminal panel has focus — only Tab (cycle) and Escape (leave) are
+	// ours. Everything else must flow to the embedded terminal's TypedKey /
+	// TypedRune so the shell receives the keystroke.
+	if a.focus == focusTerminal {
+		switch key {
+		case fyne.KeyTab:
+			a.toggleFocus()
+		case fyne.KeyEscape:
+			a.handleEscape()
+		}
 		return
 	}
 
@@ -117,6 +131,9 @@ func (a *App) handleKeyName(key fyne.KeyName) {
 // Called from canvas.SetOnTypedRune — only fires when canvas.Focused()==nil.
 func (a *App) handleRune(r rune) {
 	if a.dialogOpen {
+		return
+	}
+	if a.focus == focusTerminal {
 		return
 	}
 	switch r {
@@ -259,10 +276,24 @@ func (a *App) navigateRight() {
 }
 
 func (a *App) toggleFocus() {
-	if a.focus == focusRight {
+	// Cycle: right → left → terminal → right. Skip the terminal step when
+	// no session is visible so Tab stays a two-way toggle for users who
+	// haven't opened a terminal yet.
+	switch a.focus {
+	case focusRight:
 		a.focus = focusLeft
-	} else {
+		a.window.Canvas().Unfocus()
+	case focusLeft:
+		if t := a.termPanel.Active(); t != nil {
+			a.focus = focusTerminal
+			a.window.Canvas().Focus(t)
+		} else {
+			a.focus = focusRight
+			a.window.Canvas().Unfocus()
+		}
+	case focusTerminal:
 		a.focus = focusRight
+		a.window.Canvas().Unfocus()
 	}
 	if a.dashboard != nil {
 		a.dashboard.Rebuild()
@@ -286,21 +317,24 @@ func (a *App) handleEnter() {
 	if !ok {
 		return
 	}
-	wt := re.state.Worktrees[idx]
 
-	mode := re.state.ActiveMode
-	if mode != nil && mode.Type == "sandbox" && mode.SandboxName != "" {
-		args := sandbox.RunWithBranchArgs(mode.SandboxName, wt.Branch)
-		cmd := sandbox.CommandString(args)
-		go func() { _ = ops.OpenTerminal("", cmd) }()
-	} else {
-		go func() { _ = ops.OpenTerminal(wt.Path, "") }()
+	// Deliberate action only — card click does NOT auto-open the terminal,
+	// because in sandbox mode that would re-attach via `sbx run` every time
+	// the user selected a different card. Enter is the explicit trigger.
+	a.openTerminalFor(re.state, idx)
+	a.focus = focusTerminal
+	if t := a.termPanel.Active(); t != nil {
+		a.window.Canvas().Focus(t)
+	}
+	if a.dashboard != nil {
+		a.dashboard.Rebuild()
 	}
 }
 
 func (a *App) handleEscape() {
-	if a.focus == focusLeft {
+	if a.focus == focusLeft || a.focus == focusTerminal {
 		a.focus = focusRight
+		a.window.Canvas().Unfocus()
 		if a.dashboard != nil {
 			a.dashboard.Rebuild()
 		}
@@ -443,8 +477,16 @@ func (a *App) handleDeleteOrRemoveSandbox() {
 			fyne.Do(func() {
 				if err != nil {
 					a.setStatus(err.Error(), true)
-				} else if re.state.SelectedCard >= len(re.state.Worktrees)-1 {
-					re.state.SelectedCard = max(0, re.state.SelectedCard-1)
+				} else {
+					mode := re.state.ActiveMode
+					if mode != nil && mode.Type == "sandbox" && mode.SandboxName != "" {
+						a.termPanel.RemoveSandbox(mode.SandboxName, wt.Branch)
+					} else {
+						a.termPanel.RemoveShell(wt.Path)
+					}
+					if re.state.SelectedCard >= len(re.state.Worktrees)-1 {
+						re.state.SelectedCard = max(0, re.state.SelectedCard-1)
+					}
 				}
 				a.refreshMgr.TriggerQuick()
 			})

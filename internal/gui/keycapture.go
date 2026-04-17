@@ -83,3 +83,59 @@ func registerThemeToggleShortcut(c fyne.Canvas, onToggle func()) {
 		c.AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyT, Modifier: mod}, handler)
 	}
 }
+
+// registerTerminalKeyShortcuts forwards modified arrow/backspace combos to
+// the embedded terminal panel as the escape sequences zsh/bash/readline
+// expect. fyne-io/terminal's TypedKey path drops modifier info, so
+// Option+Left arrives as plain `\e[D` and the user's `bindkey '\eb'
+// backward-word` (or equivalent) never fires. We intercept at the canvas
+// level and write the sequence directly to the active terminal's PTY.
+//
+// Bindings chosen to match macOS Terminal.app / iTerm2 "natural text
+// editing" defaults, which is what most zsh/bash configs assume:
+//
+//	Alt+Left        → ESC b   (backward-word)
+//	Alt+Right       → ESC f   (forward-word)
+//	Alt+Backspace   → ESC DEL (kill previous word)
+//	Cmd+Left        → ESC OH  (beginning of line)
+//	Cmd+Right       → ESC OF  (end of line)
+//	Cmd+Backspace   → ^U      (kill to beginning of line)
+//
+// Fires only when the terminal panel has focus; otherwise the event falls
+// through to dashboard handlers (currently a no-op for these combos).
+func registerTerminalKeyShortcuts(c fyne.Canvas, a *App) {
+	write := func(seq []byte) func(fyne.Shortcut) {
+		return func(_ fyne.Shortcut) {
+			if a.focus != focusTerminal {
+				return
+			}
+			t := a.termPanel.Active()
+			if t == nil {
+				return
+			}
+			_, _ = t.Write(seq)
+		}
+	}
+
+	type binding struct {
+		mod fyne.KeyModifier
+		key fyne.KeyName
+		seq []byte
+	}
+	esc := byte(0x1b)
+	del := byte(0x7f)
+	bindings := []binding{
+		// Word motion — Option on macOS, Alt on Linux/Windows
+		{fyne.KeyModifierAlt, fyne.KeyLeft, []byte{esc, 'b'}},
+		{fyne.KeyModifierAlt, fyne.KeyRight, []byte{esc, 'f'}},
+		{fyne.KeyModifierAlt, fyne.KeyBackspace, []byte{esc, del}},
+
+		// Line motion — Cmd on macOS; Super on Linux for symmetry
+		{fyne.KeyModifierSuper, fyne.KeyLeft, []byte{esc, 'O', 'H'}},
+		{fyne.KeyModifierSuper, fyne.KeyRight, []byte{esc, 'O', 'F'}},
+		{fyne.KeyModifierSuper, fyne.KeyBackspace, []byte{0x15}}, // ^U
+	}
+	for _, b := range bindings {
+		c.AddShortcut(&desktop.CustomShortcut{KeyName: b.key, Modifier: b.mod}, write(b.seq))
+	}
+}
