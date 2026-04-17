@@ -131,16 +131,21 @@ jobs:
         id: nightly
         run: |
           BASE=$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-nightly*' 2>/dev/null || echo "v0.0.0")
+          echo "base=${BASE}" >> "$GITHUB_OUTPUT"
           echo "tag=${BASE}-nightly" >> "$GITHUB_OUTPUT"
 
-      - name: Delete existing nightly tag and release
+      - name: Delete existing nightly tags and releases
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NIGHTLY_TAG: ${{ steps.nightly.outputs.tag }}
         run: |
-          gh release delete "${NIGHTLY_TAG}" --yes --cleanup-tag || true
-          git tag -d "${NIGHTLY_TAG}" 2>/dev/null || true
-          git push origin ":refs/tags/${NIGHTLY_TAG}" 2>/dev/null || true
+          # Delete every *-nightly release so a stable version bump doesn't
+          # leave the previous BASE's nightly orphaned.
+          existing=$(gh release list --limit 100 --json tagName --jq '.[].tagName' | grep -- '-nightly$' || true)
+          for tag in $existing; do
+            echo "Deleting release and tag: $tag"
+            gh release delete "$tag" --yes --cleanup-tag || true
+            git push origin ":refs/tags/$tag" 2>/dev/null || true
+          done
 
       - name: Create nightly tag
         env:
@@ -153,12 +158,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NIGHTLY_TAG: ${{ steps.nightly.outputs.tag }}
+          BASE_TAG: ${{ steps.nightly.outputs.base }}
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
           gh release create "${NIGHTLY_TAG}" \
             --title "Nightly Build (${SHORT_SHA})" \
             --prerelease \
-            --notes "Automated nightly build from main (${SHORT_SHA})" \
+            --generate-notes \
+            --notes-start-tag "${BASE_TAG}" \
             artifacts/biomelab-nightly-darwin/Biomelab-darwin-universal.zip \
             artifacts/biomelab-nightly-linux/Biomelab-linux-amd64.tar.xz \
             artifacts/biomelab-nightly-windows/Biomelab-windows-amd64.zip
