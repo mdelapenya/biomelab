@@ -48,9 +48,28 @@ jobs:
         run: task test-race
 
   build:
-    name: Build
-    runs-on: ubuntu-latest
+    name: Build (${{ matrix.os }})
     needs: [lint, test]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            task: package
+            verify: |
+              mkdir -p /tmp/verify
+              tar -xJf bin/Biomelab.tar.xz -C /tmp/verify
+              /tmp/verify/usr/local/bin/biomelab --version
+          - os: macos-latest
+            task: package-darwin-universal
+            verify: bin/Biomelab.app/Contents/MacOS/Biomelab --version
+          - os: windows-latest
+            task: package
+            verify: ./bin/Biomelab.exe --version
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -58,11 +77,15 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install system dependencies
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc libgl1-mesa-dev xorg-dev
 
       - name: Install Task
         uses: go-task/setup-task@70f2430ad412f838533de8c0515c749ffb2b8bd3 # v1.1.0
 
-      - name: Build
-        run: task build
+      - name: Package on ${{ matrix.os }}
+        run: task ${{ matrix.task }}
+
+      - name: Verify ${{ matrix.os }} package
+        run: ${{ matrix.verify }}
