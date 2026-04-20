@@ -35,7 +35,7 @@ func newPRLink(label, rawURL string, c color.Color) *prLink {
 
 func (pl *prLink) Tapped(_ *fyne.PointEvent) {
 	if pl.u != nil {
-		fyne.CurrentApp().OpenURL(pl.u)
+		_ = fyne.CurrentApp().OpenURL(pl.u)
 	}
 }
 func (pl *prLink) TappedSecondary(_ *fyne.PointEvent) {}
