@@ -69,6 +69,10 @@ type PRInfo struct {
 
 	// CI check status: "success", "failure", "pending", or "" if unknown.
 	CheckStatus string
+
+	// ReviewStatus is the most significant review state on the PR/MR.
+	// Values: "approved", "changes_requested", "commented", or "" (no reviews).
+	ReviewStatus string
 }
 
 // PRResult maps branch names to their PR info.

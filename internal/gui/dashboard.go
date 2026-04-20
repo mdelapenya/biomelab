@@ -320,6 +320,15 @@ func (d *Dashboard) build() fyne.CanvasObject {
 		return container.NewBorder(topSection, d.helpBar(), nil, nil, nil)
 	}
 
+	// Kanban board view.
+	if d.state.ViewMode == ViewKanban {
+		d.scroll = nil
+		d.cards = nil
+		kanbanView := d.buildKanbanView()
+		return container.NewBorder(topSection, d.helpBar(), nil, nil, kanbanView)
+	}
+
+	// Grid view (default).
 	var cards []fyne.CanvasObject
 	for i, wt := range linked {
 		wtIdx := i + 1 // offset by 1 because main card is index 0
@@ -361,7 +370,11 @@ func (d *Dashboard) helpBar() fyne.CanvasObject {
 	bg := canvas.NewRectangle(colorPanelBg)
 	bg.CornerRadius = 0
 
-	help := monoText("↑↓ nav  [Tab] panel  [⏎] open  [e] editor  [r] refresh  [d] delete  [p] pull  [P] PR", colorDimGray, false)
+	viewHint := "[g] board"
+	if d.state.ViewMode == ViewKanban {
+		viewHint = "[g] grid"
+	}
+	help := monoText("↑↓ nav  [Tab] panel  [⏎] open  [e] editor  [r] refresh  [d] delete  [p] pull  [P] PR  "+viewHint, colorDimGray, false)
 	help.TextSize = scaledSize(9)
 
 	return container.NewStack(bg, container.NewPadded(help))

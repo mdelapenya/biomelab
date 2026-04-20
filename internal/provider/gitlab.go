@@ -62,7 +62,7 @@ func (g *GitLabProvider) CreatePR(repoDir, branch, targetRepo string) (*PRInfo, 
 
 func fetchGitLabMR(repoDir, branch string) *PRInfo {
 	cmd := exec.Command("glab", "mr", "view", branch,
-		"--json", "iid,title,state,draft,webUrl,headPipeline",
+		"--json", "iid,title,state,draft,webUrl,headPipeline,approvedBy",
 	)
 	cmd.Dir = repoDir
 	out, err := cmd.Output()
@@ -79,6 +79,9 @@ func fetchGitLabMR(repoDir, branch string) *PRInfo {
 		HeadPipeline *struct {
 			Status string `json:"status"`
 		} `json:"headPipeline"`
+		ApprovedBy []struct {
+			Username string `json:"username"`
+		} `json:"approvedBy"`
 	}
 	if err := json.Unmarshal(out, &raw); err != nil {
 		return nil
@@ -94,6 +97,9 @@ func fetchGitLabMR(repoDir, branch string) *PRInfo {
 
 	if raw.HeadPipeline != nil {
 		pr.CheckStatus = mapGitLabPipelineStatus(raw.HeadPipeline.Status)
+	}
+	if len(raw.ApprovedBy) > 0 {
+		pr.ReviewStatus = "approved"
 	}
 
 	return pr
