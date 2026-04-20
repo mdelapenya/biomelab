@@ -452,10 +452,28 @@
 
   <script>
     // Mobile hamburger menu
-    document.getElementById('nav-hamburger').addEventListener('click', function () {
-      var nav = document.getElementById('nav-links');
-      var open = nav.classList.toggle('open');
+    var navHamburger = document.getElementById('nav-hamburger');
+    var navLinks = document.getElementById('nav-links');
+
+    function closeNav() {
+      navLinks.classList.remove('open');
+      navHamburger.setAttribute('aria-expanded', 'false');
+    }
+
+    navHamburger.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var open = navLinks.classList.toggle('open');
       this.setAttribute('aria-expanded', open);
+    });
+
+    document.addEventListener('click', function (e) {
+      if (!navLinks.classList.contains('open')) return;
+      if (navLinks.contains(e.target) || navHamburger.contains(e.target)) return;
+      closeNav();
+    });
+
+    navLinks.querySelectorAll('a').forEach(function (link) {
+      link.addEventListener('click', closeNav);
     });
 
     document.getElementById('install-copy').addEventListener('click', function () {

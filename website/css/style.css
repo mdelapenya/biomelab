@@ -1588,10 +1588,11 @@ footer {
   .hero-image::after {
     background: linear-gradient(0deg,
       rgba(9, 13, 18, .97) 0%,
-      rgba(9, 13, 18, .85) 25%,
-      rgba(9, 13, 18, .55) 50%,
-      rgba(9, 13, 18, .25) 70%,
-      transparent 88%)
+      rgba(9, 13, 18, .92) 35%,
+      rgba(9, 13, 18, .82) 60%,
+      rgba(9, 13, 18, .6) 80%,
+      rgba(9, 13, 18, .3) 95%,
+      transparent 100%)
   }
 }
 
