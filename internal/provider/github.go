@@ -64,7 +64,7 @@ func (g *GitHubProvider) CreatePR(repoDir, branch, targetRepo string) (*PRInfo, 
 
 func fetchGitHubPR(repoDir, branch string) *PRInfo {
 	cmd := exec.Command("gh", "pr", "view", branch,
-		"--json", "number,title,state,isDraft,url,statusCheckRollup",
+		"--json", "number,title,state,isDraft,url,statusCheckRollup,reviews",
 	)
 	cmd.Dir = repoDir
 	out, err := cmd.Output()
@@ -83,6 +83,9 @@ func fetchGitHubPR(repoDir, branch string) *PRInfo {
 			Status     string `json:"status"`
 			Conclusion string `json:"conclusion"`
 		} `json:"statusCheckRollup"`
+		Reviews []struct {
+			State string `json:"state"`
+		} `json:"reviews"`
 	}
 	if err := json.Unmarshal(out, &raw); err != nil {
 		return nil
@@ -97,7 +100,36 @@ func fetchGitHubPR(repoDir, branch string) *PRInfo {
 	}
 
 	pr.CheckStatus = rollupStatus(raw.StatusCheckRollup)
+	pr.ReviewStatus = githubReviewStatus(raw.Reviews)
 	return pr
+}
+
+// githubReviewStatus returns the most significant review state from a list of
+// GitHub reviews. Priority: approved > changes_requested > commented.
+func githubReviewStatus(reviews []struct{ State string `json:"state"` }) string {
+	hasApproved := false
+	hasChanges := false
+	hasComment := false
+	for _, r := range reviews {
+		switch strings.ToUpper(r.State) {
+		case "APPROVED":
+			hasApproved = true
+		case "CHANGES_REQUESTED":
+			hasChanges = true
+		case "COMMENTED":
+			hasComment = true
+		}
+	}
+	switch {
+	case hasApproved:
+		return "approved"
+	case hasChanges:
+		return "changes_requested"
+	case hasComment:
+		return "commented"
+	default:
+		return ""
+	}
 }
 
 func rollupStatus(checks []struct {

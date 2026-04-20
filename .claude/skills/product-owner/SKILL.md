@@ -254,6 +254,48 @@ If biomelab is launched from inside a git repository, that repo is automatically
 registered in regular mode. If launched from a non-git directory, biomelab shows
 an empty state with instructions to add a repo.
 
+### 18. Kanban Board View
+
+The default view groups linked worktrees into four columns by PR/MR lifecycle stage:
+
+| Column | Condition |
+|---|---|
+| **Created** | No PR associated, or PR is closed |
+| **PR Sent** | Open PR (including drafts) with no review activity yet |
+| **PR In Review** | Open PR that has received at least one review (approved, changes requested, or commented) |
+| **PR Merged** | PR has been merged |
+
+The main worktree card remains pinned at the top regardless of view.
+
+**Toggling views:** Press `g` to switch to the responsive card grid. Press `g` again
+to return to the kanban board. The preference is per repo/mode.
+
+**Kanban card layout:** Each card in the kanban view is compact and shows only
+essential information in up to four rows:
+
+| Row | Content | Visibility |
+|---|---|---|
+| 1 | `●` (stage-coloured dot) + bold branch name | Always |
+| 2 | `● agent-name` in green | Only when an agent is running |
+| 3 | underlined `#42` (tappable PR link) + `🔍` review icon + `🤖` CI icon | Only when a PR exists |
+| 4 | `~ dirty` in yellow | Only when worktree has uncommitted changes |
+
+Review and CI icons use distinct symbols to avoid confusion even when both are
+the same colour. Hovering over either shows a tooltip explaining its meaning:
+
+| Category | Approved/Success | Changes Requested/Failure | Commented/Pending |
+|---|---|---|---|
+| Review (🔍) | `✓` green | `!` red | `~` yellow |
+| CI (🤖) | `✓` green | `✗` red | `○` yellow |
+
+This data is fetched from `gh pr view --json reviews` (GitHub) and `glab mr view --json approvedBy` (GitLab).
+
+**Kanban navigation:**
+- `↑ / k`: move up within the current column (from first card → back to main)
+- `↓ / j`: move down within the current column (from main → first card of first non-empty column)
+- `← / h`: jump to the same-row card in the previous non-empty column
+- `→ / l`: jump to the same-row card in the next non-empty column
+
 ---
 
 ## Keyboard Reference
@@ -276,8 +318,8 @@ an empty state with instructions to add a repo.
 |---|---|---|
 | `Up` / `k` | Navigate up | Any card |
 | `Down` / `j` | Navigate down | Any card |
-| `Left` / `h` | Navigate left in grid | Linked cards |
-| `Right` / `l` | Navigate right in grid | Linked cards |
+| `Left` / `h` | Navigate left (grid: move left; kanban: previous column) | Linked cards |
+| `Right` / `l` | Navigate right (grid: move right; kanban: next column) | Linked cards |
 | `c` | Create worktree | Main card only |
 | `f` | Fetch PR/MR | Main card only |
 | `n` | New sandbox / create sandbox | Main card only |
@@ -288,6 +330,7 @@ an empty state with instructions to add a repo.
 | `Enter` | Open in terminal | Any card |
 | `p` | Pull from remote | Any card |
 | `r` | Refresh selected card | Any card |
+| `g` | Toggle kanban ↔ grid view | Global |
 | `m` | Toggle mouse mode | Global |
 | `q` / `Ctrl+C` | Quit | Global |
 | `Tab` / `Shift+Tab` | Switch panel focus | Global |
@@ -572,3 +615,30 @@ failing silently.
 requires a dedicated CLI integration (`gh`, `glab`). The "not yet supported"
 message signals that the limitation is known and intentional, not a bug, and
 leaves the door open for future providers (Bitbucket, Gitea, etc.).
+
+### DL-021: Kanban board is the default view
+
+**Decision:** When a repo/mode is first displayed, the linked worktrees are
+shown in the kanban board (four PR lifecycle columns) rather than the
+responsive card grid. Press `g` to toggle between views. The preference is
+stored per repo/mode in `RepoState.ViewMode`.
+
+**Why:** The primary use-case for biomelab is running multiple AI agents on
+multiple branches simultaneously. The most important question is "what state is
+each branch in?" — not "what are all my branches?" The kanban board answers
+that question at a glance: Created → PR Sent → PR In Review → PR Merged. The
+card grid remains available for users who prefer a flat, alphabetical view or
+who have many branches at the same stage.
+
+### DL-022: Review status fetched from provider and shown on cards
+
+**Decision:** `PRInfo` carries a `ReviewStatus` field ("approved",
+"changes_requested", "commented", or ""). This is fetched via
+`gh pr view --json reviews` (GitHub) and `glab mr view --json approvedBy`
+(GitLab). Cards show a small icon: green ✓ approved, red ! changes requested,
+yellow ● commented.
+
+**Why:** Review status is what determines whether a branch is in "PR Sent" vs
+"PR In Review" in the kanban board. It also provides a quick signal on cards in
+the grid view so users know whether action is needed without opening the PR URL.
+The icon is kept minimal (single character) to avoid crowding the card line.

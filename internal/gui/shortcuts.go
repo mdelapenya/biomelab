@@ -67,6 +67,12 @@ func (a *App) handleKeyName(key fyne.KeyName) {
 	// Letter keys — handled here instead of SetOnTypedRune because
 	// onTypedRune only fires when canvas.Focused()==nil, which can
 	// silently break after dialog dismissal. SetOnKeyDown always fires.
+	// View toggle is global across both panels.
+	if key == fyne.KeyG {
+		a.toggleView()
+		return
+	}
+
 	if a.focus == focusLeft {
 		switch key {
 		case fyne.KeyJ:
@@ -177,6 +183,10 @@ func (a *App) navigateUp() {
 	if a.dashboard == nil {
 		return
 	}
+	if a.dashboard.state.ViewMode == ViewKanban {
+		a.navigateKanbanUp()
+		return
+	}
 	s := a.dashboard.state
 	if s.SelectedCard == 0 {
 		return // already at main
@@ -198,6 +208,10 @@ func (a *App) navigateDown() {
 		return
 	}
 	if a.dashboard == nil {
+		return
+	}
+	if a.dashboard.state.ViewMode == ViewKanban {
+		a.navigateKanbanDown()
 		return
 	}
 	s := a.dashboard.state
@@ -227,6 +241,10 @@ func (a *App) navigateLeft() {
 	if a.focus != focusRight || a.dashboard == nil {
 		return
 	}
+	if a.dashboard.state.ViewMode == ViewKanban {
+		a.navigateKanbanLeft()
+		return
+	}
 	s := a.dashboard.state
 	if s.SelectedCard > 1 {
 		s.SelectedCard--
@@ -242,6 +260,10 @@ func (a *App) navigateRight() {
 	if a.focus != focusRight || a.dashboard == nil {
 		return
 	}
+	if a.dashboard.state.ViewMode == ViewKanban {
+		a.navigateKanbanRight()
+		return
+	}
 	s := a.dashboard.state
 	if s.SelectedCard == 0 {
 		if len(s.Worktrees) > 1 {
@@ -255,6 +277,116 @@ func (a *App) navigateRight() {
 		s.SelectedCard++
 		a.dashboard.Rebuild()
 		a.dashboard.EnsureVisible()
+	}
+}
+
+// --- View toggle ---
+
+func (a *App) toggleView() {
+	re := a.activeRepo()
+	if re == nil {
+		return
+	}
+	if re.state.ViewMode == ViewKanban {
+		re.state.ViewMode = ViewGrid
+	} else {
+		re.state.ViewMode = ViewKanban
+	}
+	if a.dashboard != nil {
+		a.dashboard.Rebuild()
+		if re.state.ViewMode == ViewGrid {
+			a.dashboard.EnsureVisible()
+		}
+	}
+}
+
+// --- Kanban navigation ---
+
+func (a *App) navigateKanbanUp() {
+	s := a.dashboard.state
+	if s.SelectedCard == 0 {
+		return
+	}
+	stages := a.dashboard.KanbanStages()
+	col := a.dashboard.KanbanColumnOf(s.SelectedCard)
+	row := a.dashboard.KanbanRowOf(s.SelectedCard, stages)
+	if row > 0 {
+		s.SelectedCard = stages[col][row-1]
+	} else {
+		s.SelectedCard = 0 // top of column → back to main
+	}
+	a.dashboard.Rebuild()
+}
+
+func (a *App) navigateKanbanDown() {
+	s := a.dashboard.state
+	stages := a.dashboard.KanbanStages()
+	if s.SelectedCard == 0 {
+		// From main, enter the first non-empty column.
+		for _, colCards := range stages {
+			if len(colCards) > 0 {
+				s.SelectedCard = colCards[0]
+				a.dashboard.Rebuild()
+				return
+			}
+		}
+		return
+	}
+	col := a.dashboard.KanbanColumnOf(s.SelectedCard)
+	row := a.dashboard.KanbanRowOf(s.SelectedCard, stages)
+	if row < len(stages[col])-1 {
+		s.SelectedCard = stages[col][row+1]
+		a.dashboard.Rebuild()
+	}
+}
+
+func (a *App) navigateKanbanLeft() {
+	s := a.dashboard.state
+	if s.SelectedCard <= 0 {
+		return
+	}
+	stages := a.dashboard.KanbanStages()
+	col := a.dashboard.KanbanColumnOf(s.SelectedCard)
+	row := a.dashboard.KanbanRowOf(s.SelectedCard, stages)
+	for c := col - 1; c >= 0; c-- {
+		if len(stages[c]) > 0 {
+			targetRow := row
+			if targetRow >= len(stages[c]) {
+				targetRow = len(stages[c]) - 1
+			}
+			s.SelectedCard = stages[c][targetRow]
+			a.dashboard.Rebuild()
+			return
+		}
+	}
+}
+
+func (a *App) navigateKanbanRight() {
+	s := a.dashboard.state
+	stages := a.dashboard.KanbanStages()
+	if s.SelectedCard == 0 {
+		// From main, enter the first non-empty column.
+		for _, colCards := range stages {
+			if len(colCards) > 0 {
+				s.SelectedCard = colCards[0]
+				a.dashboard.Rebuild()
+				return
+			}
+		}
+		return
+	}
+	col := a.dashboard.KanbanColumnOf(s.SelectedCard)
+	row := a.dashboard.KanbanRowOf(s.SelectedCard, stages)
+	for c := col + 1; c < 4; c++ {
+		if len(stages[c]) > 0 {
+			targetRow := row
+			if targetRow >= len(stages[c]) {
+				targetRow = len(stages[c]) - 1
+			}
+			s.SelectedCard = stages[c][targetRow]
+			a.dashboard.Rebuild()
+			return
+		}
 	}
 }
 

@@ -218,7 +218,17 @@ func buildPRLine(pr *provider.PRInfo, prov provider.Provider) fyne.CanvasObject 
 	}
 
 	text := fmt.Sprintf("%s #%d %s (%s)", label, pr.Number, title, stateLabel)
-	parts := []fyne.CanvasObject{monoText(truncateStr(text, 40), c, false)}
+	parts := []fyne.CanvasObject{monoText(truncateStr(text, 36), c, false)}
+
+	// Review status icon (shown before the CI icon).
+	switch pr.ReviewStatus {
+	case "approved":
+		parts = append(parts, monoText(" ✓", colorGreen, false))
+	case "changes_requested":
+		parts = append(parts, monoText(" !", colorRed, false))
+	case "commented":
+		parts = append(parts, monoText(" ●", colorYellow, false))
+	}
 
 	if pr.CheckStatus != "" {
 		icon := provider.StatusIcon(pr.CheckStatus)

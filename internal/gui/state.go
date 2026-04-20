@@ -13,6 +13,17 @@ import (
 	"github.com/mdelapenya/biomelab/internal/sandbox"
 )
 
+// ViewMode controls how the linked worktrees are displayed.
+type ViewMode int
+
+const (
+	// ViewKanban groups worktrees into columns by PR lifecycle stage.
+	// It is the default view (zero value).
+	ViewKanban ViewMode = iota
+	// ViewGrid is the responsive card grid layout.
+	ViewGrid
+)
+
 // RepoState holds all UI-relevant state for a single repo+mode.
 type RepoState struct {
 	// Domain data from business logic.
@@ -28,6 +39,7 @@ type RepoState struct {
 	ActiveMode       *config.ModeEntry
 
 	// UI state.
+	ViewMode           ViewMode
 	SelectedCard       int
 	LastLocalRefresh   time.Time
 	LastNetworkRefresh time.Time
