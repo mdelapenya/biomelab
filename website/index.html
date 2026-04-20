@@ -53,6 +53,7 @@
         <li><a href="#dashboard">Dashboard</a></li>
         <li><a href="#sandboxes">Sandboxes</a></li>
         <li><a href="#workflow">Workflow</a></li>
+        <li><a href="#kanban">Kanban</a></li>
         <li><a href="#install">Install</a></li>
         <li>
           <a href="https://github.com/mdelapenya/biomelab" class="nav-github" target="_blank" rel="noopener">
@@ -329,6 +330,182 @@
     </div>
   </section>
 
+  <section id="kanban" class="kanban-board">
+    <div class="container">
+      <span class="section-label">Kanban Board</span>
+      <h2>See every PR's lifecycle <span class="kb-accent">at a glance</span></h2>
+      <p class="kanban-intro">The default view groups your worktrees into four columns — from fresh branch to merged PR. One keystroke switches to the flat grid and back.</p>
+      <div class="kanban-features">
+        <div class="kanban-feat-card"><span class="icon">📋</span>
+          <h3>Four lifecycle stages</h3>
+          <p>Created → PR Sent → PR In Review → PR Merged. Branches self-sort as CI runs and reviewers respond.</p>
+        </div>
+        <div class="kanban-feat-card"><span class="icon">🔍</span>
+          <h3>Review status on every card</h3>
+          <p>Approved ✓, changes requested !, or commented ● — fetched live from GitHub reviews or GitLab approvals.</p>
+        </div>
+        <div class="kanban-feat-card"><span class="icon">⌨️</span>
+          <h3>Press <kbd>g</kbd> for grid view</h3>
+          <p>Toggle to the classic responsive card grid whenever you want a flat alphabetical view. Toggle back with <kbd>g</kbd>.</p>
+        </div>
+      </div>
+
+      <div class="kanban-diagram-html">
+        <h4 class="diagram-title">PR Lifecycle Board</h4>
+
+        <div class="kb-board">
+
+          <!-- Column 0: Created -->
+          <div class="kb-col kb-col-created">
+            <div class="kb-col-header">
+              <span class="kb-col-title">Created</span>
+              <span class="kb-col-badge">2</span>
+            </div>
+            <div class="kb-card" data-kb="feat/new-signup">
+              <div class="kb-card-top">
+                <span class="kb-dot kb-dot-gray"></span>
+                <span class="kb-branch">feat/new-signup</span>
+              </div>
+              <div class="kb-card-meta"><span class="kb-agent kb-agent-green">● claude</span></div>
+              <div class="kb-card-status"><span class="kb-no-pr">no PR</span><span class="kb-ci-empty">&nbsp;</span></div>
+            </div>
+            <div class="kb-card" data-kb="fix/sidebar">
+              <div class="kb-card-top">
+                <span class="kb-dot kb-dot-gray"></span>
+                <span class="kb-branch">fix/sidebar</span>
+              </div>
+              <div class="kb-card-meta"><span class="kb-agent kb-agent-dim">○ no agent</span></div>
+              <div class="kb-card-status"><span class="kb-no-pr">no PR</span></div>
+            </div>
+          </div>
+
+          <div class="kb-flow-arrow">&#x276F;</div>
+
+          <!-- Column 1: PR Sent -->
+          <div class="kb-col kb-col-sent">
+            <div class="kb-col-header">
+              <span class="kb-col-title">PR Sent</span>
+              <span class="kb-col-badge kb-badge-blue">3</span>
+            </div>
+            <div class="kb-card" data-kb="feat/auth-flow">
+              <div class="kb-card-top">
+                <span class="kb-dot kb-dot-blue"></span>
+                <span class="kb-branch">feat/auth-flow</span>
+              </div>
+              <div class="kb-card-meta"><span class="kb-agent kb-agent-green">● claude</span></div>
+              <div class="kb-card-status">
+                <span class="kb-pr-label">PR <span class="kb-pr-num">#42</span> <span class="kb-pr-state-open">open</span></span>
+                <span class="kb-ci kb-ci-pending" title="CI pending">●</span>
+              </div>
+            </div>
+            <div class="kb-card" data-kb="fix/memory-leak">
+              <div class="kb-card-top">
+                <span class="kb-dot kb-dot-blue"></span>
+                <span class="kb-branch">fix/memory-leak</span>
+              </div>
+              <div class="kb-card-meta"><span class="kb-agent kb-agent-dim">○ no agent</span></div>
+              <div class="kb-card-status">
+                <span class="kb-pr-label">PR <span class="kb-pr-num">#38</span> <span class="kb-pr-state-open">open</span></span>
+                <span class="kb-ci kb-ci-pass" title="CI passed">✓</span>
+              </div>
+            </div>
+            <div class="kb-card kb-card-draft" data-kb="refactor/db">
+              <div class="kb-card-top">
+                <span class="kb-dot kb-dot-dim"></span>
+                <span class="kb-branch kb-branch-dim">refactor/db</span>
+              </div>
+              <div class="kb-card-meta"><span class="kb-agent kb-agent-green">● codex</span></div>
+              <div class="kb-card-status">
+                <span class="kb-pr-label">PR <span class="kb-pr-num">#35</span> <span class="kb-pr-state-draft">draft</span></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="kb-flow-arrow">&#x276F;</div>
+
+          <!-- Column 2: PR In Review -->
+          <div class="kb-col kb-col-in-review kb-col-active">
+            <div class="kb-col-header">
+              <span class="kb-col-title">PR In Review</span>
+              <span class="kb-col-badge kb-badge-yellow">2</span>
+            </div>
+            <div class="kb-card kb-card-approved" data-kb="feat/api-v2">
+              <div class="kb-card-top">
+                <span class="kb-dot kb-dot-yellow"></span>
+                <span class="kb-branch">feat/api-v2</span>
+              </div>
+              <div class="kb-card-meta"><span class="kb-agent kb-agent-green">● claude</span></div>
+              <div class="kb-card-status">
+                <span class="kb-pr-label">PR <span class="kb-pr-num">#31</span> <span class="kb-pr-state-open">open</span></span>
+                <span class="kb-review kb-review-approved" title="Approved">✓</span>
+                <span class="kb-ci kb-ci-pass" title="CI passed">✓</span>
+              </div>
+            </div>
+            <div class="kb-card kb-card-changes" data-kb="fix/login">
+              <div class="kb-card-top">
+                <span class="kb-dot kb-dot-yellow"></span>
+                <span class="kb-branch">fix/login</span>
+              </div>
+              <div class="kb-card-meta"><span class="kb-agent kb-agent-dim">○ no agent</span></div>
+              <div class="kb-card-status">
+                <span class="kb-pr-label">PR <span class="kb-pr-num">#29</span> <span class="kb-pr-state-open">open</span></span>
+                <span class="kb-review kb-review-changes" title="Changes requested">!</span>
+                <span class="kb-ci kb-ci-fail" title="CI failed">✗</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="kb-flow-arrow">&#x276F;</div>
+
+          <!-- Column 3: PR Merged -->
+          <div class="kb-col kb-col-merged">
+            <div class="kb-col-header">
+              <span class="kb-col-title">PR Merged</span>
+              <span class="kb-col-badge kb-badge-purple">3</span>
+            </div>
+            <div class="kb-card kb-card-merged" data-kb="feat/dark-mode">
+              <div class="kb-card-top">
+                <span class="kb-dot kb-dot-purple"></span>
+                <span class="kb-branch kb-branch-merged">feat/dark-mode</span>
+              </div>
+              <div class="kb-card-meta"><span class="kb-agent kb-agent-dim">○ no agent</span></div>
+              <div class="kb-card-status">
+                <span class="kb-pr-label">PR <span class="kb-pr-num">#28</span> <span class="kb-pr-state-merged">merged</span></span>
+                <span class="kb-ci kb-ci-pass">✓</span>
+              </div>
+            </div>
+            <div class="kb-card kb-card-merged" data-kb="fix/typo">
+              <div class="kb-card-top">
+                <span class="kb-dot kb-dot-purple"></span>
+                <span class="kb-branch kb-branch-merged">fix/typo</span>
+              </div>
+              <div class="kb-card-meta"><span class="kb-agent kb-agent-dim">○ no agent</span></div>
+              <div class="kb-card-status">
+                <span class="kb-pr-label">PR <span class="kb-pr-num">#27</span> <span class="kb-pr-state-merged">merged</span></span>
+                <span class="kb-ci kb-ci-pass">✓</span>
+              </div>
+            </div>
+            <div class="kb-card kb-card-merged" data-kb="feat/ui-refresh">
+              <div class="kb-card-top">
+                <span class="kb-dot kb-dot-purple"></span>
+                <span class="kb-branch kb-branch-merged">feat/ui-refresh</span>
+              </div>
+              <div class="kb-card-meta"><span class="kb-agent kb-agent-dim">○ no agent</span></div>
+              <div class="kb-card-status">
+                <span class="kb-pr-label">PR <span class="kb-pr-num">#24</span> <span class="kb-pr-state-merged">merged</span></span>
+                <span class="kb-ci kb-ci-pass">✓</span>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /.kb-board -->
+
+        <div class="kb-footer-hint">
+          <span>↑↓ navigate column · ←→ switch column · <kbd>g</kbd> toggle grid view</span>
+        </div>
+      </div><!-- /.kanban-diagram-html -->
+    </div>
+  </section>
 
   <section id="install">
     <div class="container text-center">
@@ -388,24 +565,19 @@
       <h2>Mouse optional, keyboard mandatory</h2>
       <p class="mx-auto">Every action is a single keystroke. Toggle mouse mode with <kbd>m</kbd> when you want it.</p>
       <div class="keyboard-grid">
-        <div class="key-item"><span class="key-cap key-green">c</span><span class="key-action">Create worktree</span>
-        </div>
+        <div class="key-item"><span class="key-cap key-green">c</span><span class="key-action">Create worktree</span></div>
+        <div class="key-item"><span class="key-cap key-red">d</span><span class="key-action">Delete worktree</span></div>
+        <div class="key-item"><span class="key-cap key-cyan">e</span><span class="key-action">Open in editor</span></div>
         <div class="key-item"><span class="key-cap key-blue">f</span><span class="key-action">Fetch PR / MR</span></div>
-        <div class="key-item"><span class="key-cap key-red">d</span><span class="key-action">Delete worktree</span>
-        </div>
-        <div class="key-item"><span class="key-cap key-cyan">e</span><span class="key-action">Open in editor</span>
-        </div>
-        <div class="key-item"><span class="key-cap key-yellow">⏎</span><span class="key-action">Open in terminal</span>
-        </div>
-        <div class="key-item"><span class="key-cap key-orange">p</span><span class="key-action">Pull from remote</span>
-        </div>
-        <div class="key-item"><span class="key-cap key-magenta">P</span><span class="key-action">Send PR</span></div>
-        <div class="key-item"><span class="key-cap">r</span><span class="key-action">Refresh card</span></div>
+        <div class="key-item"><span class="key-cap key-cyan">g</span><span class="key-action">Toggle kanban / grid</span></div>
         <div class="key-item"><span class="key-cap">m</span><span class="key-action">Toggle mouse</span></div>
         <div class="key-item"><span class="key-cap">n</span><span class="key-action">New sandbox</span></div>
-        <div class="key-item"><span class="key-cap key-green">s</span><span class="key-action">Start sandbox</span>
-        </div>
+        <div class="key-item"><span class="key-cap key-orange">p</span><span class="key-action">Pull from remote</span></div>
+        <div class="key-item"><span class="key-cap key-magenta">P</span><span class="key-action">Send PR</span></div>
+        <div class="key-item"><span class="key-cap">r</span><span class="key-action">Refresh card</span></div>
+        <div class="key-item"><span class="key-cap key-green">s</span><span class="key-action">Start sandbox</span></div>
         <div class="key-item"><span class="key-cap key-red">S</span><span class="key-action">Stop sandbox</span></div>
+        <div class="key-item"><span class="key-cap key-yellow">⏎</span><span class="key-action">Open in terminal</span></div>
       </div>
     </div>
   </section>
@@ -568,6 +740,16 @@
           wt.classList.remove('sbx-wt-active');
           match.classList.remove('sbx-octo-active');
         }
+      });
+    });
+
+    // Kanban diagram: hover a card → subtle glow effect
+    document.querySelectorAll('.kb-card[data-kb]').forEach(function (card) {
+      card.addEventListener('mouseenter', function () {
+        card.classList.add('kb-card-hover');
+      });
+      card.addEventListener('mouseleave', function () {
+        card.classList.remove('kb-card-hover');
       });
     });
 

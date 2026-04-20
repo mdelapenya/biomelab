@@ -1630,3 +1630,314 @@ footer {
     text-align: center
   }
 }
+
+/* ── Kanban Board Section ────────────────────────────────── */
+.kanban-board {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--bg-secondary) 90%, transparent),
+    color-mix(in srgb, var(--bg-secondary) 95%, transparent));
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent)
+}
+
+.kb-accent {
+  background: linear-gradient(135deg, var(--blue), var(--yellow) 55%, var(--magenta));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 2px 12px rgba(0,0,0,.35))
+}
+
+.kanban-intro {
+  font-size: 1.12rem;
+  margin-top: 1rem;
+  margin-bottom: 3rem
+}
+
+.kanban-features {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  margin-bottom: 3rem
+}
+
+.kanban-feat-card {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--bg-card) 100%, transparent),
+    color-mix(in srgb, var(--bg-tertiary) 100%, transparent));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-soft);
+  padding: 2rem 1.5rem;
+  text-align: center;
+  transition: .22s transform ease, .22s border-color ease, .22s box-shadow ease
+}
+
+.kanban-feat-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-card)
+}
+
+.kanban-feat-card .icon {
+  font-size: 2rem;
+  margin-bottom: 1rem;
+  display: block
+}
+
+.kanban-feat-card p {
+  font-size: .93rem;
+  line-height: 1.55
+}
+
+.kanban-feat-card kbd {
+  display: inline-block;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-bottom: 2px solid var(--border-strong);
+  border-radius: 6px;
+  padding: .08rem .42rem;
+  font-size: .8rem;
+  color: var(--cyan)
+}
+
+/* ── Kanban Diagram ──────────────────────────────────────── */
+.kanban-diagram-html {
+  margin-top: 1rem;
+  padding: 2rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--bg-card) 92%, transparent),
+    color-mix(in srgb, var(--bg-tertiary) 94%, transparent));
+  box-shadow: var(--shadow-card)
+}
+
+/* Board: four columns + three flow arrows, laid out in a row */
+.kb-board {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr;
+  gap: .75rem;
+  align-items: start
+}
+
+/* Flow arrow between columns */
+.kb-flow-arrow {
+  display: flex;
+  align-items: flex-start;
+  padding-top: .9rem;
+  font-size: 1.4rem;
+  color: var(--border-strong);
+  user-select: none
+}
+
+/* Individual column */
+.kb-col {
+  border: 2px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  padding-bottom: .5rem
+}
+
+.kb-col-created  { border-color: var(--text-muted); background: color-mix(in srgb, var(--text-muted) 7%,  var(--bg-card)) }
+.kb-col-sent     { border-color: var(--blue);        background: color-mix(in srgb, var(--blue)       9%,  var(--bg-card)) }
+.kb-col-in-review { border-color: var(--yellow);      background: color-mix(in srgb, var(--yellow)     9%,  var(--bg-card)) }
+.kb-col-merged   { border-color: var(--magenta);     background: color-mix(in srgb, var(--magenta)    9%,  var(--bg-card)) }
+
+/* Pulse glow on the active column */
+@keyframes kbColPulse {
+  0%, 100% { box-shadow: 0 0 0 transparent }
+  50%       { box-shadow: 0 0 22px color-mix(in srgb, var(--yellow) 38%, transparent) }
+}
+
+.kb-col-active {
+  animation: kbColPulse 2.8s ease-in-out infinite
+}
+
+/* Column header */
+.kb-col-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: .6rem .9rem;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: .85rem;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent)
+}
+
+.kb-col-created  .kb-col-header { background: color-mix(in srgb, var(--text-muted) 20%, var(--bg-card)); color: var(--text-muted) }
+.kb-col-sent     .kb-col-header { background: color-mix(in srgb, var(--blue)       22%, var(--bg-card)); color: var(--blue) }
+.kb-col-in-review .kb-col-header { background: color-mix(in srgb, var(--yellow)     22%, var(--bg-card)); color: var(--yellow) }
+.kb-col-merged   .kb-col-header { background: color-mix(in srgb, var(--magenta)    22%, var(--bg-card)); color: var(--magenta) }
+
+.kb-col-badge {
+  font-size: .75rem;
+  padding: .12rem .5rem;
+  border-radius: 999px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  color: var(--text-muted)
+}
+
+.kb-badge-blue   { border-color: var(--blue);    color: var(--blue) }
+.kb-badge-yellow { border-color: var(--yellow);  color: var(--yellow) }
+.kb-badge-purple { border-color: var(--magenta); color: var(--magenta) }
+
+/* Cards inside a column */
+.kb-card {
+  margin: .6rem .6rem;
+  padding: .6rem .75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-primary) 90%, transparent);
+  font-family: var(--font-mono);
+  font-size: .78rem;
+  transition: .18s border-color ease, .18s box-shadow ease
+}
+
+.kb-card-top {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  margin-bottom: .3rem
+}
+
+.kb-card-meta {
+  margin-bottom: .3rem
+}
+
+.kb-card-status {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  font-size: .73rem
+}
+
+/* Status dot */
+.kb-dot {
+  flex-shrink: 0;
+  width: .45rem;
+  height: .45rem;
+  border-radius: 50%
+}
+
+.kb-dot-gray   { background: var(--text-muted) }
+.kb-dot-blue   { background: var(--blue) }
+.kb-dot-yellow { background: var(--yellow) }
+.kb-dot-purple { background: var(--magenta) }
+.kb-dot-dim    { background: var(--border-strong) }
+
+/* Branch name */
+.kb-branch       { color: var(--text-primary) }
+.kb-branch-dim   { color: var(--text-muted) }
+.kb-branch-merged{ color: var(--text-muted) }
+
+/* Agent line */
+.kb-agent-green { color: var(--green) }
+.kb-agent-dim   { color: var(--text-muted) }
+
+/* PR labels */
+.kb-no-pr        { color: var(--text-muted) }
+.kb-pr-label     { color: var(--text-secondary) }
+.kb-pr-num       { color: var(--cyan) }
+.kb-pr-state-open   { color: var(--blue) }
+.kb-pr-state-draft  { color: var(--text-muted) }
+.kb-pr-state-merged { color: var(--magenta) }
+
+/* CI / review icons */
+.kb-ci-pass    { color: var(--green) }
+.kb-ci-fail    { color: var(--red) }
+.kb-ci-pending { color: var(--yellow) }
+
+.kb-review-approved { color: var(--green) }
+.kb-review-changes  { color: var(--red) }
+
+/* Merged card tint */
+.kb-card-merged {
+  opacity: .72
+}
+
+/* Approved card glow */
+@keyframes kbCardApproved {
+  0%, 100% { box-shadow: 0 0 0 transparent }
+  50%       { box-shadow: 0 0 10px color-mix(in srgb, var(--green) 30%, transparent) }
+}
+
+.kb-card-approved {
+  border-color: color-mix(in srgb, var(--green) 45%, var(--border));
+  animation: kbCardApproved 2.4s ease-in-out infinite
+}
+
+.kb-card-changes {
+  border-color: color-mix(in srgb, var(--red) 40%, var(--border))
+}
+
+/* Hover glow — each column uses its own accent colour */
+.kb-col-created  .kb-card-hover { border-color: var(--text-muted); box-shadow: 0 0 12px color-mix(in srgb, var(--text-muted) 28%, transparent) }
+.kb-col-sent     .kb-card-hover { border-color: var(--blue);       box-shadow: 0 0 12px color-mix(in srgb, var(--blue)       22%, transparent) }
+.kb-col-in-review .kb-card-hover { border-color: var(--yellow);     box-shadow: 0 0 12px color-mix(in srgb, var(--yellow)     22%, transparent) }
+.kb-col-merged   .kb-card-hover { border-color: var(--magenta);    box-shadow: 0 0 12px color-mix(in srgb, var(--magenta)    22%, transparent) }
+
+/* Footer hint */
+.kb-footer-hint {
+  margin-top: 1.25rem;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: .78rem;
+  color: var(--text-muted)
+}
+
+.kb-footer-hint kbd {
+  display: inline-block;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-bottom: 2px solid var(--border-strong);
+  border-radius: 5px;
+  padding: .05rem .38rem;
+  font-size: .75rem;
+  color: var(--cyan)
+}
+
+/* Mobile: stack columns vertically */
+@media (max-width: 1080px) {
+  .kb-board {
+    grid-template-columns: 1fr auto 1fr
+  }
+
+  /* Hide arrows 2 and 4 (between cols 2→3 and 3→4) */
+  .kb-flow-arrow:nth-child(4),
+  .kb-flow-arrow:nth-child(6) {
+    display: none
+  }
+
+  /* Col 3 (in review) and col 4 (merged) each start on a new row */
+  .kb-col-in-review,
+  .kb-col-merged {
+    grid-column: 1
+  }
+
+  .kb-col-merged {
+    grid-column: 3
+  }
+}
+
+@media (max-width: 640px) {
+  .kb-board {
+    grid-template-columns: 1fr
+  }
+
+  .kb-flow-arrow {
+    display: none
+  }
+
+  .kb-col-in-review,
+  .kb-col-merged {
+    grid-column: auto
+  }
+
+  .kanban-features {
+    grid-template-columns: 1fr
+  }
+}
