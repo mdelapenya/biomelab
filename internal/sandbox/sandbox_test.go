@@ -23,9 +23,17 @@ func TestRunDetachedWithBranchArgs(t *testing.T) {
 
 func TestRunWithBranchArgs(t *testing.T) {
 	got := RunWithBranchArgs("my-sandbox", "feature/login")
-	want := []string{"sbx", "run", "--branch", "feature/login", "my-sandbox"}
+	want := []string{"sbx", "run", "--branch", "feature/login", "my-sandbox", "--", "-c"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("RunWithBranchArgs() = %v, want %v", got, want)
+	}
+}
+
+func TestRunArgs(t *testing.T) {
+	got := RunArgs("my-sandbox")
+	want := []string{"sbx", "run", "my-sandbox", "--", "-c"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("RunArgs() = %v, want %v", got, want)
 	}
 }
 

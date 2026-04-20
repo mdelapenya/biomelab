@@ -41,6 +41,7 @@ type App struct {
 	active      int // active repo entry index
 	dashSlot    *fyne.Container
 	dashboard   *Dashboard
+	termPanel   *TermPanel
 	refreshMgr  *RefreshManager
 	sbxStatuses map[string]sandbox.Status
 
@@ -113,6 +114,19 @@ func (a *App) Run() {
 	// Ctrl+T / Cmd+T toggle between dark and light themes.
 	registerThemeToggleShortcut(a.window.Canvas(), a.toggleTheme)
 
+	// Word-motion shortcuts for the embedded terminal. Fyne's TypedKey
+	// strips modifier info, so we intercept modified arrows at the canvas
+	// level and inject the escape sequences zsh/bash expect.
+	registerTerminalKeyShortcuts(a.window.Canvas(), a)
+
+	// Clean up PTY children on any exit path (Cmd+Q, dock Quit, OS close),
+	// not only the tray Quit handler.
+	a.fyneApp.Lifecycle().SetOnStopped(func() {
+		if a.termPanel != nil {
+			a.termPanel.CloseAll()
+		}
+	})
+
 	// System tray: closing the window hides to tray instead of quitting.
 	// SetCloseIntercept is set inside setupSystemTray.
 	a.setupSystemTray()
@@ -125,6 +139,10 @@ func (a *App) buildContent() fyne.CanvasObject {
 	if err != nil || len(cfg.Repos) == 0 {
 		return a.emptyState()
 	}
+
+	// Terminal panel is shared across all repos; create before repo loop
+	// so OnCardSelected closures can reference it.
+	a.termPanel = NewTermPanel()
 
 	// Check sandbox statuses once up front.
 	a.sbxStatuses = make(map[string]sandbox.Status)
@@ -234,8 +252,12 @@ func (a *App) buildContent() fyne.CanvasObject {
 	a.titleBg = canvas.NewRectangle(colorPanelBg)
 	titleBar := container.NewStack(a.titleBg, container.NewPadded(a.titleText))
 
-	// Two-panel layout.
-	split := container.NewHSplit(a.repoPanel.Content(), a.dashSlot)
+	// Right column: dashboard on top, embedded terminal below.
+	rightCol := container.NewVSplit(a.dashSlot, a.termPanel.Content())
+	rightCol.Offset = 0.7
+
+	// Two-panel layout: repo tree | (dashboard / terminal).
+	split := container.NewHSplit(a.repoPanel.Content(), rightCol)
 	split.Offset = 0.18
 
 	return container.NewBorder(titleBar, nil, nil, nil, split)
@@ -354,9 +376,33 @@ func (a *App) refreshTrayTheme() {
 	}
 }
 
+// openTerminalFor shows the embedded terminal session for the given card
+// index. Sandbox-mode repos attach to `sbx run --branch <branch>`; regular
+// repos get a plain shell at the worktree path.
+func (a *App) openTerminalFor(state *RepoState, idx int) {
+	if a.termPanel == nil || state == nil {
+		return
+	}
+	if idx < 0 || idx >= len(state.Worktrees) {
+		return
+	}
+	wt := state.Worktrees[idx]
+	mode := state.ActiveMode
+	if mode != nil && mode.Type == "sandbox" && mode.SandboxName != "" {
+		// idx == 0 is the main worktree — attach without --branch so sbx
+		// doesn't create a fresh linked worktree named after the branch.
+		if idx == 0 {
+			a.termPanel.ShowSandboxMain(mode.SandboxName)
+		} else {
+			a.termPanel.ShowSandbox(mode.SandboxName, wt.Branch)
+		}
+		return
+	}
+	a.termPanel.ShowShell(wt.Path)
+}
+
 func (a *App) emptyState() fyne.CanvasObject {
 	msg := widget.NewLabel("No repositories registered.\nRun biomelab from a git repository to auto-add it.")
 	msg.Alignment = fyne.TextAlignCenter
 	return container.NewCenter(msg)
 }
-

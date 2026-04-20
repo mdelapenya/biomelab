@@ -96,6 +96,7 @@ func countVisible(objects []fyne.CanvasObject) int {
 // baseCardSize is the card size at the default font size (14).
 // Actual size scales proportionally with the theme text size.
 var baseCardSize = fyne.NewSize(360, 200)
+
 const baseTextSize float32 = 14
 
 // cardCellSize computes the card cell size scaled to the current font.
@@ -109,9 +110,9 @@ func cardCellSize() fyne.Size {
 type Dashboard struct {
 	state     *RepoState
 	content   *fyne.Container
-	innerSlot *fyne.Container      // holds the actual dashboard content for hot-swap
-	scroll    *container.Scroll    // scrollable linked cards area
-	cards     []fyne.CanvasObject  // linked card widgets for scroll-to
+	innerSlot *fyne.Container     // holds the actual dashboard content for hot-swap
+	scroll    *container.Scroll   // scrollable linked cards area
+	cards     []fyne.CanvasObject // linked card widgets for scroll-to
 
 	// OnCardSelected is called when a card is clicked. The index is the
 	// worktree index (0=main, 1+=linked).
@@ -361,7 +362,7 @@ func (d *Dashboard) helpBar() fyne.CanvasObject {
 	bg := canvas.NewRectangle(colorPanelBg)
 	bg.CornerRadius = 0
 
-	help := monoText("↑↓ nav  [Tab] panel  [⏎] open  [e] editor  [r] refresh  [d] delete  [p] pull  [P] PR", colorDimGray, false)
+	help := monoText("↑↓ nav  [Tab] panel  [⏎] terminal  [e] editor  [r] refresh  [d] delete  [p] pull  [P] PR", colorDimGray, false)
 	help.TextSize = scaledSize(9)
 
 	return container.NewStack(bg, container.NewPadded(help))
