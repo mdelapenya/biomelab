@@ -1583,6 +1583,16 @@ footer {
   .hero {
     min-height: 100vh
   }
+
+  /* Extend the scrim higher on mobile so white text stays readable */
+  .hero-image::after {
+    background: linear-gradient(0deg,
+      rgba(9, 13, 18, .97) 0%,
+      rgba(9, 13, 18, .85) 25%,
+      rgba(9, 13, 18, .55) 50%,
+      rgba(9, 13, 18, .25) 70%,
+      transparent 88%)
+  }
 }
 
 @media (max-width:640px) {
