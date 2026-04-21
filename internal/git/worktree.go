@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -104,14 +105,40 @@ func (r *Repository) OriginURL() string {
 }
 
 // RepoName returns the "owner/repo" name derived from the origin remote URL.
-// Falls back to the directory name if no remote is configured.
+// Falls back to the directory name if no remote is configured. When no origin
+// is set but the repo lives under a forge-style path (e.g.
+// ".../github.com/<owner>/<repo>"), returns "<owner>/<repo>" so that repos
+// without a configured remote (like an empty, freshly-init'd repo) still get
+// a consistent name.
 func (r *Repository) RepoName() string {
 	if url := r.OriginURL(); url != "" {
 		if name := parseRepoName(url); name != "" {
 			return name
 		}
 	}
-	return filepath.Base(r.repoRoot)
+	return inferRepoNameFromPath(r.repoRoot)
+}
+
+// inferRepoNameFromPath returns "<owner>/<repo>" when repoRoot lives under a
+// directory that looks like a forge hostname (contains a dot, e.g.
+// "github.com", "gitlab.com", "bitbucket.org"). Otherwise returns the
+// directory basename.
+func inferRepoNameFromPath(repoRoot string) string {
+	base := filepath.Base(repoRoot)
+	parent := filepath.Dir(repoRoot)
+	if parent == repoRoot || parent == "." || parent == "/" {
+		return base
+	}
+	parentName := filepath.Base(parent)
+	grandparent := filepath.Dir(parent)
+	if grandparent == parent {
+		return base
+	}
+	grandparentName := filepath.Base(grandparent)
+	if strings.Contains(grandparentName, ".") && parentName != "" && parentName != "." && parentName != "/" {
+		return parentName + "/" + base
+	}
+	return base
 }
 
 // parseRepoName extracts "owner/repo" from a git remote URL.
@@ -178,6 +205,24 @@ func (r *Repository) Fetch() error {
 	return firstErr
 }
 
+// parseHeadFile reads a git HEAD file and reports the short branch name or
+// short detached hash. Returns ok=false if the file is missing or empty.
+func parseHeadFile(path string) (branch string, detached bool, ok bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false, false
+	}
+	s := strings.TrimSpace(string(data))
+	if s == "" {
+		return "", false, false
+	}
+	if strings.HasPrefix(s, "ref: ") {
+		ref := strings.TrimPrefix(s, "ref: ")
+		return strings.TrimPrefix(ref, "refs/heads/"), false, true
+	}
+	return s[:min(7, len(s))], true, true
+}
+
 // ListWorktreesQuick returns worktrees with only branch info — no dirty/sync checks.
 // Used for fast initial render.
 func (r *Repository) ListWorktreesQuick() ([]Worktree, error) {
@@ -191,16 +236,27 @@ func (r *Repository) ListWorktreesQuick() ([]Worktree, error) {
 	var result []Worktree
 
 	// Main worktree — branch only.
-	head, err := r.repo.Head()
-	if err != nil {
-		return nil, err
-	}
 	mainWt := Worktree{Path: r.repoRoot, IsMain: true}
-	if head.Name().IsBranch() {
-		mainWt.Branch = head.Name().Short()
-	} else {
-		mainWt.Detached = true
-		mainWt.Branch = head.Hash().String()[:7]
+	head, err := r.repo.Head()
+	switch {
+	case err == nil:
+		if head.Name().IsBranch() {
+			mainWt.Branch = head.Name().Short()
+		} else {
+			mainWt.Detached = true
+			mainWt.Branch = head.Hash().String()[:7]
+		}
+	case errors.Is(err, plumbing.ErrReferenceNotFound):
+		// Unborn HEAD: repo has no commits yet. Read .git/HEAD directly so
+		// the main card still shows up for a freshly enrolled empty repo.
+		branch, detached, ok := parseHeadFile(filepath.Join(r.repoRoot, ".git", "HEAD"))
+		if !ok {
+			return nil, err
+		}
+		mainWt.Branch = branch
+		mainWt.Detached = detached
+	default:
+		return nil, err
 	}
 	result = append(result, mainWt)
 
@@ -270,21 +326,31 @@ func (r *Repository) ListWorktrees() ([]Worktree, error) {
 
 // mainWorktree returns info about the main worktree.
 func (r *Repository) mainWorktree() (*Worktree, error) {
-	head, err := r.repo.Head()
-	if err != nil {
-		return nil, err
-	}
-
 	wt := &Worktree{
 		Path:   r.repoRoot,
 		IsMain: true,
 	}
 
-	if head.Name().IsBranch() {
-		wt.Branch = head.Name().Short()
-	} else {
-		wt.Detached = true
-		wt.Branch = head.Hash().String()[:7]
+	head, err := r.repo.Head()
+	switch {
+	case err == nil:
+		if head.Name().IsBranch() {
+			wt.Branch = head.Name().Short()
+		} else {
+			wt.Detached = true
+			wt.Branch = head.Hash().String()[:7]
+		}
+	case errors.Is(err, plumbing.ErrReferenceNotFound):
+		// Unborn HEAD: repo has no commits yet. Read .git/HEAD directly so
+		// the main card still shows up for a freshly enrolled empty repo.
+		branch, detached, ok := parseHeadFile(filepath.Join(r.repoRoot, ".git", "HEAD"))
+		if !ok {
+			return nil, err
+		}
+		wt.Branch = branch
+		wt.Detached = detached
+	default:
+		return nil, err
 	}
 
 	goWt, err := r.repo.Worktree()

@@ -60,6 +60,90 @@ func TestSaveAndLoad(t *testing.T) {
 	}
 }
 
+func TestUpdateSandboxName(t *testing.T) {
+	newCfg := func() *Config {
+		return &Config{
+			Repos: []RepoEntry{
+				{
+					Path: "/tmp/repo1",
+					Name: "owner/repo1",
+					Modes: []ModeEntry{
+						{Type: "sandbox", SandboxName: "old-name", Agent: "claude"},
+					},
+				},
+				{
+					Path: "/tmp/repo2",
+					Name: "owner/repo2",
+					Modes: []ModeEntry{
+						{Type: "regular"},
+						{Type: "sandbox", SandboxName: "shared-name", Agent: "claude"},
+					},
+				},
+			},
+		}
+	}
+
+	t.Run("renames matching sandbox mode", func(t *testing.T) {
+		cfg := newCfg()
+		if !cfg.UpdateSandboxName("/tmp/repo1", "old-name", "new-name") {
+			t.Fatal("expected change")
+		}
+		if got := cfg.Repos[0].Modes[0].SandboxName; got != "new-name" {
+			t.Errorf("SandboxName = %q, want new-name", got)
+		}
+	})
+
+	t.Run("leaves other repos untouched", func(t *testing.T) {
+		cfg := newCfg()
+		cfg.UpdateSandboxName("/tmp/repo1", "old-name", "new-name")
+		if got := cfg.Repos[1].Modes[1].SandboxName; got != "shared-name" {
+			t.Errorf("other repo SandboxName = %q, want shared-name", got)
+		}
+	})
+
+	t.Run("leaves regular modes untouched", func(t *testing.T) {
+		cfg := newCfg()
+		cfg.UpdateSandboxName("/tmp/repo2", "old-name", "new-name")
+		if cfg.Repos[1].Modes[0].Type != "regular" {
+			t.Error("regular mode type changed")
+		}
+	})
+
+	t.Run("no match returns false and makes no changes", func(t *testing.T) {
+		cfg := newCfg()
+		if cfg.UpdateSandboxName("/tmp/repo1", "no-such-name", "new-name") {
+			t.Fatal("expected no change")
+		}
+		if got := cfg.Repos[0].Modes[0].SandboxName; got != "old-name" {
+			t.Errorf("SandboxName = %q, want old-name (unchanged)", got)
+		}
+	})
+
+	t.Run("no-op when old == new", func(t *testing.T) {
+		cfg := newCfg()
+		if cfg.UpdateSandboxName("/tmp/repo1", "old-name", "old-name") {
+			t.Fatal("expected no change")
+		}
+	})
+
+	t.Run("no-op when newName empty", func(t *testing.T) {
+		cfg := newCfg()
+		if cfg.UpdateSandboxName("/tmp/repo1", "old-name", "") {
+			t.Fatal("expected no change")
+		}
+		if got := cfg.Repos[0].Modes[0].SandboxName; got != "old-name" {
+			t.Errorf("SandboxName = %q, want old-name (unchanged)", got)
+		}
+	})
+
+	t.Run("repo not in config is a no-op", func(t *testing.T) {
+		cfg := newCfg()
+		if cfg.UpdateSandboxName("/tmp/unknown", "old-name", "new-name") {
+			t.Fatal("expected no change")
+		}
+	})
+}
+
 func TestSaveAtomic(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "repos.json")

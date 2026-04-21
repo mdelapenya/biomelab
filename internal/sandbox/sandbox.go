@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -67,6 +68,57 @@ func SanitizeName(parts ...string) string {
 	name = strings.ReplaceAll(name, " ", "-")
 	name = strings.ToLower(name)
 	return name
+}
+
+// Candidates returns the ordered, deduplicated set of sandbox names that may
+// correspond to a given repo+agent. The list covers both orderings observed
+// in the wild:
+//   - biomelab's "<repo>-<agent>" (e.g. "mdelapenya-pay2class-claude")
+//   - sbx's default "<agent>-<repo>" (e.g. "claude-pay2class")
+//
+// For each ordering we try both the full "<owner>/<repo>" name and the bare
+// directory basename, so we match regardless of whether origin was configured
+// when the sandbox was created. The stored (config) name comes first.
+func Candidates(storedName, repoName, repoPath, agent string) []string {
+	seen := make(map[string]struct{})
+	var out []string
+	add := func(n string) {
+		if n == "" {
+			return
+		}
+		if _, ok := seen[n]; ok {
+			return
+		}
+		seen[n] = struct{}{}
+		out = append(out, n)
+	}
+	add(storedName)
+	if agent != "" {
+		if repoName != "" {
+			add(SanitizeName(repoName, agent))
+			add(SanitizeName(agent, repoName))
+		}
+		if repoPath != "" {
+			base := filepath.Base(repoPath)
+			add(SanitizeName(base, agent))
+			add(SanitizeName(agent, base))
+		}
+	}
+	return out
+}
+
+// MatchStatus returns the first candidate that exists in statusMap along with
+// its status. ok=false means none matched.
+func MatchStatus(statusMap map[string]Status, candidates []string) (name string, status Status, ok bool) {
+	for _, c := range candidates {
+		if c == "" {
+			continue
+		}
+		if s, found := statusMap[c]; found {
+			return c, s, true
+		}
+	}
+	return "", StatusNotFound, false
 }
 
 // CommandString joins args into a single shell command string.

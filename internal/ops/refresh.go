@@ -27,6 +27,10 @@ type RefreshResult struct {
 	AllSbxStatuses map[string]sandbox.Status
 	SbxClientVer   string
 	SbxServerVer   string
+	// SbxMatchedName is the candidate that matched a running/stopped sandbox
+	// in sbx ls (empty if none matched). Lets callers reconcile config when
+	// the stored sandbox name differs from what sbx actually reports.
+	SbxMatchedName string
 }
 
 // CLICheckResult carries the CLI availability check result.
@@ -49,12 +53,14 @@ func QuickRefresh(repo *git.Repository) RefreshResult {
 }
 
 // LocalRefresh reads dirty status and detects agents and IDEs — no network I/O.
+// sbxCandidates is the ordered list of sandbox names to check (first match
+// wins); pass nil or empty to skip the sandbox status check.
 func LocalRefresh(
 	repo *git.Repository,
 	detector *agent.Detector,
 	ideDetector *ide.Detector,
 	procLister process.Lister,
-	sbxName string,
+	sbxCandidates []string,
 ) RefreshResult {
 	wts, err := repo.ListWorktrees()
 	if err != nil {
@@ -76,19 +82,24 @@ func LocalRefresh(
 		ides = ideDetector.DetectFromProcesses(procs, paths)
 	}
 
-	// Check all sandbox statuses with one sbx ls call.
+	// Check all sandbox statuses with one sbx ls call, then match against
+	// every candidate name so the GUI detects sandboxes created under either
+	// biomelab's naming ("<owner>-<repo>-<agent>") or sbx's default
+	// ("<repo-dir>-<agent>").
 	var sbxStatus sandbox.Status
+	var sbxMatched string
 	var sbxVer sandbox.VersionInfo
 	var allStatuses map[string]sandbox.Status
-	if sbxName != "" {
+	if len(sbxCandidates) > 0 {
 		statusMap := sandbox.CheckAllStatuses()
 		if statusMap != nil {
 			allStatuses = make(map[string]sandbox.Status, len(statusMap))
 			for k, v := range statusMap {
 				allStatuses[k] = v
 			}
-			if s, ok := statusMap[sbxName]; ok {
+			if name, s, ok := sandbox.MatchStatus(statusMap, sbxCandidates); ok {
 				sbxStatus = s
+				sbxMatched = name
 			}
 		}
 		sbxVer = sandbox.Version()
@@ -99,14 +110,17 @@ func LocalRefresh(
 		Agents:         agents,
 		IDEs:           ides,
 		SandboxStatus:  sbxStatus,
-		HasSbxStatus:   sbxName != "",
+		HasSbxStatus:   len(sbxCandidates) > 0,
 		AllSbxStatuses: allStatuses,
 		SbxClientVer:   sbxVer.Client,
 		SbxServerVer:   sbxVer.Server,
+		SbxMatchedName: sbxMatched,
 	}
 }
 
 // NetworkRefresh fetches remote refs and looks up PR status.
+// sbxCandidates is the ordered list of sandbox names to check (first match
+// wins); pass nil or empty to skip the sandbox status check.
 func NetworkRefresh(
 	repo *git.Repository,
 	detector *agent.Detector,
@@ -114,7 +128,7 @@ func NetworkRefresh(
 	procLister process.Lister,
 	prProv provider.PRProvider,
 	cliAvail provider.CLIAvailability,
-	sbxName string,
+	sbxCandidates []string,
 ) RefreshResult {
 	fetchErr := repo.Fetch()
 
@@ -147,19 +161,27 @@ func NetworkRefresh(
 	}
 
 	var sbxStatus sandbox.Status
-	if sbxName != "" {
-		sbxStatus = sandbox.CheckStatus(sbxName)
+	var sbxMatched string
+	if len(sbxCandidates) > 0 {
+		statusMap := sandbox.CheckAllStatuses()
+		if statusMap != nil {
+			if name, s, ok := sandbox.MatchStatus(statusMap, sbxCandidates); ok {
+				sbxStatus = s
+				sbxMatched = name
+			}
+		}
 	}
 
 	return RefreshResult{
-		Worktrees:    wts,
-		Agents:       agents,
-		IDEs:         ides,
-		PRs:          prs,
-		HasSbxStatus: sbxName != "",
-		HasPRs:        true,
-		FetchErr:      fetchErr,
-		SandboxStatus: sbxStatus,
+		Worktrees:      wts,
+		Agents:         agents,
+		IDEs:           ides,
+		PRs:            prs,
+		HasSbxStatus:   len(sbxCandidates) > 0,
+		HasPRs:         true,
+		FetchErr:       fetchErr,
+		SandboxStatus:  sbxStatus,
+		SbxMatchedName: sbxMatched,
 	}
 }
 
