@@ -931,10 +931,57 @@ func (a *App) handleAddRepo() {
 
 func (a *App) addRepoToConfig(repoRoot, repoName string, mode config.ModeEntry) {
 	cfg, _ := config.Load(a.configPath)
-	if cfg.Add(repoRoot, repoName, mode) {
-		_ = config.Save(a.configPath, cfg)
+	if !cfg.Add(repoRoot, repoName, mode) {
+		dialog.ShowInformation("Repository Added", repoName+" is already registered with this mode.", a.window)
+		return
 	}
-	dialog.ShowInformation("Repository Added", repoName+" added.\nRestart biomelab to see it.", a.window)
+	_ = config.Save(a.configPath, cfg)
+
+	// Mirror the persisted entry so in-memory modes match config semantics
+	// (e.g., sandbox mode replacing a prior regular mode).
+	idx := cfg.IndexOf(repoRoot)
+	if idx < 0 {
+		return
+	}
+	persisted := cfg.Repos[idx]
+
+	// Case 1: repo is already in the UI — just sync its modes and switch to
+	// the newly added one.
+	for gi, re := range a.repos {
+		if re.group.Path == repoRoot {
+			re.group.Modes = persisted.Modes
+			if a.repoPanel != nil {
+				a.repoPanel.groups = a.collectGroups()
+				a.repoPanel.rebuildList()
+			}
+			newModeIdx := len(persisted.Modes) - 1
+			a.switchMode(gi, newModeIdx)
+			return
+		}
+	}
+
+	// Case 2: brand new repo — build an entry and append it.
+	re := a.buildRepoEntry(persisted)
+	if re == nil {
+		a.setStatus("failed to open "+repoName, true)
+		return
+	}
+
+	wasEmpty := len(a.repos) == 0
+	a.repos = append(a.repos, re)
+
+	// Transitioning from empty state requires a full layout swap because
+	// repoPanel, dashboard, title bar, and dashSlot don't exist yet.
+	if wasEmpty {
+		a.window.SetContent(a.buildMainLayout())
+		return
+	}
+
+	if a.repoPanel != nil {
+		a.repoPanel.groups = a.collectGroups()
+		a.repoPanel.rebuildList()
+	}
+	a.switchMode(len(a.repos)-1, 0)
 }
 
 func (a *App) handleRemoveMode() {

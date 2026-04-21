@@ -135,84 +135,97 @@ func (a *App) buildContent() fyne.CanvasObject {
 		}
 	}
 
-	// Build repo groups and entries.
-	var groups []*RepoGroup
 	for _, entry := range cfg.Repos {
-		repo, err := git.OpenRepository(entry.Path)
-		if err != nil {
-			continue
+		if re := a.buildRepoEntry(entry); re != nil {
+			a.repos = append(a.repos, re)
 		}
-
-		group := &RepoGroup{
-			Path:  entry.Path,
-			Name:  entry.Name,
-			Modes: entry.Modes,
-		}
-		groups = append(groups, group)
-
-		prov := provider.DetectProvider(repo.OriginURL())
-		prProv := provider.NewProvider(repo.OriginURL())
-
-		worktrees, _ := repo.ListWorktrees()
-
-		state := &RepoState{
-			Provider: prov,
-		}
-		state.SetWorktrees(worktrees)
-
-		var sbxName string
-		if len(entry.Modes) > 0 {
-			mode := entry.Modes[0]
-			state.ActiveMode = &mode
-			if mode.Type == "sandbox" {
-				sbxName = mode.SandboxName
-				if s, ok := a.sbxStatuses[sbxName]; ok {
-					state.SandboxStatus = s
-				}
-			}
-		}
-
-		dash := NewDashboard(state)
-		dash.OnCardSelected = func(_ int) {
-			a.focus = focusRight // clicking a card means right panel has focus
-		}
-
-		rm := NewRefreshManager(repo, a.detector, a.ideDetector, a.procLister, prProv, a.refreshInterval)
-		rm.SetSandboxName(sbxName)
-
-		re := &repoEntry{
-			group:      group,
-			repo:       repo,
-			prProv:     prProv,
-			state:      state,
-			dashboard:  dash,
-			refreshMgr: rm,
-		}
-
-		// Wire refresh callback.
-		rm.OnRefresh = func(result ops.RefreshResult) {
-			fyne.Do(func() {
-				re.dashboard.ApplyRefresh(result)
-				if result.AllSbxStatuses != nil {
-					for k, v := range result.AllSbxStatuses {
-						a.sbxStatuses[k] = v
-					}
-					if a.repoPanel != nil {
-						a.repoPanel.UpdateStatuses(a.sbxStatuses)
-					}
-				}
-			})
-		}
-
-		a.repos = append(a.repos, re)
 	}
 
 	if len(a.repos) == 0 {
 		return a.emptyState()
 	}
 
+	return a.buildMainLayout()
+}
+
+// buildRepoEntry constructs a repoEntry (go-git repo, provider, dashboard,
+// refresh manager) for a single config entry. Returns nil if the repo can't
+// be opened. The refresh manager is created but not started; the caller
+// decides when to Start it (e.g., buildMainLayout starts only the first).
+func (a *App) buildRepoEntry(entry config.RepoEntry) *repoEntry {
+	repo, err := git.OpenRepository(entry.Path)
+	if err != nil {
+		return nil
+	}
+
+	group := &RepoGroup{
+		Path:  entry.Path,
+		Name:  entry.Name,
+		Modes: entry.Modes,
+	}
+
+	prov := provider.DetectProvider(repo.OriginURL())
+	prProv := provider.NewProvider(repo.OriginURL())
+
+	worktrees, _ := repo.ListWorktrees()
+
+	state := &RepoState{
+		Provider: prov,
+	}
+	state.SetWorktrees(worktrees)
+
+	var sbxName string
+	if len(entry.Modes) > 0 {
+		mode := entry.Modes[0]
+		state.ActiveMode = &mode
+		if mode.Type == "sandbox" {
+			sbxName = mode.SandboxName
+			if s, ok := a.sbxStatuses[sbxName]; ok {
+				state.SandboxStatus = s
+			}
+		}
+	}
+
+	dash := NewDashboard(state)
+	dash.OnCardSelected = func(_ int) {
+		a.focus = focusRight // clicking a card means right panel has focus
+	}
+
+	rm := NewRefreshManager(repo, a.detector, a.ideDetector, a.procLister, prProv, a.refreshInterval)
+	rm.SetSandboxName(sbxName)
+
+	re := &repoEntry{
+		group:      group,
+		repo:       repo,
+		prProv:     prProv,
+		state:      state,
+		dashboard:  dash,
+		refreshMgr: rm,
+	}
+
+	rm.OnRefresh = func(result ops.RefreshResult) {
+		fyne.Do(func() {
+			re.dashboard.ApplyRefresh(result)
+			if result.AllSbxStatuses != nil {
+				for k, v := range result.AllSbxStatuses {
+					a.sbxStatuses[k] = v
+				}
+				if a.repoPanel != nil {
+					a.repoPanel.UpdateStatuses(a.sbxStatuses)
+				}
+			}
+		})
+	}
+
+	return re
+}
+
+// buildMainLayout assembles the two-panel window layout from the current
+// a.repos slice. Assumes len(a.repos) >= 1. Starts the first repo's refresh
+// manager and initializes the title bar, repo panel, and dashboard slot.
+func (a *App) buildMainLayout() fyne.CanvasObject {
 	// Build repo panel (left side).
-	a.repoPanel = NewRepoPanel(groups, a.sbxStatuses)
+	a.repoPanel = NewRepoPanel(a.collectGroups(), a.sbxStatuses)
 	a.repoPanel.OnModeSelected = func(gi, mi int) {
 		a.focus = focusLeft // clicking the tree means left panel has focus
 		a.switchMode(gi, mi)
