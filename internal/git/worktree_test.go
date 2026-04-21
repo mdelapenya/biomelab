@@ -110,6 +110,69 @@ func TestListWorktrees_MainOnly(t *testing.T) {
 	}
 }
 
+func TestListWorktrees_NoCommits(t *testing.T) {
+	// A freshly-enrolled repo without any commits must still surface the
+	// main worktree so the dashboard can render its main card.
+	dir := t.TempDir()
+	if _, err := gogit.PlainInit(dir, false); err != nil {
+		t.Fatalf("PlainInit: %v", err)
+	}
+
+	repo, err := OpenRepository(dir)
+	if err != nil {
+		t.Fatalf("OpenRepository: %v", err)
+	}
+
+	wts, err := repo.ListWorktrees()
+	if err != nil {
+		t.Fatalf("ListWorktrees: %v", err)
+	}
+	if len(wts) != 1 {
+		t.Fatalf("expected 1 worktree, got %d", len(wts))
+	}
+	if !wts[0].IsMain {
+		t.Error("expected main worktree")
+	}
+	if wts[0].Detached {
+		t.Error("expected non-detached HEAD on unborn branch")
+	}
+	if wts[0].Branch != "master" && wts[0].Branch != "main" {
+		t.Errorf("unexpected branch %q", wts[0].Branch)
+	}
+	if wts[0].Sync != SyncUnknown && wts[0].Sync != SyncNoUpstream {
+		t.Errorf("unexpected sync status %v", wts[0].Sync)
+	}
+}
+
+func TestListWorktreesQuick_NoCommits(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := gogit.PlainInit(dir, false); err != nil {
+		t.Fatalf("PlainInit: %v", err)
+	}
+
+	repo, err := OpenRepository(dir)
+	if err != nil {
+		t.Fatalf("OpenRepository: %v", err)
+	}
+
+	wts, err := repo.ListWorktreesQuick()
+	if err != nil {
+		t.Fatalf("ListWorktreesQuick: %v", err)
+	}
+	if len(wts) != 1 {
+		t.Fatalf("expected 1 worktree, got %d", len(wts))
+	}
+	if !wts[0].IsMain {
+		t.Error("expected main worktree")
+	}
+	if wts[0].Detached {
+		t.Error("expected non-detached HEAD on unborn branch")
+	}
+	if wts[0].Branch != "master" && wts[0].Branch != "main" {
+		t.Errorf("unexpected branch %q", wts[0].Branch)
+	}
+}
+
 func TestListWorktrees_WithLinked(t *testing.T) {
 	dir, repo := setupTestRepo(t)
 
@@ -627,6 +690,53 @@ func TestPull_MultipleRemotes(t *testing.T) {
 	originHead := runGit(t, originDir, "rev-parse", "HEAD")
 	if localHead != originHead {
 		t.Errorf("local HEAD %s != origin HEAD %s after pull", localHead, originHead)
+	}
+}
+
+func TestInferRepoNameFromPath(t *testing.T) {
+	tests := []struct {
+		path string
+		want string
+	}{
+		// Forge-style layouts yield owner/repo.
+		{"/Users/me/src/github.com/owner/repo", "owner/repo"},
+		{"/home/me/src/gitlab.com/group/project", "group/project"},
+		{"/tmp/src/bitbucket.org/team/service", "team/service"},
+		// Non-forge parents fall back to basename only.
+		{"/Users/me/projects/standalone", "standalone"},
+		{"/tmp/foo", "foo"},
+		// Root / degenerate paths fall back to basename.
+		{"/repo", "repo"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			got := inferRepoNameFromPath(tt.path)
+			if got != tt.want {
+				t.Errorf("inferRepoNameFromPath(%q) = %q, want %q", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRepoName_NoOrigin_ForgePath(t *testing.T) {
+	// Simulate an empty, freshly-init'd repo at ".../github.com/<owner>/<repo>"
+	// with no origin remote configured. RepoName() should still return
+	// "<owner>/<repo>" (not just the bare basename) so downstream sandbox
+	// naming stays consistent with repos that do have an origin.
+	base := t.TempDir()
+	repoRoot := filepath.Join(base, "github.com", "acme", "widget")
+	if err := os.MkdirAll(repoRoot, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if _, err := gogit.PlainInit(repoRoot, false); err != nil {
+		t.Fatalf("PlainInit: %v", err)
+	}
+	repo, err := OpenRepository(repoRoot)
+	if err != nil {
+		t.Fatalf("OpenRepository: %v", err)
+	}
+	if got, want := repo.RepoName(), "acme/widget"; got != want {
+		t.Errorf("RepoName() = %q, want %q", got, want)
 	}
 }
 

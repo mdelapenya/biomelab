@@ -135,6 +135,15 @@ func (a *App) buildContent() fyne.CanvasObject {
 		}
 	}
 
+	// Reconcile any stored sandbox name that doesn't match what sbx reports
+	// but whose alternative candidates do (user created the sandbox manually
+	// under a different naming convention). Running this BEFORE building
+	// repo entries means the initial repo panel render already shows the
+	// correct status dot for those repos — no 5s wait for the first tick.
+	if a.reconcileConfigOnLoad(cfg) {
+		_ = config.Save(a.configPath, cfg)
+	}
+
 	for _, entry := range cfg.Repos {
 		if re := a.buildRepoEntry(entry); re != nil {
 			a.repos = append(a.repos, re)
@@ -174,13 +183,13 @@ func (a *App) buildRepoEntry(entry config.RepoEntry) *repoEntry {
 	}
 	state.SetWorktrees(worktrees)
 
-	var sbxName string
+	var sbxCandidates []string
 	if len(entry.Modes) > 0 {
 		mode := entry.Modes[0]
 		state.ActiveMode = &mode
 		if mode.Type == "sandbox" {
-			sbxName = mode.SandboxName
-			if s, ok := a.sbxStatuses[sbxName]; ok {
+			sbxCandidates = sandbox.Candidates(mode.SandboxName, repo.RepoName(), repo.Root(), mode.Agent)
+			if _, s, ok := sandbox.MatchStatus(a.sbxStatuses, sbxCandidates); ok {
 				state.SandboxStatus = s
 			}
 		}
@@ -192,7 +201,7 @@ func (a *App) buildRepoEntry(entry config.RepoEntry) *repoEntry {
 	}
 
 	rm := NewRefreshManager(repo, a.detector, a.ideDetector, a.procLister, prProv, a.refreshInterval)
-	rm.SetSandboxName(sbxName)
+	rm.SetSandboxCandidates(sbxCandidates)
 
 	re := &repoEntry{
 		group:      group,
@@ -205,6 +214,16 @@ func (a *App) buildRepoEntry(entry config.RepoEntry) *repoEntry {
 
 	rm.OnRefresh = func(result ops.RefreshResult) {
 		fyne.Do(func() {
+			// Reconcile the stored sandbox name FIRST so ApplyRefresh's
+			// dashboard rebuild renders the real name in the same tick.
+			// Triggered when refresh matched a sandbox under a name that
+			// differs from what was stored (e.g. user created it manually
+			// via `sbx run`).
+			if result.SbxMatchedName != "" && re.state.ActiveMode != nil &&
+				re.state.ActiveMode.Type == "sandbox" &&
+				result.SbxMatchedName != re.state.ActiveMode.SandboxName {
+				a.reconcileSandboxName(re, re.state.ActiveMode.SandboxName, result.SbxMatchedName)
+			}
 			re.dashboard.ApplyRefresh(result)
 			if result.AllSbxStatuses != nil {
 				for k, v := range result.AllSbxStatuses {
@@ -218,6 +237,88 @@ func (a *App) buildRepoEntry(entry config.RepoEntry) *repoEntry {
 	}
 
 	return re
+}
+
+// reconcileConfigOnLoad rewrites any sandbox mode in cfg whose stored name
+// doesn't match a sandbox in a.sbxStatuses but whose alternative candidates
+// do. Pure cfg mutation — does NOT save to disk and does not touch runtime
+// state (no repoEntry exists yet at this point). Returns true if anything
+// changed so the caller can persist.
+func (a *App) reconcileConfigOnLoad(cfg *config.Config) bool {
+	if len(a.sbxStatuses) == 0 {
+		return false
+	}
+	changed := false
+	for i := range cfg.Repos {
+		repoPath := cfg.Repos[i].Path
+		var repoName string
+		if repo, err := git.OpenRepository(repoPath); err == nil {
+			repoName = repo.RepoName()
+		}
+		for j := range cfg.Repos[i].Modes {
+			m := &cfg.Repos[i].Modes[j]
+			if m.Type != "sandbox" || m.SandboxName == "" || m.Agent == "" {
+				continue
+			}
+			candidates := sandbox.Candidates(m.SandboxName, repoName, repoPath, m.Agent)
+			matched, _, ok := sandbox.MatchStatus(a.sbxStatuses, candidates)
+			if ok && matched != m.SandboxName {
+				m.SandboxName = matched
+				changed = true
+			}
+		}
+	}
+	return changed
+}
+
+// reconcileSandboxName updates an in-memory mode and its on-disk config entry
+// from oldName to newName, then refreshes the repo panel and the refresh
+// manager's candidate list. No-op when oldName == newName or newName is empty.
+func (a *App) reconcileSandboxName(re *repoEntry, oldName, newName string) {
+	if newName == "" || oldName == newName {
+		return
+	}
+
+	// Update in-memory group modes.
+	for i := range re.group.Modes {
+		m := &re.group.Modes[i]
+		if m.Type == "sandbox" && m.SandboxName == oldName {
+			m.SandboxName = newName
+		}
+	}
+	// state.ActiveMode points to a separate copy (see buildRepoEntry /
+	// switchMode) — update it too so callers that dereference it see the
+	// new name.
+	if re.state.ActiveMode != nil && re.state.ActiveMode.Type == "sandbox" && re.state.ActiveMode.SandboxName == oldName {
+		re.state.ActiveMode.SandboxName = newName
+	}
+
+	// Regenerate candidates with the new stored name first so subsequent
+	// refreshes prefer it.
+	agent := ""
+	if re.state.ActiveMode != nil {
+		agent = re.state.ActiveMode.Agent
+	}
+	re.refreshMgr.SetSandboxCandidates(
+		sandbox.Candidates(newName, re.repo.RepoName(), re.repo.Root(), agent),
+	)
+
+	// Rebuild the repo panel since mode labels and sandbox-name lookups
+	// depend on the stored name.
+	if a.repoPanel != nil {
+		a.repoPanel.groups = a.collectGroups()
+		a.repoPanel.rebuildList()
+	}
+
+	// Persist to disk. Failure is non-fatal: the in-memory state is correct
+	// for this session.
+	cfg, err := config.Load(a.configPath)
+	if err != nil {
+		return
+	}
+	if cfg.UpdateSandboxName(re.group.Path, oldName, newName) {
+		_ = config.Save(a.configPath, cfg)
+	}
 }
 
 // buildMainLayout assembles the two-panel window layout from the current
@@ -272,14 +373,14 @@ func (a *App) switchMode(groupIdx, modeIdx int) {
 		re.state.ActiveMode = &mode
 		re.group.ActiveMode = modeIdx
 
-		sbxName := ""
+		var sbxCandidates []string
 		if mode.Type == "sandbox" {
-			sbxName = mode.SandboxName
-			if s, ok := a.sbxStatuses[sbxName]; ok {
+			sbxCandidates = sandbox.Candidates(mode.SandboxName, re.repo.RepoName(), re.repo.Root(), mode.Agent)
+			if _, s, ok := sandbox.MatchStatus(a.sbxStatuses, sbxCandidates); ok {
 				re.state.SandboxStatus = s
 			}
 		}
-		re.refreshMgr.SetSandboxName(sbxName)
+		re.refreshMgr.SetSandboxCandidates(sbxCandidates)
 	}
 
 	a.dashboard = re.dashboard
@@ -372,4 +473,3 @@ func (a *App) emptyState() fyne.CanvasObject {
 	msg.Alignment = fyne.TextAlignCenter
 	return container.NewCenter(msg)
 }
-

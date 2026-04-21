@@ -24,11 +24,11 @@ type RefreshManager struct {
 	prProv          provider.PRProvider
 	cliAvail        provider.CLIAvailability
 	networkInterval time.Duration
-	sbxName         string
 
-	mu     sync.Mutex
-	ctx    context.Context
-	cancel context.CancelFunc
+	mu            sync.Mutex
+	ctx           context.Context
+	cancel        context.CancelFunc
+	sbxCandidates []string
 
 	// OnRefresh is called with refresh results. The caller is responsible
 	// for marshaling UI updates to the main thread (via fyne.Do).
@@ -54,11 +54,12 @@ func NewRefreshManager(
 	}
 }
 
-// SetSandboxName configures the sandbox name for status checks.
-func (rm *RefreshManager) SetSandboxName(name string) {
+// SetSandboxCandidates configures the ordered list of sandbox names to
+// check during refresh. Pass nil/empty to disable the sandbox status check.
+func (rm *RefreshManager) SetSandboxCandidates(candidates []string) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
-	rm.sbxName = name
+	rm.sbxCandidates = candidates
 }
 
 // SetCLIAvail updates the cached CLI availability.
@@ -163,10 +164,10 @@ func (rm *RefreshManager) doQuick() {
 
 func (rm *RefreshManager) doLocal() {
 	rm.mu.Lock()
-	sbxName := rm.sbxName
+	candidates := rm.sbxCandidates
 	rm.mu.Unlock()
 
-	result := ops.LocalRefresh(rm.repo, rm.detector, rm.ideDetector, rm.procLister, sbxName)
+	result := ops.LocalRefresh(rm.repo, rm.detector, rm.ideDetector, rm.procLister, candidates)
 	if rm.OnRefresh != nil {
 		rm.OnRefresh(result)
 	}
@@ -174,11 +175,11 @@ func (rm *RefreshManager) doLocal() {
 
 func (rm *RefreshManager) doNetwork() {
 	rm.mu.Lock()
-	sbxName := rm.sbxName
+	candidates := rm.sbxCandidates
 	cliAvail := rm.cliAvail
 	rm.mu.Unlock()
 
-	result := ops.NetworkRefresh(rm.repo, rm.detector, rm.ideDetector, rm.procLister, rm.prProv, cliAvail, sbxName)
+	result := ops.NetworkRefresh(rm.repo, rm.detector, rm.ideDetector, rm.procLister, rm.prProv, cliAvail, candidates)
 	if rm.OnRefresh != nil {
 		rm.OnRefresh(result)
 	}

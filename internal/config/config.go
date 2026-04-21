@@ -215,6 +215,31 @@ func (c *Config) RemoveMode(path string, mode ModeEntry) bool {
 	return false
 }
 
+// UpdateSandboxName rewrites any sandbox mode on the repo at path whose
+// SandboxName equals oldName to use newName instead. Returns true if any
+// mode was changed. Used to reconcile config when sbx reports a sandbox
+// under a different name than what biomelab stored (e.g. when the user
+// created the sandbox manually outside biomelab).
+func (c *Config) UpdateSandboxName(path, oldName, newName string) bool {
+	if newName == "" || oldName == newName {
+		return false
+	}
+	changed := false
+	for i := range c.Repos {
+		if c.Repos[i].Path != path {
+			continue
+		}
+		for j := range c.Repos[i].Modes {
+			m := &c.Repos[i].Modes[j]
+			if m.Type == "sandbox" && m.SandboxName == oldName {
+				m.SandboxName = newName
+				changed = true
+			}
+		}
+	}
+	return changed
+}
+
 // Remove removes a repo entry by path (all modes).
 // Returns true if the entry was found and removed.
 func (c *Config) Remove(path string) bool {

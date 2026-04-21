@@ -826,7 +826,9 @@ func (a *App) handleCreateOrEnrollSandbox() {
 				re.group.Modes = append(re.group.Modes, newMode)
 				re.state.ActiveMode = &newMode
 				re.group.ActiveMode = len(re.group.Modes) - 1
-				re.refreshMgr.SetSandboxName(sbxName)
+				re.refreshMgr.SetSandboxCandidates(
+					sandbox.Candidates(sbxName, re.repo.RepoName(), re.repo.Root(), agentName),
+				)
 				if a.repoPanel != nil {
 					a.repoPanel.groups = a.collectGroups()
 					a.repoPanel.SetActive(a.active, re.group.ActiveMode)
