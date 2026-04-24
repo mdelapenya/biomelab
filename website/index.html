@@ -4,20 +4,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>biomelab - Terminal dashboard for git worktrees and AI coding agents</title>
+  <title>biomelab - Desktop dashboard for git worktrees and AI coding agents</title>
   <meta name="description"
-    content="Manage git worktrees, Docker Sandboxes, and AI coding agents from a single terminal UI. See every branch, every agent, every PR.">
+    content="Manage git worktrees, Docker Sandboxes, and AI coding agents from a single desktop app. See every branch, every agent, every PR.">
 
   <meta property="og:title" content="biomelab - Your Worktrees. Your Agents. One Dashboard.">
   <meta property="og:description"
-    content="A terminal dashboard for managing git worktrees and AI coding agents in parallel. Sandbox isolation, PR status, live agent detection.">
+    content="A desktop dashboard for managing git worktrees and AI coding agents in parallel. Sandbox isolation, PR status, live agent detection.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://biomelab.dev">
   <meta property="og:image" content="img/og-hero.png">
 
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="biomelab - Your Worktrees. Your Agents. One Dashboard.">
-  <meta name="twitter:description" content="Terminal dashboard for git worktrees and AI coding agents.">
+  <meta name="twitter:description" content="Desktop dashboard for git worktrees and AI coding agents.">
   <meta name="twitter:image" content="img/og-hero.png">
 
   <link rel="icon" type="image/png" href="img/icon.png">
@@ -91,7 +91,7 @@
         <div class="hero-copy">
           <span class="eyebrow">Safe sandboxes for living code</span>
           <h1>Monitor your AI agents <span class="accent">across worktrees</span></h1>
-          <p class="tagline">biomelab is a terminal dashboard for managing git worktrees, coding agents, and Docker
+          <p class="tagline">biomelab is a desktop dashboard for managing git worktrees, coding agents, and Docker
             Sandboxes across all your repositories.</p>
           <ul class="hero-points">
             <li>Multi-repo visibility</li>
@@ -101,7 +101,7 @@
           <div class="hero-cta">
             <div class="install-box" id="install-copy" title="Click to copy">
               <span class="prompt">$</span>
-              <span>brew install mdelapenya/tap/biomelab</span>
+              <span>brew install --cask mdelapenya/tap/biomelab</span>
               <svg class="copy-icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                 <path
                   d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" />
@@ -187,7 +187,7 @@
         </div>
         <div class="sandbox-card"><span class="icon">⌨️</span>
           <h3>Lifecycle from the Dashboard</h3>
-          <p>Create, start, stop, remove, all from keyboard shortcuts. No terminal context-switching.</p>
+          <p>Create, start, stop, remove, all from the dashboard. No terminal context-switching.</p>
         </div>
       </div>
       <div class="sandbox-diagram-html">
@@ -521,8 +521,8 @@
         </div>
         <div class="tab-panel active" id="tab-homebrew">
           <div class="copyable-pre">
-            <pre>brew install mdelapenya/tap/biomelab</pre>
-            <button class="copy-btn" data-copy="brew install mdelapenya/tap/biomelab" title="Copy to clipboard">
+            <pre>brew install --cask mdelapenya/tap/biomelab</pre>
+            <button class="copy-btn" data-copy="brew install --cask mdelapenya/tap/biomelab" title="Copy to clipboard">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>
             </button>
           </div>
@@ -562,15 +562,14 @@
   <section class="keyboard">
     <div class="container text-center">
       <span class="section-label">Keyboard-First</span>
-      <h2>Mouse optional, keyboard mandatory</h2>
-      <p class="mx-auto">Every action is a single keystroke. Toggle mouse mode with <kbd>m</kbd> when you want it.</p>
+      <h2>Point-and-click meets keyboard shortcuts</h2>
+      <p class="mx-auto">Every action is a single keystroke. Full mouse support built in.</p>
       <div class="keyboard-grid">
         <div class="key-item"><span class="key-cap key-green">c</span><span class="key-action">Create worktree</span></div>
         <div class="key-item"><span class="key-cap key-red">d</span><span class="key-action">Delete worktree</span></div>
         <div class="key-item"><span class="key-cap key-cyan">e</span><span class="key-action">Open in editor</span></div>
         <div class="key-item"><span class="key-cap key-blue">f</span><span class="key-action">Fetch PR / MR</span></div>
         <div class="key-item"><span class="key-cap key-cyan">g</span><span class="key-action">Toggle kanban / grid</span></div>
-        <div class="key-item"><span class="key-cap">m</span><span class="key-action">Toggle mouse</span></div>
         <div class="key-item"><span class="key-cap">n</span><span class="key-action">New sandbox</span></div>
         <div class="key-item"><span class="key-cap key-orange">p</span><span class="key-action">Pull from remote</span></div>
         <div class="key-item"><span class="key-cap key-magenta">P</span><span class="key-action">Send PR</span></div>
@@ -649,7 +648,7 @@
     });
 
     document.getElementById('install-copy').addEventListener('click', function () {
-      var text = 'brew install mdelapenya/tap/biomelab';
+      var text = 'brew install --cask mdelapenya/tap/biomelab';
       navigator.clipboard.writeText(text).then(function () {
         var box = document.getElementById('install-copy');
         box.classList.add('copied');
