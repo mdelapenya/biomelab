@@ -11,6 +11,7 @@ import (
 	"github.com/mdelapenya/biomelab/internal/ops"
 	"github.com/mdelapenya/biomelab/internal/process"
 	"github.com/mdelapenya/biomelab/internal/provider"
+	"github.com/mdelapenya/biomelab/internal/terminal"
 )
 
 const localRefreshInterval = 5 * time.Second
@@ -20,6 +21,7 @@ type RefreshManager struct {
 	repo            *git.Repository
 	detector        *agent.Detector
 	ideDetector     *ide.Detector
+	termDetector    *terminal.Detector
 	procLister      process.Lister
 	prProv          provider.PRProvider
 	cliAvail        provider.CLIAvailability
@@ -40,6 +42,7 @@ func NewRefreshManager(
 	repo *git.Repository,
 	detector *agent.Detector,
 	ideDetector *ide.Detector,
+	termDetector *terminal.Detector,
 	procLister process.Lister,
 	prProv provider.PRProvider,
 	networkInterval time.Duration,
@@ -48,6 +51,7 @@ func NewRefreshManager(
 		repo:            repo,
 		detector:        detector,
 		ideDetector:     ideDetector,
+		termDetector:    termDetector,
 		procLister:      procLister,
 		prProv:          prProv,
 		networkInterval: networkInterval,
@@ -167,7 +171,7 @@ func (rm *RefreshManager) doLocal() {
 	candidates := rm.sbxCandidates
 	rm.mu.Unlock()
 
-	result := ops.LocalRefresh(rm.repo, rm.detector, rm.ideDetector, rm.procLister, candidates)
+	result := ops.LocalRefresh(rm.repo, rm.detector, rm.ideDetector, rm.termDetector, rm.procLister, candidates)
 	if rm.OnRefresh != nil {
 		rm.OnRefresh(result)
 	}
@@ -179,7 +183,7 @@ func (rm *RefreshManager) doNetwork() {
 	cliAvail := rm.cliAvail
 	rm.mu.Unlock()
 
-	result := ops.NetworkRefresh(rm.repo, rm.detector, rm.ideDetector, rm.procLister, rm.prProv, cliAvail, candidates)
+	result := ops.NetworkRefresh(rm.repo, rm.detector, rm.ideDetector, rm.termDetector, rm.procLister, rm.prProv, cliAvail, candidates)
 	if rm.OnRefresh != nil {
 		rm.OnRefresh(result)
 	}

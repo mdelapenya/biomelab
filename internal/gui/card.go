@@ -15,6 +15,7 @@ import (
 	"github.com/mdelapenya/biomelab/internal/ide"
 	"github.com/mdelapenya/biomelab/internal/provider"
 	"github.com/mdelapenya/biomelab/internal/sandbox"
+	"github.com/mdelapenya/biomelab/internal/terminal"
 )
 
 // maxLinkedPathChars is the max characters for a path in a linked card.
@@ -82,6 +83,7 @@ func buildCardContent(
 	wt git.Worktree,
 	agents []agent.Info,
 	ides []ide.Info,
+	terminals []terminal.Info,
 	pr *provider.PRInfo,
 	cliAvail provider.CLIAvailability,
 	prov provider.Provider,
@@ -181,6 +183,16 @@ func buildCardContent(
 		}
 	} else {
 		items = append(items, monoText("□ no IDE", colorDimGray, false))
+	}
+
+	// Terminal status.
+	if len(terminals) > 0 {
+		for _, t := range terminals {
+			line := fmt.Sprintf("▶ %s (PID %d)", string(t.Kind), t.ShellPID)
+			items = append(items, monoText(line, colorPurple, false))
+		}
+	} else {
+		items = append(items, monoText("▷ no terminal", colorDimGray, false))
 	}
 
 	// Dirty + sync status on one line.

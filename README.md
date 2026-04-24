@@ -8,9 +8,10 @@
 
 - **Multi-repo dashboard** -- Register multiple repositories and switch between them in a two-panel layout. The left panel shows registered repos as a tree with indented mode lines (regular `📂 [host]` or sandbox `🐳 [agent]`). The right panel shows the selected mode's worktree dashboard. Press `Tab` to switch focus between panels.
 - **Persistent config** -- Registered repos are saved to `~/.config/biomelab/repos.json` and restored on next launch. Starting biomelab inside a git repo auto-adds it.
-- **Worktree cards** -- Each card shows: branch name, path, dirty/clean status, sync status (ahead/behind/diverged/up-to-date), active agents, open IDEs, and PR info.
+- **Worktree cards** -- Each card shows: branch name, path, dirty/clean status, sync status (ahead/behind/diverged/up-to-date), active agents, open IDEs, terminal sessions, and PR info.
 - **Agent detection** -- Automatically detects coding agents (Claude, Kiro, Copilot, Codex, OpenCode, Gemini) running in each worktree by scanning system processes.
 - **IDE detection** -- Detects open IDEs (VS Code, Cursor, Zed, Windsurf, GoLand, IntelliJ, PyCharm, Neovim, Vim) in each worktree.
+- **Terminal detection** -- Detects terminal sessions (Terminal.app, iTerm2, Alacritty, kitty, WezTerm, gnome-terminal, Konsole, and more) by finding shells whose working directory matches a worktree path. Shown in purple on cards.
 - **PR/MR status** -- Fetches pull request (GitHub) or merge request (GitLab) information and CI check status for each branch.
 - **Sync status** -- Compares each branch against remote tracking branches and shows ahead/behind/diverged status.
 - **Docker Sandbox mode** (recommended) -- One sandbox per agent per repo. Real-time status monitoring (running/stopped/not found). Create, start, stop, and remove sandboxes from the dashboard.
@@ -18,7 +19,7 @@
 - **Fetch PR** -- Press `f` to fetch a PR into a new worktree. Accepts `123` or `owner/repo#123`.
 - **Send PR** -- Press `Shift+P` to push and create a PR (multi-phase: dirty check → remote selection → confirmation). Detects existing PRs for push-only mode.
 - **Pull** -- Press `p` to fetch all remotes and merge from origin.
-- **Open in terminal** -- Press `Enter` to open a worktree in a new terminal window.
+- **Open in terminal** -- Press `Enter` to open a worktree in a terminal. If a terminal is already detected for that worktree, it is brought to the foreground instead of opening a new one. On macOS, activation uses TTY matching via AppleScript (requires Automation permission on first use).
 - **Open in editor** -- Press `e` to open in `$BIOME_EDITOR` (defaults to VS Code).
 - **Zoom** -- `Ctrl+=` / `Ctrl+-` / `Ctrl+0` to scale the UI font.
 - **System tray** -- Closing the window hides to system tray. Tray menu toggles Show/Hide.
@@ -117,7 +118,7 @@ Launch `biomelab` from any directory, or open `Biomelab.app` from Spotlight/Find
 | `↓` / `j` | Navigate down (by row in grid) | Any card |
 | `←` / `h` | Navigate left | Linked cards |
 | `→` / `l` | Navigate right | Linked cards |
-| `Enter` | Open in terminal | Any card |
+| `Enter` | Activate existing terminal or open new | Any card |
 | `e` | Open in editor | Any card |
 | `c` | Create worktree | Main card |
 | `f` | Fetch PR/MR | Main card |

@@ -11,13 +11,15 @@ import (
 	"github.com/mdelapenya/biomelab/internal/process"
 	"github.com/mdelapenya/biomelab/internal/provider"
 	"github.com/mdelapenya/biomelab/internal/sandbox"
+	"github.com/mdelapenya/biomelab/internal/terminal"
 )
 
-// RefreshResult carries updated worktree, agent, IDE, and PR data.
+// RefreshResult carries updated worktree, agent, IDE, terminal, and PR data.
 type RefreshResult struct {
 	Worktrees      []git.Worktree
 	Agents         agent.DetectionResult
 	IDEs           ide.DetectionResult
+	Terminals      terminal.DetectionResult
 	PRs            provider.PRResult
 	HasPRs         bool
 	Err            error
@@ -59,6 +61,7 @@ func LocalRefresh(
 	repo *git.Repository,
 	detector *agent.Detector,
 	ideDetector *ide.Detector,
+	termDetector *terminal.Detector,
 	procLister process.Lister,
 	sbxCandidates []string,
 ) RefreshResult {
@@ -72,14 +75,16 @@ func LocalRefresh(
 		paths[i] = wt.Path
 	}
 
-	// Fetch processes once and share across both detectors.
+	// Fetch processes once and share across all detectors.
 	ctx := context.Background()
 	procs, procErr := procLister.Processes(ctx)
 	var agents agent.DetectionResult
 	var ides ide.DetectionResult
+	var terms terminal.DetectionResult
 	if procErr == nil {
 		agents = detector.DetectFromProcesses(procs, paths)
 		ides = ideDetector.DetectFromProcesses(procs, paths)
+		terms = termDetector.DetectFromProcesses(procs, paths)
 	}
 
 	// Check all sandbox statuses with one sbx ls call, then match against
@@ -109,6 +114,7 @@ func LocalRefresh(
 		Worktrees:      wts,
 		Agents:         agents,
 		IDEs:           ides,
+		Terminals:      terms,
 		SandboxStatus:  sbxStatus,
 		HasSbxStatus:   len(sbxCandidates) > 0,
 		AllSbxStatuses: allStatuses,
@@ -125,6 +131,7 @@ func NetworkRefresh(
 	repo *git.Repository,
 	detector *agent.Detector,
 	ideDetector *ide.Detector,
+	termDetector *terminal.Detector,
 	procLister process.Lister,
 	prProv provider.PRProvider,
 	cliAvail provider.CLIAvailability,
@@ -148,9 +155,11 @@ func NetworkRefresh(
 	procs, procErr := procLister.Processes(ctx)
 	var agents agent.DetectionResult
 	var ides ide.DetectionResult
+	var terms terminal.DetectionResult
 	if procErr == nil {
 		agents = detector.DetectFromProcesses(procs, paths)
 		ides = ideDetector.DetectFromProcesses(procs, paths)
+		terms = termDetector.DetectFromProcesses(procs, paths)
 	}
 
 	var prs provider.PRResult
@@ -176,6 +185,7 @@ func NetworkRefresh(
 		Worktrees:      wts,
 		Agents:         agents,
 		IDEs:           ides,
+		Terminals:      terms,
 		PRs:            prs,
 		HasSbxStatus:   len(sbxCandidates) > 0,
 		HasPRs:         true,
@@ -191,6 +201,7 @@ func CardRefresh(
 	repo *git.Repository,
 	detector *agent.Detector,
 	ideDetector *ide.Detector,
+	termDetector *terminal.Detector,
 	procLister process.Lister,
 	prProv provider.PRProvider,
 	cliAvail provider.CLIAvailability,
@@ -207,9 +218,11 @@ func CardRefresh(
 	procs, procErr := procLister.Processes(ctx)
 	var agents agent.DetectionResult
 	var ides ide.DetectionResult
+	var terms terminal.DetectionResult
 	if procErr == nil {
 		agents = detector.DetectFromProcesses(procs, []string{wtPath})
 		ides = ideDetector.DetectFromProcesses(procs, []string{wtPath})
+		terms = termDetector.DetectFromProcesses(procs, []string{wtPath})
 	}
 
 	var prs provider.PRResult
@@ -223,6 +236,7 @@ func CardRefresh(
 		Worktrees: wts,
 		Agents:    agents,
 		IDEs:      ides,
+		Terminals: terms,
 		PRs:       prs,
 		HasPRs:    true,
 		FetchErr:  fetchErr,

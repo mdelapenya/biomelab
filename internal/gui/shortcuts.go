@@ -422,11 +422,29 @@ func (a *App) handleEnter() {
 
 	mode := re.state.ActiveMode
 	if mode != nil && mode.Type == "sandbox" && mode.SandboxName != "" {
+		// Sandbox mode: no terminal detection (sandbox terminals are remote).
 		args := sandbox.RunWithBranchArgs(mode.SandboxName, wt.Branch)
 		cmd := sandbox.CommandString(args)
-		go func() { _ = ops.OpenTerminal("", cmd) }()
+		go func() { _ = ops.OpenTerminal("", cmd, "") }()
+		return
+	}
+
+	identifier := wt.Branch
+
+	// If a terminal is already detected for this worktree, try to activate it.
+	if terms := re.state.Terminals[wt.Path]; len(terms) > 0 {
+		t := terms[0]
+		go func() {
+			// Try 1: activate by TTY — resolves shell PID to its tty device,
+			// then finds the terminal window/tab that owns it.
+			if ops.ActivateTerminalByPID(t.ShellPID, t.RootPID, t.Kind) {
+				return
+			}
+			// Try 2: bring the terminal app to front generically.
+			ops.ActivateTerminalApp(t.Kind)
+		}()
 	} else {
-		go func() { _ = ops.OpenTerminal(wt.Path, "") }()
+		go func() { _ = ops.OpenTerminal(wt.Path, "", identifier) }()
 	}
 }
 
