@@ -85,7 +85,13 @@ body {
   color: var(--text-primary);
   line-height: 1.7;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden
+}
+
+[data-theme="light"] body {
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto
 }
 
 body::before {
@@ -420,7 +426,7 @@ nav .container {
 .hero-content strong,
 .hero-points li {
   color: #fff;
-  text-shadow: 0 2px 20px rgba(0, 0, 0, .7), 0 1px 4px rgba(0, 0, 0, .5)
+  text-shadow: 0 1px 10px rgba(0, 0, 0, .6), 0 1px 3px rgba(0, 0, 0, .4)
 }
 
 .hero-content .install-box {
@@ -508,7 +514,7 @@ nav .container {
   color: transparent !important;
   -webkit-text-fill-color: transparent;
   text-shadow: none;
-  filter: drop-shadow(0 2px 12px rgba(0, 0, 0, .5))
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, .35))
 }
 
 .hero-copy .tagline {
@@ -1646,7 +1652,11 @@ footer {
   background-clip: text;
   color: transparent !important;
   -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 2px 12px rgba(0,0,0,.35))
+  filter: drop-shadow(0 1px 6px rgba(0,0,0,.2))
+}
+
+[data-theme="light"] .kb-accent {
+  filter: none
 }
 
 .kanban-intro {
