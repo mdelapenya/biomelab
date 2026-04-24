@@ -93,10 +93,23 @@ func (rp *RepoPanel) rebuildList() {
 	rp.list.Objects = nil
 
 	for gi, group := range rp.groups {
-		// Repo header (not clickable).
-		header := monoText(group.Name, colorGray, false)
-		header.TextSize = scaledSize(10)
-		rp.list.Add(container.NewPadded(header))
+		// Compact visual separator between repo groups.
+		if gi > 0 {
+			gap := canvas.NewRectangle(colorPanelBg)
+			gap.SetMinSize(fyne.NewSize(0, 4))
+			sep := canvas.NewRectangle(colorBorder)
+			sep.SetMinSize(fyne.NewSize(0, 1))
+			rp.list.Add(gap)
+			rp.list.Add(sep)
+		}
+
+		// Repo header (not clickable) — bold + foreground color for
+		// strong visual hierarchy over the mode sub-items.
+		header := monoText(group.Name, colorForeground, true)
+		header.TextSize = scaledSize(12)
+		topGap := canvas.NewRectangle(colorPanelBg)
+		topGap.SetMinSize(fyne.NewSize(0, 4))
+		rp.list.Add(container.NewVBox(topGap, header))
 
 		// Mode entries (clickable).
 		for mi, mode := range group.Modes {
@@ -157,8 +170,18 @@ func (rp *RepoPanel) buildModeLine(mode config.ModeEntry, isActive bool) fyne.Ca
 		}
 	}
 
+	var row fyne.CanvasObject
 	if dot != nil {
-		return container.NewHBox(label, dot)
+		row = container.NewHBox(label, dot)
+	} else {
+		row = label
 	}
-	return label
+
+	// Active row gets a highlighted background so it stands out.
+	if isActive {
+		bg := canvas.NewRectangle(colorSelection)
+		bg.CornerRadius = 4
+		return container.NewStack(bg, container.NewPadded(row))
+	}
+	return row
 }
