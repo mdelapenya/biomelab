@@ -168,6 +168,22 @@ func OpenEditor(dir string) error {
 }
 
 // OpenTerminal opens a terminal window for the given directory or command.
-func OpenTerminal(dir, command string) error {
+// If identifier is non-empty, the terminal title is set to "biomelab: <identifier>".
+func OpenTerminal(dir, command, identifier string) error {
+	if identifier != "" {
+		return terminal.OpenWithTitle(dir, command, identifier)
+	}
 	return terminal.Open(dir, command)
+}
+
+// ActivateTerminalByPID looks up the shell's TTY and brings the owning
+// terminal window to the foreground. Returns true if successful.
+func ActivateTerminalByPID(shellPID, rootPID int32, kind terminal.Kind) bool {
+	return terminal.ActivateByPID(shellPID, rootPID, kind)
+}
+
+// ActivateTerminalApp brings a terminal emulator application to the foreground
+// without targeting a specific window. Use as a last-resort fallback.
+func ActivateTerminalApp(kind terminal.Kind) bool {
+	return terminal.ActivateApp(kind)
 }

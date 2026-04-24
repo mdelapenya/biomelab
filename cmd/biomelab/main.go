@@ -18,6 +18,7 @@ import (
 	"github.com/mdelapenya/biomelab/internal/gui"
 	"github.com/mdelapenya/biomelab/internal/ide"
 	"github.com/mdelapenya/biomelab/internal/process"
+	"github.com/mdelapenya/biomelab/internal/terminal"
 )
 
 //go:embed icon.png
@@ -66,6 +67,7 @@ func main() {
 
 	detector := agent.NewDetector()
 	ideDetector := ide.NewDetector()
+	termDetector := terminal.NewDetector()
 	procLister := &process.OSLister{}
 	configPath := config.DefaultPath()
 
@@ -86,6 +88,6 @@ func main() {
 
 	gui.AppIcon = &fyne.StaticResource{StaticName: "icon.png", StaticContent: iconBytes}
 
-	app := gui.NewApp(configPath, detector, ideDetector, procLister, refreshInterval)
+	app := gui.NewApp(configPath, detector, ideDetector, termDetector, procLister, refreshInterval)
 	app.Run()
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/mdelapenya/biomelab/internal/process"
 	"github.com/mdelapenya/biomelab/internal/provider"
 	"github.com/mdelapenya/biomelab/internal/sandbox"
+	"github.com/mdelapenya/biomelab/internal/terminal"
 )
 
 // repoEntry holds per-repo runtime state.
@@ -52,6 +53,7 @@ type App struct {
 	configPath      string
 	detector        *agent.Detector
 	ideDetector     *ide.Detector
+	termDetector    *terminal.Detector
 	procLister      process.Lister
 	refreshInterval time.Duration
 
@@ -69,6 +71,7 @@ func NewApp(
 	configPath string,
 	detector *agent.Detector,
 	ideDetector *ide.Detector,
+	termDetector *terminal.Detector,
 	procLister process.Lister,
 	refreshInterval time.Duration,
 ) *App {
@@ -76,6 +79,7 @@ func NewApp(
 		configPath:      configPath,
 		detector:        detector,
 		ideDetector:     ideDetector,
+		termDetector:    termDetector,
 		procLister:      procLister,
 		refreshInterval: refreshInterval,
 		sbxStatuses:     make(map[string]sandbox.Status),
@@ -200,7 +204,7 @@ func (a *App) buildRepoEntry(entry config.RepoEntry) *repoEntry {
 		a.focus = focusRight // clicking a card means right panel has focus
 	}
 
-	rm := NewRefreshManager(repo, a.detector, a.ideDetector, a.procLister, prProv, a.refreshInterval)
+	rm := NewRefreshManager(repo, a.detector, a.ideDetector, a.termDetector, a.procLister, prProv, a.refreshInterval)
 	rm.SetSandboxCandidates(sbxCandidates)
 
 	re := &repoEntry{

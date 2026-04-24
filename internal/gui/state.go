@@ -11,6 +11,7 @@ import (
 	"github.com/mdelapenya/biomelab/internal/ide"
 	"github.com/mdelapenya/biomelab/internal/provider"
 	"github.com/mdelapenya/biomelab/internal/sandbox"
+	"github.com/mdelapenya/biomelab/internal/terminal"
 )
 
 // ViewMode controls how the linked worktrees are displayed.
@@ -30,6 +31,7 @@ type RepoState struct {
 	Worktrees     []git.Worktree
 	Agents        agent.DetectionResult
 	IDEs          ide.DetectionResult
+	Terminals     terminal.DetectionResult
 	PRs           provider.PRResult
 	CLIAvail      provider.CLIAvailability
 	Provider      provider.Provider

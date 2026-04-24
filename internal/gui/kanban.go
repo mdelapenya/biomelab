@@ -14,6 +14,7 @@ import (
 	"github.com/mdelapenya/biomelab/internal/agent"
 	"github.com/mdelapenya/biomelab/internal/git"
 	"github.com/mdelapenya/biomelab/internal/provider"
+	"github.com/mdelapenya/biomelab/internal/terminal"
 )
 
 // prLink is a tappable monospace label that opens the PR/MR URL in the default
@@ -96,6 +97,7 @@ func (h *hintIcon) MouseMoved(_ *desktop.MouseEvent) {}
 func buildKanbanCardContent(
 	wt git.Worktree,
 	agents []agent.Info,
+	terminals []terminal.Info,
 	pr *provider.PRInfo,
 	selected bool,
 ) fyne.CanvasObject {
@@ -122,6 +124,13 @@ func buildKanbanCardContent(
 		agentLine := monoText("● "+string(agents[0].Kind), colorGreen, false)
 		agentLine.TextSize = scaledSize(10)
 		rows = append(rows, agentLine)
+	}
+
+	// ── Row 2b: ▶ terminal (omitted when no terminal) ───────────────────
+	if len(terminals) > 0 {
+		termLine := monoText("▶ "+string(terminals[0].Kind), colorPurple, false)
+		termLine.TextSize = scaledSize(10)
+		rows = append(rows, termLine)
 	}
 
 	// ── Row 3: #42 ↗  review  CI  (omitted when no PR) ─────────────────
@@ -346,6 +355,7 @@ func (d *Dashboard) buildKanbanView() fyne.CanvasObject {
 				content := buildKanbanCardContent(
 					wt,
 					d.agentsFor(wt.Path),
+					d.terminalsFor(wt.Path),
 					d.prFor(wt.Branch),
 					isSelected,
 				)

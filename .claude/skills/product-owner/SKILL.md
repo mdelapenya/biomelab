@@ -53,10 +53,17 @@ scanning system processes: **Claude, Copilot, Codex, Kiro, OpenCode, Gemini**.
 An editor/IDE open in a worktree. Auto-detected: **VS Code, Cursor, Zed,
 Windsurf, GoLand, IntelliJ, PyCharm, Neovim, Vim**.
 
+### Terminal
+A terminal emulator with a shell whose working directory matches a worktree.
+Auto-detected by scanning system processes for shells (bash, zsh, fish, pwsh)
+whose ancestor is a known terminal emulator: **Terminal.app, iTerm2, Alacritty,
+kitty, WezTerm, gnome-terminal, Konsole, Tilix, xfce4-terminal, Hyper,
+Windows Terminal**.
+
 ### Card
 The visual representation of a worktree in the right panel. Each card shows:
 branch name, path, sandbox status, PR/MR info, agent status, IDE status,
-dirty/clean state, and sync status (ahead/behind/diverged).
+terminal status, dirty/clean state, and sync status (ahead/behind/diverged).
 
 ---
 
@@ -106,7 +113,8 @@ Every worktree is rendered as a card showing at-a-glance status:
 | **Sandbox** | `(running)` green / `(stopped)` yellow / `(not found)` red |
 | **PR/MR** | `PR #123 Title (open/draft/merged/closed)` with CI icon: success/failure/pending |
 | **Agent** | `claude (PID 1234)` green, or `no agent` dimmed; sub-agents shown indented |
-| **IDE** | `vscode` cyan, or `no IDE` dimmed; multiple IDEs listed separately |
+| **IDE** | `vscode (PID 567)` blue, or `no IDE` dimmed; multiple IDEs listed separately |
+| **Terminal** | `Terminal (PID 890)` purple, or `no terminal` dimmed; one entry per emulator window |
 | **Dirty** | `dirty` orange or `clean` green |
 | **Sync** | `up-to-date` / `ahead` / `behind` / `diverged` / `no upstream` |
 
@@ -163,16 +171,35 @@ worktree is created inside the sandbox.
 Press `p` to fetch all remotes and merge from origin. Multi-remote aware:
 fetches origin, upstream, and any configured forks before merging.
 
-### 8. Open in Terminal
+### 8. Open in Terminal (activate-or-open)
 
-Press Enter on any card to open the worktree in a new terminal window. Each
-press opens a fresh window — no tab reuse or split panels.
-In sandbox mode, the terminal runs `sbx run --branch <branch> <name>` to
-attach to the sandbox session. In regular mode, a shell opens in the worktree
-directory.
+Press Enter on any card to open the worktree in a terminal. If a terminal is
+already detected for that worktree (see Feature 10b), biomelab brings it to
+the foreground instead of opening a new one. If no terminal is detected, a new
+window opens.
+
+**Activation mechanism (macOS):** biomelab resolves the detected shell's PID to
+its TTY device (via `lsof`), then uses AppleScript to search Terminal.app or
+iTerm2 tabs for a matching `tty` property and brings that window to front. This
+is immune to shell prompts overwriting the window title. Falls back to bringing
+the terminal app to the foreground generically if TTY matching fails.
+
+**Activation mechanism (Linux):** uses `xdotool search --pid` to find the
+terminal emulator's window by its root PID, then `windowactivate` to raise it.
+Falls back to `wmctrl -x -a` by window class if xdotool is unavailable.
+
+**New terminal windows** include an ANSI title escape (`\033]0;biomelab: <branch>\007`)
+for visual identification in the terminal's title bar or tab.
+
+In sandbox mode, Enter always opens a new terminal (sandbox sessions are remote
+and not tracked by local process detection).
 
 macOS uses `.command` files via `open` (no permissions required). Linux uses
 `x-terminal-emulator` (system default). Override with `BIOME_TERMINAL` env var.
+
+> **macOS note:** First use triggers a macOS Automation permission prompt
+> (System Settings > Privacy & Security > Automation) to allow biomelab to
+> control Terminal.app or iTerm2 via AppleScript.
 
 ### 9. Open in Editor
 
@@ -187,6 +214,23 @@ worktree. Results appear on cards and refresh every 5 seconds.
 Agents show PID, process state, and start time. Sub-agent processes (child PIDs)
 are grouped under the parent. IDEs show kind and one entry per independent
 window (Electron helper processes are grouped by process tree).
+
+### 10b. Terminal Detection
+
+The same process scanning that detects agents and IDEs also detects terminal
+sessions. biomelab finds shell processes (bash, zsh, fish, pwsh), walks up their
+PPID chain to identify the terminal emulator ancestor (Terminal.app, iTerm2,
+Alacritty, etc.), and matches the shell's working directory to worktree paths.
+
+Terminal status appears on cards in purple (`▶ Terminal (PID 890)` or
+`▷ no terminal`). Kanban cards show a compact `▶ Terminal` line when detected.
+
+Detection shares the same process snapshot as agent/IDE detection (one
+`gopsutil` call per refresh cycle), so it adds no extra system overhead.
+Shells spawned by non-terminal parents (editors, scripts, cron) are filtered
+out by the PPID walk — only shells descending from a known terminal emulator
+are reported. Multiple terminals open for the same worktree under different
+emulators are listed separately.
 
 ### 11. PR / MR Status
 
@@ -214,7 +258,7 @@ both panels.
 
 | Cycle | Interval | What it checks |
 |---|---|---|
-| **Local** | 5 s | Worktree list, dirty status, agent/IDE detection, sandbox status |
+| **Local** | 5 s | Worktree list, dirty status, agent/IDE/terminal detection, sandbox status |
 | **Network** | 30 s (configurable) | Git fetch all remotes, PR/MR lookup, CI status, sync status |
 | **Manual** | On-demand (`r`) | Full network refresh for the selected card only |
 | **Quick** | After create/delete/pull/fetch-PR | Worktree list only (fast) |
@@ -327,7 +371,7 @@ This data is fetched from `gh pr view --json reviews` (GitHub) and `glab mr view
 | `S` | Stop running sandbox | Main card, sandbox running |
 | `d` | Delete worktree or sandbox | Linked card: delete worktree; main card in sandbox: remove sandbox |
 | `e` | Open in editor | Any card |
-| `Enter` | Open in terminal | Any card |
+| `Enter` | Activate existing terminal or open new | Any card |
 | `p` | Pull from remote | Any card |
 | `r` | Refresh selected card | Any card |
 | `g` | Toggle kanban ↔ grid view | Global |
@@ -473,15 +517,20 @@ in a single sandbox would create conflicting environments and make it unclear
 which agent "owns" the sandbox lifecycle. One-to-one mapping keeps the mental
 model simple.
 
-### DL-007: Fresh terminal window per Enter press
+### DL-007: Activate-or-open terminal on Enter (revised)
 
-**Decision:** Every Enter press opens a new terminal window. No tab tracking,
-no split panels, no terminal-specific integrations.
+**Decision:** Enter activates (brings to front) an existing terminal for the
+worktree if one is detected, or opens a new one if not. Supersedes the earlier
+"fresh terminal per Enter press" policy.
 
-**Why:** Maintaining compatibility across different terminal emulators (Warp,
-iTerm, Terminal.app, gnome-terminal, konsole, xfce4-terminal) with tab reuse
-and split panel logic was cumbersome and fragile. The simple approach — open a
-fresh window every time — works everywhere with no permissions or AppleScript.
+**Why:** When managing many worktrees with agents, developers accumulate many
+terminal windows. Opening a new one on every Enter press increases cognitive
+load — the user must hunt for the right window among dozens. Activate-or-open
+reduces this by reusing the existing terminal. Detection is based on process
+scanning (shell CWD matching worktree path), so it finds terminals regardless
+of whether biomelab opened them. Activation uses TTY matching (PID → lsof →
+AppleScript tab tty), which is immune to shell prompts overwriting window titles.
+Sandbox mode always opens new (sandbox sessions are remote, not locally tracked).
 
 ### DL-008: Main card is not deletable
 
@@ -642,3 +691,30 @@ yellow ● commented.
 "PR In Review" in the kanban board. It also provides a quick signal on cards in
 the grid view so users know whether action is needed without opening the PR URL.
 The icon is kept minimal (single character) to avoid crowding the card line.
+
+### DL-023: TTY-based terminal activation over window title matching
+
+**Decision:** Terminal activation uses the shell's TTY device (`lsof -p <pid>`)
+matched against Terminal.app/iTerm2 tab `tty` properties via AppleScript, rather
+than matching by window title.
+
+**Why:** The initial implementation set a `biomelab: <branch>` title via ANSI
+escape when opening terminals and searched for that title to activate. This
+failed because shell prompts (oh-my-zsh, powerlevel10k, starship) overwrite the
+window title on every command. TTY matching is immune to title changes — it uses
+the kernel's device assignment, which is stable for the lifetime of the terminal
+session. On Linux, `xdotool search --pid` serves the same purpose.
+
+### DL-024: PPID-walk filtering for terminal detection
+
+**Decision:** Terminal detection filters shell processes by walking their PPID
+chain upward to find a known terminal emulator ancestor. Shells whose ancestry
+does not include a terminal emulator are discarded.
+
+**Why:** Many shell processes exist on a system that are not user-interactive
+terminal sessions — editors spawn shells, build tools use shells, cron jobs run
+shells. Without the PPID walk, every shell whose CWD happened to match a
+worktree path would be falsely reported as a terminal. The upward walk ensures
+only shells that descend from Terminal.app, iTerm2, Alacritty, etc. are counted.
+The emulator pattern list is ordered so that specific names (e.g. "iterm2")
+match before broad ones (e.g. "terminal").

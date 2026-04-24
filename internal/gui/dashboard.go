@@ -16,6 +16,7 @@ import (
 	"github.com/mdelapenya/biomelab/internal/ops"
 	"github.com/mdelapenya/biomelab/internal/provider"
 	"github.com/mdelapenya/biomelab/internal/sandbox"
+	"github.com/mdelapenya/biomelab/internal/terminal"
 )
 
 // flexGridLayout lays out cards on a grid where the column count is determined
@@ -149,6 +150,9 @@ func (d *Dashboard) ApplyRefresh(result ops.RefreshResult) {
 	if result.IDEs != nil {
 		d.state.IDEs = result.IDEs
 	}
+	if result.Terminals != nil {
+		d.state.Terminals = result.Terminals
+	}
 	if result.HasPRs {
 		d.state.PRs = result.PRs
 		d.state.LastNetworkRefresh = time.Now()
@@ -271,6 +275,7 @@ func (d *Dashboard) build() fyne.CanvasObject {
 		*mainWt,
 		d.agentsFor(mainWt.Path),
 		d.idesFor(mainWt.Path),
+		d.terminalsFor(mainWt.Path),
 		d.prFor(mainWt.Branch),
 		d.state.CLIAvail,
 		d.state.Provider,
@@ -337,6 +342,7 @@ func (d *Dashboard) build() fyne.CanvasObject {
 			wt,
 			d.agentsFor(wt.Path),
 			d.idesFor(wt.Path),
+			d.terminalsFor(wt.Path),
 			d.prFor(wt.Branch),
 			d.state.CLIAvail,
 			d.state.Provider,
@@ -392,6 +398,13 @@ func (d *Dashboard) idesFor(wtPath string) []ide.Info {
 		return nil
 	}
 	return d.state.IDEs[wtPath]
+}
+
+func (d *Dashboard) terminalsFor(wtPath string) []terminal.Info {
+	if d.state.Terminals == nil {
+		return nil
+	}
+	return d.state.Terminals[wtPath]
 }
 
 func (d *Dashboard) prFor(branch string) *provider.PRInfo {
