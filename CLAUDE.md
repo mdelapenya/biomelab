@@ -12,8 +12,10 @@ For internal architecture, design decisions, and state machines, see [ARCHITECTU
 Fyne requires CGo and system graphics libraries.
 
 ```
-# Linux prerequisites
-sudo apt install gcc libgl1-mesa-dev xorg-dev
+# Prerequisites — install a C toolchain
+#   macOS:    xcode-select --install
+#   Linux:    sudo apt install gcc libgl1-mesa-dev xorg-dev
+#   Windows:  scoop install gcc    (or MSYS2: pacman -S mingw-w64-ucrt-x86_64-gcc)
 
 # Build and test
 task build        # Build to bin/biomelab (CGO_ENABLED=1)

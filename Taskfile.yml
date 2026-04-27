@@ -3,10 +3,33 @@ version: '3'
 vars:
   GO_VERSION:
     sh: grep '^go ' go.mod | awk '{print $2}'
-  GO:
+  # GOROOT_GVM resolves the GOROOT for the requested Go version via gvm.
+  # On Windows, gvm --format=bash emits backslash paths that break in bash
+  # and Task shells, so we normalise to forward slashes.
+  GOROOT_GVM:
     sh: |
       if command -v gvm >/dev/null 2>&1; then
-        eval "$(gvm {{.GO_VERSION}})" >/dev/null 2>&1 && which go && exit 0
+        gvm_out=$(gvm --format=bash {{.GO_VERSION}} 2>/dev/null) || true
+        if [ -n "$gvm_out" ]; then
+          goroot=${gvm_out%%$'\n'*}
+          goroot=${goroot#export GOROOT=\"}
+          goroot=${goroot%\"}
+          goroot=${goroot//\\//}
+          echo "$goroot" && exit 0
+        fi
+      fi
+  GO:
+    sh: |
+      if [ -n "{{.GOROOT_GVM}}" ]; then
+        gobin="{{.GOROOT_GVM}}/bin/go"
+        if [ -f "$gobin.exe" ]; then gobin="$gobin.exe"; fi
+        # Prefix with GOROOT= so the correct toolchain is used even when a
+        # different GOROOT is already exported in the environment (Task's
+        # env: section does not override pre-existing variables).
+        if [ -x "$gobin" ] || [ -f "$gobin" ]; then
+          echo "GOROOT={{.GOROOT_GVM}} $gobin"
+          exit 0
+        fi
       fi
       echo go
   GOEXE:
@@ -28,6 +51,17 @@ tasks:
     desc: Install gvm if not present
     cmds:
       - task: install-gvm
+
+  require-cc:
+    desc: Ensure a C compiler is on PATH (required for CGO / Fyne)
+    internal: true
+    preconditions:
+      - sh: command -v gcc >/dev/null 2>&1 || command -v cc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1
+        msg: |
+          No C compiler found on PATH — required for CGO (Fyne).
+            macOS:   xcode-select --install
+            Linux:   sudo apt install gcc libgl1-mesa-dev xorg-dev
+            Windows: scoop install gcc   (or MSYS2: pacman -S mingw-w64-ucrt-x86_64-gcc)
 
   install-gvm:
     desc: Install gvm from prebuilt release binary (no Go required)
@@ -61,7 +95,7 @@ tasks:
 
   build:
     desc: Build the biomelab binary for the current platform
-    deps: [setup]
+    deps: [setup, require-cc]
     env:
       CGO_ENABLED: "1"
     cmds:
@@ -73,7 +107,7 @@ tasks:
 
   build-darwin-arm64:
     desc: Build for macOS arm64
-    deps: [setup]
+    deps: [setup, require-cc]
     env:
       CGO_ENABLED: "1"
       GOOS: darwin
@@ -83,7 +117,7 @@ tasks:
 
   build-darwin-amd64:
     desc: Build for macOS amd64
-    deps: [setup]
+    deps: [setup, require-cc]
     env:
       CGO_ENABLED: "1"
       GOOS: darwin
@@ -101,7 +135,7 @@ tasks:
 
   package:
     desc: Package biomelab for the current OS using fyne
-    deps: [setup, setup-fyne]
+    deps: [setup, setup-fyne, require-cc]
     env:
       CGO_ENABLED: "1"
       # Fyne's internal go build (used on Windows to inject PE resources) picks
@@ -158,7 +192,7 @@ tasks:
 
   test:
     desc: Run all tests
-    deps: [setup]
+    deps: [setup, require-cc]
     env:
       CGO_ENABLED: "1"
     cmds:
@@ -166,7 +200,7 @@ tasks:
 
   test-race:
     desc: Run all tests with race detector
-    deps: [setup]
+    deps: [setup, require-cc]
     env:
       CGO_ENABLED: "1"
     cmds:
@@ -174,7 +208,7 @@ tasks:
 
   install:
     desc: Install biomelab to $GOPATH/bin
-    deps: [setup]
+    deps: [setup, require-cc]
     env:
       CGO_ENABLED: "1"
     cmds:
@@ -182,7 +216,7 @@ tasks:
 
   lint:
     desc: Run golangci-lint v2
-    deps: [setup]
+    deps: [setup, require-cc]
     env:
       CGO_ENABLED: "1"
     cmds:

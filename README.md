@@ -73,15 +73,19 @@ Or download from the [releases page](https://github.com/mdelapenya/biomelab/rele
 
 ### From source
 
+Requires [Git](https://git-scm.com/), [Task](https://taskfile.dev/), and a C toolchain (Fyne uses CGO). Everything else — `gvm`, the Go toolchain, and the `fyne` CLI — is bootstrapped by `task setup` / `task setup-fyne`.
+
 ```bash
-# Linux prerequisites
-sudo apt install gcc libgl1-mesa-dev xorg-dev
+# Install a C toolchain for your OS
+#   macOS:    xcode-select --install
+#   Linux:    sudo apt install gcc libgl1-mesa-dev xorg-dev
+#   Windows:  scoop install gcc           (PowerShell; or MSYS2 / WinLibs)
 
 git clone https://github.com/mdelapenya/biomelab.git
 cd biomelab
 task build          # builds bin/biomelab
 task install        # installs to $GOPATH/bin
-task install-macos  # builds universal .app + installs to /Applications
+task install-macos  # builds universal .app + installs to /Applications (macOS only)
 ```
 
 ## Usage
