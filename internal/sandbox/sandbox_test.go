@@ -30,19 +30,42 @@ func TestCreateArgs(t *testing.T) {
 	})
 }
 
-func TestRunDetachedWithBranchArgs(t *testing.T) {
-	got := RunDetachedWithBranchArgs("my-sandbox", "feature/login")
-	want := []string{"sbx", "run", "-d", "--branch", "feature/login", "my-sandbox"}
+func TestRunAttachArgs(t *testing.T) {
+	got := RunAttachArgs("my-sandbox")
+	want := []string{"sbx", "run", "--name", "my-sandbox"}
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("RunDetachedWithBranchArgs() = %v, want %v", got, want)
+		t.Errorf("RunAttachArgs() = %v, want %v", got, want)
 	}
 }
 
-func TestRunWithBranchArgs(t *testing.T) {
-	got := RunWithBranchArgs("my-sandbox", "feature/login")
-	want := []string{"sbx", "run", "--branch", "feature/login", "my-sandbox"}
+func TestExecAgentArgs(t *testing.T) {
+	got := ExecAgentArgs("my-sandbox", "/Users/me/repo/.biomelab-worktrees/feat", "claude")
+	want := []string{
+		"sbx", "exec", "-it", "-w", "/Users/me/repo/.biomelab-worktrees/feat",
+		"my-sandbox", "bash", "-c",
+		"if [ -f /usr/local/lib/sandbox/start-agent ]; then exec /bin/bash /usr/local/lib/sandbox/start-agent; else exec claude; fi",
+	}
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("RunWithBranchArgs() = %v, want %v", got, want)
+		t.Errorf("ExecAgentArgs() = %v, want %v", got, want)
+	}
+}
+
+func TestShellQuote(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"claude", "claude"},
+		{"/a/b-c.d", "/a/b-c.d"},
+		{"", "''"},
+		{"a b", "'a b'"},
+		{"it's", `'it'\''s'`},
+		{"$HOME", "'$HOME'"},
+	}
+	for _, tt := range tests {
+		if got := ShellQuote(tt.in); got != tt.want {
+			t.Errorf("ShellQuote(%q) = %q, want %q", tt.in, got, tt.want)
+		}
 	}
 }
 
@@ -169,10 +192,18 @@ func TestMatchStatus(t *testing.T) {
 }
 
 func TestCommandString(t *testing.T) {
-	args := []string{"sbx", "run", "--branch", "feature", "my-sandbox"}
-	got := CommandString(args)
-	want := "sbx run --branch feature my-sandbox"
-	if got != want {
-		t.Errorf("CommandString() = %q, want %q", got, want)
-	}
+	t.Run("plain args", func(t *testing.T) {
+		got := CommandString([]string{"sbx", "run", "--name", "my-sandbox"})
+		want := "sbx run --name my-sandbox"
+		if got != want {
+			t.Errorf("CommandString() = %q, want %q", got, want)
+		}
+	})
+	t.Run("quotes args needing it", func(t *testing.T) {
+		got := CommandString([]string{"bash", "-c", "echo hi"})
+		want := "bash -c 'echo hi'"
+		if got != want {
+			t.Errorf("CommandString() = %q, want %q", got, want)
+		}
+	})
 }

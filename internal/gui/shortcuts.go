@@ -430,7 +430,16 @@ func (a *App) handleEnter() {
 	mode := re.state.ActiveMode
 	if mode != nil && mode.Type == "sandbox" && mode.SandboxName != "" {
 		// Sandbox mode: no terminal detection (sandbox terminals are remote).
-		args := sandbox.RunWithBranchArgs(mode.SandboxName, wt.Branch)
+		// The main card attaches to the sandbox's primary workspace via
+		// `sbx run`. Linked worktrees live on the host under the mounted repo
+		// and are visible in-container at the same path, so we start the
+		// agent there with `sbx exec -w`.
+		var args []string
+		if wt.IsMain {
+			args = sandbox.RunAttachArgs(mode.SandboxName)
+		} else {
+			args = sandbox.ExecAgentArgs(mode.SandboxName, wt.Path, mode.Agent)
+		}
 		cmd := sandbox.CommandString(args)
 		go func() { _ = ops.OpenTerminal("", cmd, "") }()
 		return
@@ -547,14 +556,8 @@ func (a *App) handleCreate() {
 	}
 	done := a.openDialog()
 	a.activeDialog = showBranchInput(a.window, done, func(name string) {
-		mode := re.state.ActiveMode
 		go func() {
-			var result ops.CreateWorktreeResult
-			if mode != nil && mode.Type == "sandbox" && mode.SandboxName != "" {
-				result = ops.CreateSandboxWorktree(mode.SandboxName, name)
-			} else {
-				result = ops.CreateWorktree(re.repo, name)
-			}
+			result := ops.CreateWorktree(re.repo, name)
 			fyne.Do(func() {
 				if result.Err != nil {
 					a.setStatus(result.ErrorMessage(), true)
@@ -628,14 +631,8 @@ func (a *App) handleFetchPR() {
 	}
 	done := a.openDialog()
 	a.activeDialog = showFetchPRInput(a.window, done, func(input string) {
-		mode := re.state.ActiveMode
 		go func() {
-			var result ops.FetchPRResult
-			if mode != nil && mode.Type == "sandbox" && mode.SandboxName != "" {
-				result = ops.FetchPRSandbox(re.repo, input, mode.SandboxName)
-			} else {
-				result = ops.FetchPR(re.repo, input)
-			}
+			result := ops.FetchPR(re.repo, input)
 			fyne.Do(func() {
 				if result.Err != nil {
 					a.setStatus(result.Err.Error(), true)

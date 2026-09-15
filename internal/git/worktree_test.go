@@ -605,6 +605,102 @@ func TestRepoRoot(t *testing.T) {
 	}
 }
 
+func TestRepoRoot_MainWorktree(t *testing.T) {
+	dir, _ := setupTestRepo(t)
+
+	root, err := RepoRoot(dir)
+	if err != nil {
+		t.Fatalf("RepoRoot failed: %v", err)
+	}
+	wantDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(dir) failed: %v", err)
+	}
+	gotRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(root) failed: %v", err)
+	}
+	if gotRoot != wantDir {
+		t.Errorf("RepoRoot(dir) = %q, want %q", gotRoot, wantDir)
+	}
+
+	sub := filepath.Join(dir, "sub")
+	if err := os.MkdirAll(sub, 0755); err != nil {
+		t.Fatalf("failed to create subdir: %v", err)
+	}
+	root, err = RepoRoot(sub)
+	if err != nil {
+		t.Fatalf("RepoRoot(sub) failed: %v", err)
+	}
+	gotRoot, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(root) failed: %v", err)
+	}
+	if gotRoot != wantDir {
+		t.Errorf("RepoRoot(sub) = %q, want %q", gotRoot, wantDir)
+	}
+}
+
+func TestRepoRoot_LinkedWorktreeResolvesToMain(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not found on PATH")
+	}
+
+	dir, _ := setupTestRepo(t)
+
+	linkedPath := filepath.Join(dir, ".biomelab-worktrees", "feat")
+	if err := os.MkdirAll(filepath.Dir(linkedPath), 0755); err != nil {
+		t.Fatalf("failed to create parent dir: %v", err)
+	}
+	runGit(t, dir, "worktree", "add", "-b", "feat", linkedPath)
+
+	wantDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(dir) failed: %v", err)
+	}
+
+	root, err := RepoRoot(linkedPath)
+	if err != nil {
+		t.Fatalf("RepoRoot(linkedPath) failed: %v", err)
+	}
+	gotRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(root) failed: %v", err)
+	}
+	if gotRoot != wantDir {
+		t.Errorf("RepoRoot(linkedPath) = %q, want %q", gotRoot, wantDir)
+	}
+
+	nested := filepath.Join(linkedPath, "nested")
+	if err := os.MkdirAll(nested, 0755); err != nil {
+		t.Fatalf("failed to create nested dir: %v", err)
+	}
+	root, err = RepoRoot(nested)
+	if err != nil {
+		t.Fatalf("RepoRoot(nested) failed: %v", err)
+	}
+	gotRoot, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(root) failed: %v", err)
+	}
+	if gotRoot != wantDir {
+		t.Errorf("RepoRoot(nested) = %q, want %q", gotRoot, wantDir)
+	}
+}
+
+func TestMainWorktreeRoot_NotLinked(t *testing.T) {
+	dir, _ := setupTestRepo(t)
+
+	if _, ok := mainWorktreeRoot(dir); ok {
+		t.Errorf("mainWorktreeRoot(dir) = ok, want not ok for main checkout")
+	}
+
+	other := t.TempDir()
+	if _, ok := mainWorktreeRoot(other); ok {
+		t.Errorf("mainWorktreeRoot(other) = ok, want not ok for non-repo dir")
+	}
+}
+
 func TestSanitizeWorktreeName(t *testing.T) {
 	tests := []struct {
 		input string
