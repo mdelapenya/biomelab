@@ -36,7 +36,7 @@ can have one or more *modes*.
 ### Mode
 A mode determines how worktrees are managed for a given repo:
 - **Regular (host)**: Worktrees live on the host filesystem under `.biomelab-worktrees/`.
-- **Sandbox**: Worktrees live inside a Docker Sandbox VM under `.sbx/<name>-worktrees/`. Each sandbox entry is tied to one agent (e.g. claude, codex).
+- **Sandbox**: Worktrees live on the host under `.biomelab-worktrees/` exactly like regular mode; because sbx mirrors the workspace mount path, they are visible inside the sandbox at the same path. Each sandbox entry is tied to one agent (e.g. claude, codex).
 
 The same repo can have multiple sandbox modes (one per agent) simultaneously.
 
@@ -132,9 +132,13 @@ Enroll a repo with a sandbox to give each worktree an isolated Docker environmen
 - **Remove** a sandbox (press `d` from main card, confirmation popup shows `sbx rm --force`)
 
 **Sandbox worktree creation:**
-Creating a worktree in sandbox mode runs `sbx run -d --branch <branch>` inside the
-existing sandbox — no new VM is created. Opening the worktree (Enter) attaches
-an interactive session via `sbx run --branch <branch>`.
+Creating a worktree in sandbox mode creates it on the host under
+`.biomelab-worktrees/<branch>/`, same as regular mode — no sbx call, no new VM.
+Opening the main card (Enter) attaches via `sbx run --name <sandbox>`. Opening a
+linked worktree runs `sbx exec -it -w <worktree-path> <sandbox> bash -c '…'`, which
+launches the sandbox's own `start-agent` script (falling back to the bare agent
+binary) with the worktree as working directory. A stopped sandbox is started
+automatically by `sbx exec`.
 
 **Sandbox status monitoring:**
 Every local refresh cycle (5 s), biomelab checks `sbx ls --json` and reports
@@ -145,7 +149,7 @@ attention (e.g. "press `n` to create" or "run `sbx run <name>`").
 
 From the main card, press `c`, type a branch name, press Enter.
 - Regular mode: creates under `.biomelab-worktrees/<branch>/`
-- Sandbox mode: creates inside the sandbox VM
+- Sandbox mode: same host path; visible inside the sandbox at the identical path
 
 ### 5. Delete Worktree
 
@@ -163,8 +167,7 @@ From the main card, press `f`. Accepts:
 - Fork reference: `owner/repo#123`
 
 Requires an authenticated CLI (`gh` for GitHub, `glab` for GitLab). The PR's
-head branch is checked out as a new linked worktree. In sandbox mode, the
-worktree is created inside the sandbox.
+head branch is checked out as a new linked worktree. In sandbox mode the worktree is created on the host too and is visible in-container.
 
 ### 7. Pull from Remote
 

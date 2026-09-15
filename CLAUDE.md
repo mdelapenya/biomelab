@@ -99,6 +99,11 @@ Always run `go test -race ./...`.
 - **rgt hook installer needs a TTY** — `--agent claude` doesn't skip the
   prompt in a non-TTY environment. Biomelab writes `.claude/settings.json`
   itself via `regent.EnsureClaudeHooks` (ported from rgt upstream, Apache-2.0).
+- **sbx has no `--branch` any more** — sandbox-mode worktrees are plain host
+  worktrees under `.biomelab-worktrees/` (sbx mirrors the mount path, so they
+  exist in-container at the same path). Linked cards attach with
+  `sbx exec -it -w <path> <sbx> bash -c '…start-agent…'`; the main card uses
+  `sbx run --name <sbx>`. See `sandbox.ExecAgentArgs`.
 - **`widget.Accordion` misbehaves inside `VScroll`** — clicks don't toggle.
   Use a `widget.Button` that flips the inner container's visibility instead;
   see the regent log dialog's tools collapsible for the pattern.

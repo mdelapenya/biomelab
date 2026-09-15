@@ -10,26 +10,19 @@ import (
 	"github.com/mdelapenya/biomelab/internal/github"
 	"github.com/mdelapenya/biomelab/internal/provider"
 	"github.com/mdelapenya/biomelab/internal/regent"
-	"github.com/mdelapenya/biomelab/internal/sandbox"
 	"github.com/mdelapenya/biomelab/internal/terminal"
 )
 
 // CreateWorktreeResult is the outcome of creating a worktree.
 type CreateWorktreeResult struct {
 	BranchName string
-	SbxOutput  string
 	Err        error
 }
 
-// ErrorMessage returns a user-facing error message, preferring sbx's stderr
-// (SbxOutput) over the bare exec error. See SandboxResult.ErrorMessage for
-// the rationale. Returns "" if Err is nil.
+// ErrorMessage returns a user-facing error message, or "" if Err is nil.
 func (r CreateWorktreeResult) ErrorMessage() string {
 	if r.Err == nil {
 		return ""
-	}
-	if msg := FirstNonEmptyLine(r.SbxOutput); msg != "" {
-		return msg
 	}
 	return r.Err.Error()
 }
@@ -65,13 +58,6 @@ func worktreePathForBranch(repo *git.Repository, branchName string) string {
 	return ""
 }
 
-// CreateSandboxWorktree creates a worktree inside an existing sandbox.
-func CreateSandboxWorktree(sandboxName, branch string) CreateWorktreeResult {
-	args := sandbox.RunDetachedWithBranchArgs(sandboxName, branch)
-	out, err := sandbox.RunDetached(args)
-	return CreateWorktreeResult{BranchName: branch, SbxOutput: out, Err: err}
-}
-
 // RemoveWorktree removes a linked worktree by branch name.
 func RemoveWorktree(repo *git.Repository, name string) error {
 	return repo.RemoveWorktree(name)
@@ -103,36 +89,6 @@ func FetchPR(repo *git.Repository, input string) FetchPRResult {
 
 	wtPath, err := repo.FetchPR(ref.Number, headBranch, remoteURL)
 	return FetchPRResult{BranchName: headBranch, WtPath: wtPath, Err: err}
-}
-
-// FetchPRSandbox fetches a PR ref and creates the worktree inside a sandbox.
-func FetchPRSandbox(repo *git.Repository, input, sandboxName string) FetchPRResult {
-	ref, err := github.ParsePRRef(input)
-	if err != nil {
-		return FetchPRResult{Err: err}
-	}
-
-	headBranch, err := github.ValidatePR(repo.Root(), ref)
-	if err != nil {
-		return FetchPRResult{Err: err}
-	}
-
-	remoteURL := ""
-	if ref.Repo != "" {
-		remoteURL = "https://github.com/" + ref.Repo + ".git"
-	}
-
-	if err := repo.FetchPRRef(ref.Number, headBranch, remoteURL); err != nil {
-		return FetchPRResult{Err: err}
-	}
-
-	args := sandbox.RunDetachedWithBranchArgs(sandboxName, headBranch)
-	out, err := sandbox.RunDetached(args)
-	if err != nil {
-		return FetchPRResult{Err: fmt.Errorf("sbx worktree: %w: %s", err, out)}
-	}
-
-	return FetchPRResult{BranchName: headBranch}
 }
 
 // Pull fetches all remotes and merges from origin.

@@ -725,8 +725,9 @@ func (r *Repository) resolveCredentialsForRemote(remote *gogit.Remote) (*githttp
 	return credentialFill(urls[0])
 }
 
-// FetchPRRef fetches a pull request's head ref to a local branch without creating a worktree.
-// Used in sandbox mode where the worktree is created inside the sandbox via sbx.
+// FetchPRRef fetches a pull request's head ref to a local branch without
+// creating a worktree. FetchPR builds on it; kept exported so callers can
+// fetch a ref and place the worktree themselves.
 func (r *Repository) FetchPRRef(prNumber int, branchName, remoteURL string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

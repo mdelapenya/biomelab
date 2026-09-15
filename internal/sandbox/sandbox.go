@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -28,18 +29,40 @@ func CreateArgs(name, agent, repoPath string, kitURLs []string) []string {
 	return append(args, agent, repoPath)
 }
 
-// RunDetachedWithBranchArgs returns the arguments for creating a worktree
-// inside an existing sandbox (detached, non-interactive):
-// sbx run -d --branch <branch> <sandboxName>
-func RunDetachedWithBranchArgs(sandboxName, branch string) []string {
-	return []string{"sbx", "run", "-d", "--branch", branch, sandboxName}
+// StartAgentScript is the well-known path where the sbx daemon writes the
+// per-sandbox agent launcher. `sbx run` executes it as
+// `/bin/bash <script>`; we do the same via `sbx exec` so a worktree session
+// gets the agent's default flags and persistent env.
+const StartAgentScript = "/usr/local/lib/sandbox/start-agent"
+
+// RunAttachArgs returns the arguments for attaching an interactive agent
+// session to an existing sandbox in its primary workspace (repo root):
+// sbx run --name <sandboxName>
+func RunAttachArgs(sandboxName string) []string {
+	return []string{"sbx", "run", "--name", sandboxName}
 }
 
-// RunWithBranchArgs returns the arguments for attaching to a sandbox worktree
-// (interactive): sbx run --branch <branch> <sandboxName>
-func RunWithBranchArgs(sandboxName, branch string) []string {
-	return []string{"sbx", "run", "--branch", branch, sandboxName}
+// ExecAgentArgs returns the arguments for an interactive agent session that
+// starts inside workdir (a worktree path, identical on host and in-container
+// because sbx mirrors the workspace mount path). It runs the daemon's
+// start-agent script when present and falls back to the bare agent binary.
+// sbx exec starts a stopped sandbox automatically.
+func ExecAgentArgs(sandboxName, workdir, agent string) []string {
+	script := "if [ -f " + StartAgentScript + " ]; then exec /bin/bash " +
+		StartAgentScript + "; else exec " + ShellQuote(agent) + "; fi"
+	return []string{"sbx", "exec", "-it", "-w", workdir, sandboxName, "bash", "-c", script}
 }
+
+// ShellQuote returns s safe for interpolation into a POSIX shell command
+// line. Simple tokens are returned unchanged; anything else is single-quoted.
+func ShellQuote(s string) string {
+	if s != "" && safeShellToken.MatchString(s) {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+var safeShellToken = regexp.MustCompile(`^[A-Za-z0-9_./:=@%+,-]+$`)
 
 // RemoveArgs returns the arguments for removing a sandbox:
 // sbx rm --force <name>
@@ -129,22 +152,19 @@ func MatchStatus(statusMap map[string]Status, candidates []string) (name string,
 	return "", StatusNotFound, false
 }
 
-// CommandString joins args into a single shell command string.
+// CommandString joins args into a single shell command line. Every argument
+// is shell-quoted so the result is safe to hand to `bash`/`sh -c`.
 func CommandString(args []string) string {
-	return strings.Join(args, " ")
+	quoted := make([]string, len(args))
+	for i, a := range args {
+		quoted[i] = ShellQuote(a)
+	}
+	return strings.Join(quoted, " ")
 }
 
 // Create runs sbx create as a background process and returns when it completes.
 // Returns the combined stdout+stderr output and any error.
 func Create(args []string) (string, error) {
-	cmd := exec.Command(args[0], args[1:]...)
-	out, err := cmd.CombinedOutput()
-	return strings.TrimSpace(string(out)), err
-}
-
-// RunDetached runs an sbx command (typically run -d) as a background process.
-// Returns the combined stdout+stderr output and any error.
-func RunDetached(args []string) (string, error) {
 	cmd := exec.Command(args[0], args[1:]...)
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
