@@ -1023,7 +1023,10 @@ func (r *Repository) MigrateWorktreeDirs() {
 	}
 }
 
-// RepoRoot finds the root of the git repository containing the given path.
+// RepoRoot returns the root directory of the main worktree containing path.
+// If path lies inside a linked worktree (one created with `git worktree add`),
+// the linked worktree's root is resolved to the main checkout that owns it,
+// so callers never register a linked worktree as a repository.
 func RepoRoot(path string) (string, error) {
 	r, err := gogit.PlainOpenWithOptions(path, &gogit.PlainOpenOptions{
 		DetectDotGit: true,
@@ -1031,11 +1034,59 @@ func RepoRoot(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
 	wt, err := r.Worktree()
 	if err != nil {
 		return "", err
 	}
+	root := wt.Filesystem.Root()
+	if mainRoot, ok := mainWorktreeRoot(root); ok {
+		return mainRoot, nil
+	}
+	return root, nil
+}
 
-	return wt.Filesystem.Root(), nil
+// mainWorktreeRoot returns the main checkout's root when root is a linked
+// worktree, detected by a `.git` *file* whose gitdir points at
+// <main>/.git/worktrees/<name>. The owning repository is located through the
+// worktree's `commondir` file (relative to the gitdir), falling back to
+// stripping the trailing worktrees/<name> segments. ok=false when root is
+// not a linked worktree or the layout is unrecognised.
+func mainWorktreeRoot(root string) (string, bool) {
+	dotGit := filepath.Join(root, ".git")
+	info, err := os.Stat(dotGit)
+	if err != nil || info.IsDir() {
+		return "", false
+	}
+	data, err := os.ReadFile(dotGit)
+	if err != nil {
+		return "", false
+	}
+	line := strings.TrimSpace(string(data))
+	gitdir, ok := strings.CutPrefix(line, "gitdir:")
+	if !ok {
+		return "", false
+	}
+	gitdir = strings.TrimSpace(gitdir)
+	if !filepath.IsAbs(gitdir) {
+		gitdir = filepath.Join(root, gitdir)
+	}
+	gitdir = filepath.Clean(gitdir)
+
+	var commonGit string
+	if cd, err := os.ReadFile(filepath.Join(gitdir, "commondir")); err == nil {
+		rel := strings.TrimSpace(string(cd))
+		if filepath.IsAbs(rel) {
+			commonGit = filepath.Clean(rel)
+		} else {
+			commonGit = filepath.Clean(filepath.Join(gitdir, rel))
+		}
+	} else if filepath.Base(filepath.Dir(gitdir)) == "worktrees" {
+		commonGit = filepath.Dir(filepath.Dir(gitdir))
+	} else {
+		return "", false
+	}
+	if filepath.Base(commonGit) != ".git" {
+		return "", false
+	}
+	return filepath.Dir(commonGit), true
 }
