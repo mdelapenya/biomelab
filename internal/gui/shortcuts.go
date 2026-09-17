@@ -1,8 +1,6 @@
 package gui
 
 import (
-	"context"
-	"fmt"
 	"math"
 
 	"fyne.io/fyne/v2"
@@ -115,8 +113,6 @@ func (a *App) handleKeyName(key fyne.KeyName) {
 		a.handleStartSandbox() // Shift+S (stop) handled in handleRune via 'S'
 	case fyne.KeyN:
 		a.handleCreateOrEnrollSandbox()
-	case fyne.KeyK:
-		a.handleInstallKits()
 	case fyne.KeyM:
 		a.handleEditNote()
 	case fyne.KeyL:
@@ -876,131 +872,20 @@ func (a *App) handleStopSandbox() {
 	}()
 }
 
-// handleInstallKits opens the kit picker for the active sandbox mode. Kits
-// can only be applied at sandbox creation time (sbx rejects --kit on
-// existing sandboxes), so the action behaves differently depending on state:
-//
-//   - StatusNotFound   → kits picker → confirm-create dialog → sbx create with --kit
-//   - Running/Stopped  → kits picker → confirm-recreate dialog → sbx rm + sbx create with --kit
-func (a *App) handleInstallKits() {
-	re := a.activeRepo()
-	if re == nil {
-		return
-	}
-	mode := re.state.ActiveMode
-	if mode == nil || mode.Type != "sandbox" || mode.SandboxName == "" {
-		return
-	}
-	if !a.requireSbxInstalled() {
-		return
-	}
-
-	sbxName := mode.SandboxName
-	agent := mode.Agent
-	repoPath := re.group.Path
-	status := re.state.SandboxStatus
-	a.setStatus("Fetching available kits…", false)
-
-	go func() {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		agents, mixins, err := kits.FetchAvailable(ctx)
-		// Capture the contrib HEAD SHA as the recorded "version" of the
-		// kits being installed. Best-effort — UI degrades to no version
-		// suffix if the call fails.
-		ref, _ := kits.HeadRef(ctx)
-		fyne.Do(func() {
-			if err != nil {
-				a.setStatus("Fetch kits: "+ops.FirstNonEmptyLine(err.Error()), true)
-				return
-			}
-			a.setStatus("", false)
-			compatibleMixins := kits.FilterMixinsForAgent(mixins, agent)
-			pickerDone := a.openDialog()
-			a.activeDialog = showKitsDialog(a.window, sbxName, agent, agents, compatibleMixins, pickerDone,
-				func(selected []kits.Kit) {
-					a.confirmKitsApply(re, sbxName, agent, repoPath, status, selected, ref)
-				})
-		})
-	}()
-}
-
-// confirmKitsApply chains the kit-picker selection into the appropriate
-// confirmation dialog: create-with-kits for a missing sandbox, or
-// destructive recreate-with-kits for an existing one. ref is the
-// contrib-repo SHA captured at fetch time, persisted alongside each kit.
-func (a *App) confirmKitsApply(re *repoEntry, sbxName, agent, repoPath string, status sandbox.Status, selected []kits.Kit, ref string) {
-	installs := buildKitInstalls(selected, ref)
-	urls := kitURLs(selected)
-	confirmDone := a.openDialog()
-	if status == sandbox.StatusNotFound {
-		a.activeDialog = showConfirmCreateSandbox(a.window, sbxName, agent, repoPath, urls, confirmDone, func() {
-			a.doCreateSandboxWithPreflight(re, sbxName, agent, repoPath, urls, installs)
-		})
-		return
-	}
-	a.activeDialog = showConfirmRecreateSandbox(a.window, sbxName, agent, repoPath, urls, confirmDone, func() {
-		a.doRecreateSandboxWithKits(re, sbxName, agent, repoPath, urls, installs)
-	})
-}
-
-// doRecreateSandboxWithKits removes the existing sandbox and creates it
-// again with the given kit URLs applied. Runs sbx Preflight first.
-func (a *App) doRecreateSandboxWithKits(re *repoEntry, sbxName, agent, repoPath string, kitURLs []string, installs []config.KitInstall) {
-	a.setStatus("Recreating "+sbxName+" with "+fmt.Sprintf("%d", len(kitURLs))+" kit(s)…", false)
-	go func() {
-		if err := sandbox.Preflight(); err != nil {
-			fyne.Do(func() { a.setStatus(ops.FirstNonEmptyLine(err.Error()), true) })
-			return
-		}
-		result := ops.RecreateSandboxWithKits(sbxName, agent, repoPath, kitURLs)
-		fyne.Do(func() {
-			if result.Err != nil {
-				a.setStatus(result.ErrorMessage(), true)
-			} else {
-				a.persistKits(re, repoPath, sbxName, installs)
-				a.setStatus(fmt.Sprintf("Recreated %s with %d kit(s)", sbxName, len(kitURLs)), false)
-			}
-			a.refreshMgr.TriggerLocal()
-		})
-	}()
-}
-
-// persistKits writes the recorded kit list to disk and updates the in-memory
-// mode entry so the dashboard renders without waiting for a config reload.
-// Must be called on the UI thread.
-func (a *App) persistKits(re *repoEntry, repoPath, sbxName string, installs []config.KitInstall) {
-	cfg, err := config.Load(a.configPath)
-	if err == nil && cfg.SetSandboxKits(repoPath, sbxName, installs) {
-		_ = config.Save(a.configPath, cfg)
-	}
-	if re != nil && re.state != nil {
-		if mode := re.state.ActiveMode; mode != nil && mode.SandboxName == sbxName {
-			mode.Kits = installs
-		}
-		for i := range re.group.Modes {
-			m := &re.group.Modes[i]
-			if m.Type == "sandbox" && m.SandboxName == sbxName {
-				m.Kits = installs
-			}
-		}
-	}
-}
-
 // kitURLs maps a selected kit slice to the --kit argument values.
 func kitURLs(selected []kits.Kit) []string {
 	urls := make([]string, len(selected))
 	for i, k := range selected {
-		urls[i] = k.GitURL()
+		urls[i] = k.OCIReference()
 	}
 	return urls
 }
 
 // buildKitInstalls converts the picker selection into the persistence shape.
-func buildKitInstalls(selected []kits.Kit, ref string) []config.KitInstall {
+func buildKitInstalls(selected []kits.Kit) []config.KitInstall {
 	out := make([]config.KitInstall, len(selected))
 	for i, k := range selected {
-		out[i] = config.KitInstall{Name: k.Name, Ref: ref}
+		out[i] = config.KitInstall{Name: k.Name, Ref: kits.DefaultTag, Reference: k.OCIReference()}
 	}
 	return out
 }
@@ -1019,46 +904,12 @@ func (a *App) handleCreateOrEnrollSandbox() {
 		}
 		done := a.openDialog()
 		a.activeDialog = showConfirmCreateSandbox(a.window, mode.SandboxName, mode.Agent, re.group.Path, nil, done, func() {
-			a.doCreateSandboxWithPreflight(re, mode.SandboxName, mode.Agent, re.group.Path, nil, nil)
+			a.createProjectSandbox(re.group.Path, re.group.Name, *mode, nil)
 		})
 		return
 	}
 
-	// Non-sandbox → enroll by asking for agent name.
-	if !a.requireSbxInstalled() {
-		return
-	}
-	done := a.openDialog()
-	showAgentInput(a.window, done, func(agentName string) {
-		sbxName := sandbox.SanitizeName(re.group.Name, agentName)
-		newMode := config.ModeEntry{Type: "sandbox", SandboxName: sbxName, Agent: agentName}
-		go func() {
-			err := sandbox.Preflight()
-			fyne.Do(func() {
-				if err != nil {
-					a.setStatus(ops.FirstNonEmptyLine(err.Error()), true)
-					return
-				}
-				cfg, _ := config.Load(a.configPath)
-				if cfg.Add(re.group.Path, re.group.Name, newMode) {
-					_ = config.Save(a.configPath, cfg)
-				}
-				re.group.Modes = append(re.group.Modes, newMode)
-				re.state.ActiveMode = &newMode
-				re.group.ActiveMode = len(re.group.Modes) - 1
-				re.refreshMgr.SetSandboxCandidates(
-					sandbox.Candidates(sbxName, re.repo.RepoName(), re.repo.Root(), agentName),
-				)
-				if a.repoPanel != nil {
-					a.repoPanel.groups = a.collectGroups()
-					a.repoPanel.SetActive(a.active, re.group.ActiveMode)
-					a.repoPanel.rebuildList()
-				}
-				a.refreshMgr.TriggerLocal()
-				a.dashboard.Rebuild()
-			})
-		}()
-	})
+	a.beginSandboxSetup(re.group.Path, re.group.Name)
 }
 
 // requireSbxInstalled returns true if the sbx CLI is on PATH; otherwise it
@@ -1078,61 +929,7 @@ func (a *App) handleAddSandboxMode() {
 	if re == nil {
 		return
 	}
-	if !a.requireSbxInstalled() {
-		return
-	}
-	done := a.openDialog()
-	showAgentInput(a.window, done, func(agentName string) {
-		sbxName := sandbox.SanitizeName(re.group.Name, agentName)
-		newMode := config.ModeEntry{Type: "sandbox", SandboxName: sbxName, Agent: agentName}
-		go func() {
-			err := sandbox.Preflight()
-			fyne.Do(func() {
-				if err != nil {
-					a.setStatus(ops.FirstNonEmptyLine(err.Error()), true)
-					return
-				}
-				cfg, _ := config.Load(a.configPath)
-				if cfg.Add(re.group.Path, re.group.Name, newMode) {
-					_ = config.Save(a.configPath, cfg)
-				}
-				re.group.Modes = append(re.group.Modes, newMode)
-				if a.repoPanel != nil {
-					a.repoPanel.groups = a.collectGroups()
-					a.repoPanel.rebuildList()
-				}
-				a.switchMode(a.active, len(re.group.Modes)-1)
-			})
-		}()
-	})
-}
-
-func (a *App) doCreateSandboxWithPreflight(re *repoEntry, sbxName, sbxAgent, repoPath string, kitURLs []string, installs []config.KitInstall) {
-	if len(kitURLs) > 0 {
-		a.setStatus(fmt.Sprintf("Creating %s with %d kit(s)…", sbxName, len(kitURLs)), false)
-	} else {
-		a.setStatus("Creating "+sbxName+"…", false)
-	}
-	go func() {
-		err := sandbox.Preflight()
-		if err != nil {
-			fyne.Do(func() { a.setStatus(err.Error(), true) })
-			return
-		}
-		args := sandbox.CreateArgs(sbxName, sbxAgent, repoPath, kitURLs)
-		result := ops.CreateSandbox(args)
-		fyne.Do(func() {
-			if result.Err != nil {
-				a.setStatus(result.ErrorMessage(), true)
-			} else if len(installs) > 0 {
-				a.persistKits(re, repoPath, sbxName, installs)
-				a.setStatus(fmt.Sprintf("Created %s with %d kit(s)", sbxName, len(installs)), false)
-			} else {
-				a.setStatus("Created "+sbxName, false)
-			}
-			a.refreshMgr.TriggerLocal()
-		})
-	}()
+	a.beginSandboxSetup(re.group.Path, re.group.Name)
 }
 
 // --- Config management ---
@@ -1156,41 +953,40 @@ func (a *App) handleAddRepo() {
 			// Regular mode.
 			a.addRepoToConfig(repoRoot, repo.RepoName(), config.ModeEntry{Type: "regular"})
 		}, func() {
-			// Sandbox mode.
-			done3 := a.openDialog()
-			showAgentInput(a.window, done3, func(agentName string) {
-				sbxName := sandbox.SanitizeName(repo.RepoName(), agentName)
-				mode := config.ModeEntry{Type: "sandbox", SandboxName: sbxName, Agent: agentName}
-				go func() {
-					err := sandbox.Preflight()
-					fyne.Do(func() {
-						if err != nil {
-							a.setStatus(ops.FirstNonEmptyLine(err.Error()), true)
-							return
-						}
-						a.addRepoToConfig(repoRoot, repo.RepoName(), mode)
-					})
-				}()
-			})
+			a.beginSandboxSetup(repoRoot, repo.RepoName())
 		})
 	})
 }
 
-func (a *App) addRepoToConfig(repoRoot, repoName string, mode config.ModeEntry) {
-	cfg, _ := config.Load(a.configPath)
-	if !cfg.Add(repoRoot, repoName, mode) {
-		dialog.ShowInformation("Repository Added", repoName+" is already registered with this mode.", a.window)
-		return
+func (a *App) addRepoToConfig(repoRoot, repoName string, mode config.ModeEntry) bool {
+	cfg, err := config.Load(a.configPath)
+	if err != nil {
+		dialog.ShowError(err, a.window)
+		return false
 	}
-	_ = config.Save(a.configPath, cfg)
+	cfg.Add(repoRoot, repoName, mode)
+	if mode.Type == "sandbox" && mode.Kits != nil {
+		cfg.SetSandboxKits(repoRoot, mode.SandboxName, mode.Kits)
+	}
+	if err := config.Save(a.configPath, cfg); err != nil {
+		dialog.ShowError(err, a.window)
+		return false
+	}
 
 	// Mirror the persisted entry so in-memory modes match config semantics
 	// (e.g., sandbox mode replacing a prior regular mode).
 	idx := cfg.IndexOf(repoRoot)
 	if idx < 0 {
-		return
+		return false
 	}
 	persisted := cfg.Repos[idx]
+	newModeIdx := 0
+	for i, m := range persisted.Modes {
+		if m.Type == mode.Type && m.SandboxName == mode.SandboxName {
+			newModeIdx = i
+			break
+		}
+	}
 
 	// Case 1: repo is already in the UI — just sync its modes and switch to
 	// the newly added one.
@@ -1201,9 +997,8 @@ func (a *App) addRepoToConfig(repoRoot, repoName string, mode config.ModeEntry) 
 				a.repoPanel.groups = a.collectGroups()
 				a.repoPanel.rebuildList()
 			}
-			newModeIdx := len(persisted.Modes) - 1
 			a.switchMode(gi, newModeIdx)
-			return
+			return true
 		}
 	}
 
@@ -1211,7 +1006,7 @@ func (a *App) addRepoToConfig(repoRoot, repoName string, mode config.ModeEntry) 
 	re := a.buildRepoEntry(persisted)
 	if re == nil {
 		a.setStatus("failed to open "+repoName, true)
-		return
+		return false
 	}
 
 	wasEmpty := len(a.repos) == 0
@@ -1221,7 +1016,7 @@ func (a *App) addRepoToConfig(repoRoot, repoName string, mode config.ModeEntry) 
 	// repoPanel, dashboard, title bar, and dashSlot don't exist yet.
 	if wasEmpty {
 		a.window.SetContent(a.buildMainLayout())
-		return
+		return true
 	}
 
 	if a.repoPanel != nil {
@@ -1229,6 +1024,7 @@ func (a *App) addRepoToConfig(repoRoot, repoName string, mode config.ModeEntry) 
 		a.repoPanel.rebuildList()
 	}
 	a.switchMode(len(a.repos)-1, 0)
+	return true
 }
 
 func (a *App) handleRemoveMode() {

@@ -98,6 +98,7 @@ func countVisible(objects []fyne.CanvasObject) int {
 // baseCardSize is the card size at the default font size (14).
 // Actual size scales proportionally with the theme text size.
 var baseCardSize = fyne.NewSize(360, 200)
+
 const baseTextSize float32 = 14
 
 // cardCellSize computes the card cell size scaled to the current font.
@@ -111,9 +112,9 @@ func cardCellSize() fyne.Size {
 type Dashboard struct {
 	state     *RepoState
 	content   *fyne.Container
-	innerSlot *fyne.Container      // holds the actual dashboard content for hot-swap
-	scroll    *container.Scroll    // scrollable linked cards area
-	cards     []fyne.CanvasObject  // linked card widgets for scroll-to
+	innerSlot *fyne.Container     // holds the actual dashboard content for hot-swap
+	scroll    *container.Scroll   // scrollable linked cards area
+	cards     []fyne.CanvasObject // linked card widgets for scroll-to
 
 	// OnCardSelected is called when a card is clicked. The index is the
 	// worktree index (0=main, 1+=linked).
@@ -283,11 +284,11 @@ func (d *Dashboard) build() fyne.CanvasObject {
 	if sbxInfo != nil {
 		switch sbxInfo.Status {
 		case sandbox.StatusRunning:
-			helpStr += "  [S] stop  [k] recreate w/ kits  [d] del sandbox"
+			helpStr += "  [S] stop  [d] del sandbox"
 		case sandbox.StatusStopped:
-			helpStr += "  [s] start  [k] recreate w/ kits  [d] del sandbox"
+			helpStr += "  [s] start  [d] del sandbox"
 		case sandbox.StatusNotFound:
-			helpStr += "  [n] create sandbox  [k] create w/ kits"
+			helpStr += "  [n] create sandbox"
 		}
 	}
 	helpColor := colorDimGray

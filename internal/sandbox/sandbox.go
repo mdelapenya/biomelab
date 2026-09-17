@@ -18,9 +18,9 @@ func Available() bool {
 // CreateArgs returns the arguments for creating a sandbox without attaching:
 // sbx create --name <name> [--kit <url>...] <agent> <repoPath>
 //
-// kitURLs is optional; pass nil for a vanilla sandbox. Each kit URL is
-// emitted as its own --kit flag. Kits can only be applied at creation time —
-// `sbx run --kit` rejects the flag against an existing sandbox.
+// kitURLs is optional; pass nil for a vanilla sandbox. Each reference is
+// emitted as its own --kit flag. Biomelab offers kits only during initial
+// creation; updating an existing agent container's kits is not exposed.
 func CreateArgs(name, agent, repoPath string, kitURLs []string) []string {
 	args := []string{"sbx", "create", "--name", name}
 	for _, k := range kitURLs {
@@ -182,10 +182,17 @@ const (
 // CheckAllStatuses returns a map of sandbox name → status for all known sandboxes.
 // Runs one "sbx ls --json" call. Names not in the result have StatusNotFound.
 func CheckAllStatuses() map[string]Status {
+	statuses, _ := ListStatuses()
+	return statuses
+}
+
+// ListStatuses distinguishes an unavailable daemon from a missing sandbox.
+// Creation must not interpret discovery errors as permission to create anew.
+func ListStatuses() (map[string]Status, error) {
 	cmd := exec.Command("sbx", "ls", "--json")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("list sandboxes: %w (%s)", err, strings.TrimSpace(string(out)))
 	}
 	var result struct {
 		Sandboxes []struct {
@@ -194,7 +201,7 @@ func CheckAllStatuses() map[string]Status {
 		} `json:"sandboxes"`
 	}
 	if err := json.Unmarshal(out, &result); err != nil {
-		return nil
+		return nil, fmt.Errorf("parse sandbox listing: %w", err)
 	}
 	m := make(map[string]Status, len(result.Sandboxes))
 	for _, s := range result.Sandboxes {
@@ -204,7 +211,7 @@ func CheckAllStatuses() map[string]Status {
 			m[s.Name] = StatusStopped
 		}
 	}
-	return m
+	return m, nil
 }
 
 // CheckStatus returns the status of a sandbox by name.

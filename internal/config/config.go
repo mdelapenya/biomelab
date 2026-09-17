@@ -7,13 +7,13 @@ import (
 	"path/filepath"
 )
 
-// KitInstall records a kit applied to a sandbox at create time. Ref is the
-// short commit SHA of docker/sbx-kits-contrib captured the moment the kit
-// was installed — biomelab uses it as a "version" for display only; the
-// install URL itself is not pinned to that ref.
+// KitInstall records a kit applied to a sandbox at create time. New installs
+// record their Docker Hub reference and tag. Legacy entries may have a Git SHA
+// in Ref and no Reference; they remain readable without migration.
 type KitInstall struct {
-	Name string `json:"name"`          // kit directory in sbx-kits-contrib (e.g. "code-server")
-	Ref  string `json:"ref,omitempty"` // short SHA captured at install time
+	Name      string `json:"name"`                // kit directory in sbx-kits-contrib (e.g. "code-server")
+	Ref       string `json:"ref,omitempty"`       // Docker Hub tag, or a legacy Git SHA
+	Reference string `json:"reference,omitempty"` // exact --kit argument
 }
 
 // ModeEntry describes how a repo is managed: regular (host worktrees) or

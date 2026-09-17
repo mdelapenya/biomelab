@@ -38,14 +38,15 @@ type App struct {
 	fyneApp fyne.App
 	window  fyne.Window
 
-	theme       *biomeTheme
-	repoPanel   *RepoPanel
-	repos       []*repoEntry
-	active      int // active repo entry index
-	dashSlot    *fyne.Container
-	dashboard   *Dashboard
-	refreshMgr  *RefreshManager
-	sbxStatuses map[string]sandbox.Status
+	theme             *biomeTheme
+	repoPanel         *RepoPanel
+	repos             []*repoEntry
+	active            int // active repo entry index
+	dashSlot          *fyne.Container
+	dashboard         *Dashboard
+	refreshMgr        *RefreshManager
+	sbxStatuses       map[string]sandbox.Status
+	creatingSandboxes map[string]bool // UI-thread owned, keyed by globally unique sandbox name
 
 	// Title bar primitives that capture theme colors at construction time.
 	// Held so toggleTheme can refresh them without rebuilding the window.
@@ -71,7 +72,7 @@ type App struct {
 	// regentLogReload), so the user always has at most one open.
 	regentLogWindow fyne.Window
 	regentLogReload func(wt git.Worktree)
-	trayMenu    *fyne.Menu
+	trayMenu        *fyne.Menu
 	// System tray theme submenu items, held so we can update Checked state.
 	trayThemeLight *fyne.MenuItem
 	trayThemeDark  *fyne.MenuItem
@@ -452,6 +453,7 @@ func (a *App) switchMode(groupIdx, modeIdx int) {
 
 		var sbxCandidates []string
 		if mode.Type == "sandbox" {
+			re.state.SandboxStatus = sandbox.StatusNotFound
 			sbxCandidates = sandbox.Candidates(mode.SandboxName, re.repo.RepoName(), re.repo.Root(), mode.Agent)
 			if _, s, ok := sandbox.MatchStatus(a.sbxStatuses, sbxCandidates); ok {
 				re.state.SandboxStatus = s

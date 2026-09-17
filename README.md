@@ -112,7 +112,7 @@ Launch `biomelab` from any directory, or open `Biomelab.app` from Spotlight/Find
 | `↑` | Previous mode |
 | `↓` | Next mode |
 | `a` | Add repository |
-| `n` | New sandbox mode for selected repo |
+| `n` | Create a sandbox for the selected repo, with optional kits |
 | `x` | Remove selected mode |
 | `Enter` | Switch focus to right panel |
 | `Tab` | Switch focus to right panel |
@@ -138,7 +138,6 @@ Launch `biomelab` from any directory, or open `Biomelab.app` from Spotlight/Find
 | `n` | Create/enroll sandbox | Main card |
 | `s` | Start stopped sandbox | Main card |
 | `Shift+S` | Stop running sandbox | Main card |
-| `k` | Pick kits → create (if missing) or recreate sandbox with `--kit` flags | Sandbox mode |
 | `g` | Toggle kanban / grid view | Global |
 | `Tab` | Toggle focus between panels | Global |
 | `Ctrl+T` | Toggle dark / light theme | Global |
@@ -155,6 +154,24 @@ The main worktree sits at the top. Linked worktrees form a grid below.
 - **↑/↓** within the grid jump by row (column count). If no card exists directly below, jumps to the last card in the next row
 
 ## Sandbox workflows
+
+From the projects panel, press `n`, choose an agent, and answer **Do you want
+to add kits?** Choosing **No** skips kit discovery. Choosing **Yes** loads a
+picker of compatible kits before the final creation confirmation. The sandbox
+is created and registered in this flow; no second `n` on the main card is needed.
+Adding a new repository in sandbox mode uses the same flow.
+
+Kits are installed from Docker Hub OCI artifacts such as
+`docker.io/sbx/code-server-kit:latest` during initial creation.
+The catalog metadata is still discovered through `gh` from
+`docker/sbx-kits-contrib`, but installation does not use Git URLs. Saved kit
+metadata records the OCI reference and the rolling `latest` tag (not a pinned
+digest or a Git commit).
+
+An existing sandbox can be registered without changing its kits. Adding kits
+after creation would recreate the agent container inside the sandbox; this
+workflow is not currently offered. Canceling initial setup or a failed creation
+leaves the repository's previous mode unchanged.
 
 See the product-owner skill (`/product-owner`) for detailed sandbox workflows including: enrolling repos, adding agents, creating/deleting worktrees in sandboxes, and sandbox lifecycle management.
 
