@@ -87,8 +87,15 @@ task install-macos  # builds universal binary, packages .app, copies to /Applica
 This runs `task package-darwin-universal` which:
 1. `task build-darwin-arm64` + `task build-darwin-amd64` (parallel)
 2. `lipo -create` → universal binary
-3. `fyne package --executable` → `Biomelab.app`
-4. `cp -R` to `/Applications`
+3. `fyne package --executable` with an absolute binary path → `Biomelab.app`
+4. Ad-hoc sign the bundle and run `task verify-darwin-universal`
+5. `cp -R` to `/Applications` (with `task install-macos`)
+
+The verification reads `CFBundleExecutable` from the finished app, requires both
+`x86_64` and `arm64` slices, checks the signature, and runs `--version` on the host.
+CI, nightly, and release builds use this check before accepting the package.
+The absolute executable path is required because Fyne changes into `--source-dir`;
+a relative path can cause it to rebuild for only the host architecture.
 
 ### Current platform
 

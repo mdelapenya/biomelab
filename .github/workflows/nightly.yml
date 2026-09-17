@@ -30,7 +30,7 @@ jobs:
         run: task package-darwin-universal
 
       - name: Verify macOS package
-        run: bin/Biomelab.app/Contents/MacOS/Biomelab --version
+        run: task verify-darwin-universal
 
       - name: Create zip
         run: cd bin && zip -r Biomelab-darwin-universal.zip Biomelab.app

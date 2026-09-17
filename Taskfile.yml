@@ -177,16 +177,31 @@ tasks:
       - mkdir -p bin
       - rm -rf bin/{{.APP_NAME}}.app
       # --release enables hardened runtime, rejected with ad-hoc sign on macOS 26+.
+      # Fyne chdirs to --source-dir before resolving --executable. A relative
+      # path silently triggers a host-only rebuild instead of using lipo's output.
       - >-
         fyne package
         --source-dir ./cmd/biomelab
-        --executable {{.BIN}}
+        --executable "{{.ROOT_DIR}}/{{.BIN}}"
         --name {{.APP_NAME}}
         --app-id {{.APP_ID}}
         --app-version {{.SEMVER}}
         --icon icon.png
       - mv {{.APP_NAME}}.app bin/
       - codesign --force --deep --sign - bin/{{.APP_NAME}}.app
+      - task: verify-darwin-universal
+
+  verify-darwin-universal:
+    desc: Verify the packaged macOS app contains Intel and Apple Silicon code
+    cmds:
+      - |
+        set -eu
+        app="bin/{{.APP_NAME}}.app"
+        executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")
+        binary="$app/Contents/MacOS/$executable"
+        lipo "$binary" -verify_arch x86_64 arm64
+        codesign --verify --deep --strict "$app"
+        "$binary" --version
 
   install-macos:
     desc: Package and install Biomelab.app to /Applications
