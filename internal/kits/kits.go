@@ -1,6 +1,6 @@
 // Package kits discovers Docker Sandbox kits published in
 // docker/sbx-kits-contrib so they can be applied to a sandbox via
-// `sbx run --kit "git+https://github.com/docker/sbx-kits-contrib.git#dir=<name>"`.
+// `sbx create --kit "docker.io/sbx/<directory>-kit:latest"`.
 package kits
 
 import (
@@ -17,9 +17,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ContribRepoURL is the git+ URL passed to `sbx --kit` to point at the
-// kits-contrib repository.
-const ContribRepoURL = "git+https://github.com/docker/sbx-kits-contrib.git"
+// DefaultTag is the rolling Docker Hub tag published by the kit catalog.
+const DefaultTag = "latest"
 
 // Kind values from spec.yaml.
 const (
@@ -42,16 +41,20 @@ type Kit struct {
 	DisplayName string `yaml:"displayName"`
 	Description string `yaml:"description"`
 	Extends     string `yaml:"extends"`
+	Requires    struct {
+		Agent string `yaml:"agent"`
+	} `yaml:"requires"`
+	// Directory determines the published artifact name, even when spec.name differs.
+	Directory string `yaml:"-"`
 }
 
-// GitURL returns the value to pass to sbx's --kit flag for this kit.
-func (k Kit) GitURL() string {
-	return URL(k.Name)
-}
-
-// URL returns the --kit reference for a kit by name.
-func URL(name string) string {
-	return ContribRepoURL + "#dir=" + name
+// OCIReference returns this kit's published Docker Hub artifact reference.
+func (k Kit) OCIReference() string {
+	name := k.Directory
+	if name == "" {
+		name = k.Name
+	}
+	return "docker.io/sbx/" + name + "-kit:" + DefaultTag
 }
 
 // FetchAvailable lists every kit in docker/sbx-kits-contrib and splits them
@@ -99,31 +102,13 @@ func FetchAvailable(ctx context.Context) (agents, mixins []Kit, err error) {
 	return agents, mixins, nil
 }
 
-// HeadRef returns the short (7-char) commit SHA of the kits-contrib repo's
-// default branch. biomelab captures this when a user installs kits so the
-// main card can show "name@<short-sha>" as a version. The install URL
-// itself is not pinned — kits are always fetched from `main`.
-func HeadRef(ctx context.Context) (string, error) {
-	cmd := exec.CommandContext(ctx, "gh", "api",
-		"repos/docker/sbx-kits-contrib/commits/main", "--jq", ".sha")
-	out, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("kits HEAD ref: %w (%s)", err, ghStderr(err))
-	}
-	sha := strings.TrimSpace(string(out))
-	if len(sha) > 7 {
-		sha = sha[:7]
-	}
-	return sha, nil
-}
-
 // FilterMixinsForAgent returns the subset of mixins compatible with the given
-// sandbox agent. A mixin is compatible if its `extends` field is empty or
-// equal to the agent name.
+// sandbox agent, honoring both current requires.agent and legacy extends.
 func FilterMixinsForAgent(mixins []Kit, agent string) []Kit {
 	out := make([]Kit, 0, len(mixins))
 	for _, m := range mixins {
-		if m.Extends == "" || m.Extends == agent {
+		if (m.Requires.Agent == "" || m.Requires.Agent == agent) &&
+			(m.Extends == "" || m.Extends == agent) {
 			out = append(out, m)
 		}
 	}
@@ -189,6 +174,7 @@ func fetchKitSpec(ctx context.Context, dir string) (Kit, bool, error) {
 	if k.Name == "" {
 		k.Name = dir
 	}
+	k.Directory = dir
 	return k, true, nil
 }
 

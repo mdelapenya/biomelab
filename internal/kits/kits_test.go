@@ -46,12 +46,29 @@ description: Runs code-server on port 8080
 	}
 }
 
-func TestKit_GitURL(t *testing.T) {
-	k := Kit{Name: "code-server"}
-	got := k.GitURL()
-	want := "git+https://github.com/docker/sbx-kits-contrib.git#dir=code-server"
-	if got != want {
-		t.Errorf("GitURL = %q, want %q", got, want)
+func TestKit_OCIReference(t *testing.T) {
+	for _, k := range []Kit{
+		{Name: "code-server"},
+		{Name: "different-manifest-name", Directory: "code-server"},
+	} {
+		got := k.OCIReference()
+		want := "docker.io/sbx/code-server-kit:latest"
+		if got != want {
+			t.Errorf("OCIReference = %q, want %q", got, want)
+		}
+	}
+}
+
+func TestFilterMixinsForAgent_Requires(t *testing.T) {
+	k, err := ParseSpec([]byte("kind: mixin\nname: code-server\nrequires:\n  agent: claude\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := FilterMixinsForAgent([]Kit{k}, "codex"); len(got) != 0 {
+		t.Fatal("Claude-only kit offered to Codex")
+	}
+	if got := FilterMixinsForAgent([]Kit{k}, "claude"); len(got) != 1 {
+		t.Fatal("Claude-only kit missing for Claude")
 	}
 }
 

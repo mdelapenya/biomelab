@@ -67,19 +67,3 @@ func RemoveSandbox(name string) SandboxResult {
 	out, err := sandbox.Remove(name)
 	return SandboxResult{SandboxName: name, Output: out, Err: err}
 }
-
-// RecreateSandboxWithKits removes an existing sandbox and re-creates it with
-// the given kit URLs applied. Kits can only be set at create time, so this
-// is the only way to apply kits to a sandbox that already exists. State
-// inside the previous container is lost; host worktrees are not touched.
-//
-// Returns the result of the create step. If the rm step fails the create is
-// not attempted.
-func RecreateSandboxWithKits(sandboxName, agent, repoPath string, kitURLs []string) SandboxResult {
-	if _, err := sandbox.Remove(sandboxName); err != nil {
-		return SandboxResult{SandboxName: sandboxName, Err: err}
-	}
-	args := sandbox.CreateArgs(sandboxName, agent, repoPath, kitURLs)
-	out, err := sandbox.Create(args)
-	return SandboxResult{SandboxName: sandboxName, Output: out, Err: err}
-}
