@@ -23,6 +23,7 @@ internal/
     keycapture.go           desktop.Canvas.SetOnKeyDown setup, zoom shortcuts
     dialogs.go              Confirmation dialogs (delete, sandbox create/remove, send PR flow)
     input_dialogs.go        Input dialogs (branch, PR ref, repo path, agent select)
+    sandbox_setup.go        Project-panel sandbox creation, optional kit discovery, registration
     refresh.go              RefreshManager: goroutine tickers for local (5s) and network refresh
     state.go                RepoState: domain + UI state, worktree sorting
     theme.go                Dark theme with zoom support (Ctrl+/Ctrl-)
@@ -36,6 +37,7 @@ internal/
     refresh.go         QuickRefresh, LocalRefresh, NetworkRefresh, CardRefresh
     worktree.go        CreateWorktree, RemoveWorktree, FetchPR, Pull, SendPR, OpenEditor, OpenTerminal
     sandbox_ops.go     CreateSandbox, StartSandbox, StopSandbox, RemoveSandbox
+    sandbox_setup.go   EnsureSandbox: discover/reuse or create, kits only at initial creation
 
   config/config.go     Repo list persistence (~/.config/biomelab/repos.json)
   git/worktree.go      Go-git v6 wrapper: list, create, remove, pull, fetch, sync status
@@ -122,6 +124,27 @@ type RepoEntry struct {
 ```
 
 The old flat format (with `Sandbox bool`) is auto-migrated on load.
+
+## Sandbox setup and kits
+
+Project-panel `n`, host-card `n`, and adding a repository in sandbox mode share
+`beginSandboxSetup`. The agent prompt asks whether to add kits; only Yes calls
+catalog discovery. Discovery is cancellable and runs off the UI thread. The
+picker offers mixins compatible with the chosen agent (`requires.agent`, or
+legacy `extends`). One final confirmation creates or reuses the sandbox, then
+registers the mode and mirrors persisted modes into the UI. Creation failures
+and cancellation do not save a placeholder mode. In-flight creation is guarded
+by sandbox name, and status messages belong to the originating repository.
+Kits are selectable only during initial setup. Adding kits later would recreate
+the agent container inside the sandbox; there is no post-creation kit action or
+automatic sandbox removal/recreation path.
+
+`internal/kits` discovers metadata with `gh api`, but supplies Docker Hub OCI
+references (`docker.io/sbx/<directory>-kit:latest`) to every kit installation
+path. The directory, not necessarily `spec.name`, determines the artifact name.
+`KitInstall.Reference` stores that exact argument; `Ref` stores `latest` for new
+installs. Older entries containing a Git SHA remain readable. `latest` is a
+rolling tag, not an immutable installed-version identifier.
 
 ## Task notes
 

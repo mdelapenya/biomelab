@@ -272,12 +272,19 @@ indicators.
 ### 15. Add / Remove Repos and Modes
 
 **Add a repo:** Press `a` in the left panel, enter the path, choose sandbox
-(recommended) or regular mode. For sandbox, enter the agent name; a preflight
-check ensures `sbx` is bootstrapped before saving.
+(recommended) or regular mode. For sandbox, choose an agent and answer
+"Do you want to add kits?" Yes loads compatible kits; No skips catalog loading.
+Confirm creation to create or reuse the sandbox and register it.
 
-**Add a sandbox mode to an existing repo:** Press `n` in the left panel, enter
-the agent name. Adding a sandbox to a repo that only has regular mode replaces
-the regular entry.
+**Create a sandbox for an existing repo:** Press `n` in the left panel, choose
+the agent, optionally select kits, and confirm creation. No second action on
+the main card is needed. Registration follows successful creation/discovery;
+cancellation or failure leaves the previous mode intact. Adding a sandbox to
+a regular-only repo replaces the regular entry. Kits install via Docker Hub
+OCI references (`docker.io/sbx/<directory>-kit:latest`), not Git URLs. Existing
+sandboxes are registered without changing their kits. Adding kits later would
+recreate the agent container inside the sandbox; that workflow is not offered
+for now. There is no standalone `k` action or sandbox recreation workflow.
 
 **Remove a mode:** Press `x` in the left panel. If it's the last sandbox mode,
 the repo converts to regular. If it's the last mode overall, the repo is removed.
@@ -351,7 +358,7 @@ the same colour. Hovering over either shows a tooltip explaining its meaning:
 This data is fetched from `gh pr view --json reviews` (GitHub) and `glab mr view --json approvedBy` (GitLab).
 
 **Kanban navigation:**
-- `↑ / k`: move up within the current column (from first card → back to main)
+- `↑`: move up within the current column (from first card → back to main)
 - `↓ / j`: move down within the current column (from main → first card of first non-empty column)
 - `← / h`: jump to the same-row card in the previous non-empty column
 - `→ / l`: jump to the same-row card in the next non-empty column
@@ -364,10 +371,10 @@ This data is fetched from `gh pr view --json reviews` (GitHub) and `glab mr view
 
 | Key | Action |
 |---|---|
-| `Up` / `k` | Previous mode |
+| `Up` | Previous mode |
 | `Down` / `j` | Next mode |
 | `a` | Add repository |
-| `n` | New sandbox mode for selected repo |
+| `n` | Create sandbox for selected repo, with optional kits |
 | `x` | Remove selected mode |
 | `Enter` | Switch focus to right panel |
 | `Tab` | Switch focus to right panel |
@@ -376,7 +383,7 @@ This data is fetched from `gh pr view --json reviews` (GitHub) and `glab mr view
 
 | Key | Action | Context |
 |---|---|---|
-| `Up` / `k` | Navigate up | Any card |
+| `Up` | Navigate up | Any card |
 | `Down` / `j` | Navigate down | Any card |
 | `Left` / `h` | Navigate left (grid: move left; kanban: previous column) | Linked cards |
 | `Right` / `l` | Navigate right (grid: move right; kanban: next column) | Linked cards |
@@ -401,7 +408,7 @@ This data is fetched from `gh pr view --json reviews` (GitHub) and `glab mr view
 |---|---|---|
 | Repository path | Validates path, proceeds to mode selection | Returns to normal |
 | Mode selection | `s` = sandbox, `r` = regular | Returns to normal |
-| Agent name | Runs preflight, enrolls sandbox | Returns to normal |
+| Agent and optional kits | Loads kits only for Yes, then confirms creation | Returns to normal |
 | Branch name | Creates worktree | Returns to normal |
 | PR reference | Fetches PR | Returns to normal |
 
