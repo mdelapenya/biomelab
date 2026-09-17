@@ -134,7 +134,7 @@ func showModeSelection(parent fyne.Window, onDone func(), onRegular func(), onSa
 
 var agentOptions = []string{"claude", "codex", "copilot", "docker-agent", "gemini", "kiro", "opencode", "shell"}
 
-func showAgentInput(parent fyne.Window, onDone func(), onSubmit func(agent string)) dialog.Dialog {
+func showAgentInput(parent fyne.Window, onDone func(), onSubmit func(agent string, addKits bool)) dialog.Dialog {
 	var d *dialog.ConfirmDialog
 
 	sel := newDialogSelect(agentOptions,
@@ -142,16 +142,20 @@ func showAgentInput(parent fyne.Window, onDone func(), onSubmit func(agent strin
 		func() { d.Hide() },
 	)
 	sel.PlaceHolder = "Select agent..."
+	addKits := newDialogSelect([]string{"No", "Yes"}, nil, func() { d.Hide() })
+	addKits.SetSelected("No")
 
 	content := container.NewVBox(
 		widget.NewLabel("Agent for sandbox:"),
 		sel,
+		widget.NewLabel("Do you want to add kits?"),
+		addKits,
 	)
 
-	d = dialog.NewCustomConfirm("Sandbox Agent", "Create", "Cancel", content, func(ok bool) {
+	d = dialog.NewCustomConfirm("New Sandbox", "Continue", "Cancel", content, func(ok bool) {
 		onDone()
 		if ok && sel.Selected != "" {
-			onSubmit(sel.Selected)
+			onSubmit(sel.Selected, addKits.Selected == "Yes")
 		}
 	}, parent)
 	d.Resize(dialogMinSize)

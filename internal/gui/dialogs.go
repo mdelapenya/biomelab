@@ -53,8 +53,10 @@ func showConfirmCreateSandbox(parent fyne.Window, sbxName, sbxAgent, repoPath st
 	body := container.NewVBox(
 		widget.NewLabel("Create sandbox? This may take a few minutes."),
 		widget.NewLabel("Command:"),
-		monoText(cmd, colorSelected, false),
 	)
+	command := container.NewHScroll(monoText(cmd, colorSelected, false))
+	command.SetMinSize(fyne.NewSize(760, 48))
+	body.Add(command)
 	content := container.NewStack(body, keyCap)
 
 	d = dialog.NewCustomConfirm("Create Sandbox", "Create", "Cancel", content, func(ok bool) {
@@ -64,41 +66,6 @@ func showConfirmCreateSandbox(parent fyne.Window, sbxName, sbxAgent, repoPath st
 		}
 	}, parent)
 	d.Resize(dialogMinSize)
-	d.Show()
-	focusInDialog(parent, keyCap)
-	return d
-}
-
-// showConfirmRecreateSandbox is the destructive confirmation shown when the
-// user wants to apply kits to an existing sandbox. Since `--kit` only works
-// at create time, biomelab must `sbx rm --force` and re-create. Host worktrees
-// are unaffected; container state is lost.
-func showConfirmRecreateSandbox(parent fyne.Window, sbxName, sbxAgent, repoPath string, kitURLs []string, onDone func(), onConfirm func()) dialog.Dialog {
-	var d *dialog.ConfirmDialog
-	rmCmd := sandbox.CommandString(sandbox.RemoveArgs(sbxName))
-	createCmd := sandbox.CommandString(sandbox.CreateArgs(sbxName, sbxAgent, repoPath, kitURLs))
-
-	keyCap := newDialogKeyCapture(
-		func() { d.Confirm() },
-		func() { d.Hide() },
-	)
-	body := container.NewVBox(
-		monoText("Recreate sandbox to apply kits?", colorYellow, true),
-		widget.NewLabel("Container state will be lost. Host worktrees are preserved."),
-		widget.NewSeparator(),
-		widget.NewLabel("Commands:"),
-		monoText(rmCmd, colorRed, false),
-		monoText(createCmd, colorSelected, false),
-	)
-	content := container.NewStack(body, keyCap)
-
-	d = dialog.NewCustomConfirm("Recreate Sandbox", "Recreate", "Cancel", content, func(ok bool) {
-		onDone()
-		if ok {
-			onConfirm()
-		}
-	}, parent)
-	d.Resize(kitsDialogSize)
 	d.Show()
 	focusInDialog(parent, keyCap)
 	return d
@@ -246,7 +213,7 @@ func showKitsDialog(
 	onSubmit func(selected []kits.Kit),
 ) dialog.Dialog {
 	var d *dialog.ConfirmDialog
-	checks := make([]*widget.Check, 0, len(agents)+len(mixins))
+	checks := make([]*dialogCheck, 0, len(agents)+len(mixins))
 	all := make([]kits.Kit, 0, len(agents)+len(mixins))
 
 	body := container.NewVBox(
@@ -268,7 +235,7 @@ func showKitsDialog(
 			return
 		}
 		for _, k := range list {
-			checks = append(checks, widget.NewCheck(displayLabel(k), nil))
+			checks = append(checks, newDialogCheck(displayLabel(k), nil, func() { d.Hide() }))
 			all = append(all, k)
 			body.Add(checks[len(checks)-1])
 			if k.Description != "" {
@@ -280,7 +247,9 @@ func showKitsDialog(
 		body.Add(widget.NewSeparator())
 	}
 
-	addSection("Agents", agents, "(none available)")
+	if len(agents) > 0 {
+		addSection("Agents", agents, "(none available)")
+	}
 	addSection(fmt.Sprintf("Mixins for %s", agent), mixins, "(no mixins compatible with this agent)")
 
 	// keyCap captures Escape (cancel) globally inside the dialog. Enter is
@@ -293,9 +262,9 @@ func showKitsDialog(
 	)
 	scroll := container.NewVScroll(body)
 	scroll.SetMinSize(kitsDialogSize)
-	content := container.NewStack(scroll, keyCap)
+	content := container.NewStack(keyCap, scroll)
 
-	d = dialog.NewCustomConfirm("Install Kits", "Install", "Cancel", content, func(ok bool) {
+	d = dialog.NewCustomConfirm("Choose Kits", "Continue", "Cancel", content, func(ok bool) {
 		onDone()
 		if !ok {
 			return
@@ -305,9 +274,6 @@ func showKitsDialog(
 			if c.Checked {
 				selected = append(selected, all[i])
 			}
-		}
-		if len(selected) == 0 {
-			return
 		}
 		onSubmit(selected)
 	}, parent)

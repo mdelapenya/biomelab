@@ -61,10 +61,38 @@ func (s *dialogSelect) TypedKey(key *fyne.KeyEvent) {
 	case fyne.KeyReturn, fyne.KeyEnter:
 		if s.onEnter != nil {
 			s.onEnter()
+		} else {
+			s.Select.TypedKey(key)
 		}
 	default:
 		s.Select.TypedKey(key)
 	}
+}
+
+// dialogCheck is a Check that dismisses its parent dialog on Escape. Fyne
+// sends keys to a focused Check instead of the canvas, so a dialog-level key
+// capture cannot handle Escape while a kit checkbox has focus.
+type dialogCheck struct {
+	widget.Check
+	onEscape func()
+}
+
+func newDialogCheck(text string, onChanged func(bool), onEscape func()) *dialogCheck {
+	c := &dialogCheck{onEscape: onEscape}
+	c.Text = text
+	c.OnChanged = onChanged
+	c.ExtendBaseWidget(c)
+	return c
+}
+
+func (c *dialogCheck) TypedKey(key *fyne.KeyEvent) {
+	if key.Name == fyne.KeyEscape {
+		if c.onEscape != nil {
+			c.onEscape()
+		}
+		return
+	}
+	c.Check.TypedKey(key)
 }
 
 // dialogButton is a Button that triggers on Enter (in addition to Space) and
