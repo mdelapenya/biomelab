@@ -660,6 +660,132 @@ function hideModal(id, onHide) {
     }, TOAST_VISIBLE_MS);
   }
 
+  // ── Project sandbox setup demo ────────────────────────────────
+  // This is deliberately a small, self-contained simulation: it explains
+  // the project-level sbx setup without pretending to call Docker or sbx.
+  var sandboxDemo = null;
+  var sandboxDemoLastFocus = null;
+  var sandboxDemoConfig = null;
+  var SANDBOX_AGENTS = {
+    claude: { label: 'Claude Code', kits: ['docker.io/sbx/code-server-kit:latest', 'docker.io/sbx/playwright-kit:latest'] },
+    codex: { label: 'Codex', kits: ['docker.io/sbx/playwright-kit:latest'] },
+    copilot: { label: 'GitHub Copilot', kits: ['docker.io/sbx/playwright-kit:latest'] }
+  };
+
+  function sandboxFocusables() {
+    return sandboxDemo ? sandboxDemo.querySelectorAll('button, select, input:not([disabled])') : [];
+  }
+  function closeSandboxDemo() {
+    if (!sandboxDemo) return;
+    sandboxDemo.remove();
+    sandboxDemo = null;
+    sandboxDemoConfig = null;
+    document.body.classList.remove('rgt-modal-open');
+    if (sandboxDemoLastFocus && document.contains(sandboxDemoLastFocus)) sandboxDemoLastFocus.focus();
+  }
+  function sandboxState() {
+    var agentSelect = sandboxDemo.querySelector('#sbx-demo-agent');
+    var kitsChoice = sandboxDemo.querySelector('input[name="sbx-demo-kits"]:checked');
+    if (agentSelect) sandboxDemoConfig.agent = agentSelect.value;
+    if (kitsChoice) sandboxDemoConfig.addKits = kitsChoice.value === 'yes';
+    var kitInputs = sandboxDemo.querySelectorAll('input[name="sbx-demo-kit"]');
+    if (kitInputs.length) {
+      sandboxDemoConfig.kits = Array.prototype.map.call(
+        sandboxDemo.querySelectorAll('input[name="sbx-demo-kit"]:checked'), function (input) { return input.value; }
+      );
+    }
+    return sandboxDemoConfig;
+  }
+  function renderSandboxDemo(step) {
+    var state = sandboxState();
+    var agent = SANDBOX_AGENTS[state.agent];
+    var kitArgs = state.kits.map(function (kit) { return '--kit ' + kit; }).join(' ');
+    var body = sandboxDemo.querySelector('.sbx-demo-body');
+    if (step === 'success') {
+      body.innerHTML = '<div class="sbx-demo-success" role="status">'
+        + '<span aria-hidden="true">✓</span><div><h4>Sandbox created (simulated)</h4>'
+        + '<p>No backend was called. In biomelab, this project environment would now be available to all ' + agent.label + ' worktrees.</p></div></div>';
+      sandboxDemo.querySelector('.sbx-demo-foot').innerHTML = '<button class="confirm-btn confirm-yes" data-sbx-demo-done>Done</button>';
+      sandboxDemo.querySelector('[data-sbx-demo-done]').focus();
+      return;
+    }
+    if (step === 'confirm') {
+      body.innerHTML = '<p class="sbx-demo-copy">Review the project environment before creating it.</p>'
+        + '<dl class="sbx-demo-summary"><div><dt>Project</dt><dd><code>biomelab</code> <span>demo board</span></dd></div>'
+        + '<div><dt>Agent</dt><dd>' + agent.label + '</dd></div><div><dt>Kits</dt><dd>'
+        + (state.addKits && state.kits.length ? state.kits.map(function (kit) { return '<code>' + kit + '</code>'; }).join('<br>') : 'No kits added') + '</dd></div></dl>'
+        + '<p class="sbx-demo-command"><span>Would run</span><code>sbx create --name biomelab-' + state.agent + (kitArgs ? ' ' + kitArgs : '') + ' ' + state.agent + ' /workspace/biomelab</code></p>'
+        + '<p class="sbx-demo-note">Image references are illustrative OCI images; nothing will be pulled in this demo.</p>';
+      sandboxDemo.querySelector('.sbx-demo-foot').innerHTML = '<button class="confirm-btn confirm-no" data-sbx-demo-back>Back</button><button class="confirm-btn confirm-yes" data-sbx-demo-create>Create sandbox</button>';
+      sandboxDemo.querySelector('[data-sbx-demo-create]').focus();
+      return;
+    }
+    body.innerHTML = '<p class="sbx-demo-copy"><strong>Demo setup</strong> · Project <code>biomelab</code> on this board. One environment is shared by that agent\'s worktrees.</p>'
+      + '<label class="sbx-demo-field" for="sbx-demo-agent">Agent<select id="sbx-demo-agent"><option value="claude">Claude Code</option><option value="codex">Codex</option><option value="copilot">GitHub Copilot</option></select></label>'
+      + '<fieldset class="sbx-demo-field"><legend>Do you want to add kits?</legend><label><input type="radio" name="sbx-demo-kits" value="no"> No</label><label><input type="radio" name="sbx-demo-kits" value="yes"> Yes</label></fieldset>'
+      + '<div class="sbx-demo-kits" hidden></div>';
+    sandboxDemo.querySelector('#sbx-demo-agent').value = state.agent;
+    sandboxDemo.querySelector('input[name="sbx-demo-kits"][value="' + (state.addKits ? 'yes' : 'no') + '"]').checked = true;
+    sandboxDemo.querySelector('.sbx-demo-foot').innerHTML = '<button class="confirm-btn confirm-no" data-sbx-demo-cancel>Cancel</button><button class="confirm-btn confirm-yes" data-sbx-demo-continue>Continue</button>';
+    function renderKits(current) {
+      var kits = sandboxDemo.querySelector('.sbx-demo-kits');
+      kits.hidden = !current.addKits;
+      kits.innerHTML = current.addKits ? '<strong>Compatible illustrative kits</strong>'
+        + SANDBOX_AGENTS[current.agent].kits.map(function (kit) {
+          return '<label><input type="checkbox" name="sbx-demo-kit" value="' + kit + '"' + (current.kits.indexOf(kit) !== -1 ? ' checked' : '') + '> <code>' + kit + '</code></label>';
+        }).join('') : '';
+      kits.querySelectorAll('input[name="sbx-demo-kit"]').forEach(function (input) {
+        input.addEventListener('change', function () { sandboxState(); });
+      });
+    }
+    function updateKits() { renderKits(sandboxState()); }
+    renderKits(state);
+    sandboxDemo.querySelector('#sbx-demo-agent').addEventListener('change', updateKits);
+    sandboxDemo.querySelectorAll('input[name="sbx-demo-kits"]').forEach(function (input) { input.addEventListener('change', updateKits); });
+    sandboxDemo.querySelector('#sbx-demo-agent').focus();
+  }
+  function openSandboxDemo() {
+    if (sandboxDemo) return;
+    sandboxDemoLastFocus = document.activeElement;
+    sandboxDemoConfig = { agent: 'claude', addKits: false, kits: [] };
+    sandboxDemo = document.createElement('div');
+    sandboxDemo.className = 'rgt-modal sbx-demo-modal';
+    sandboxDemo.setAttribute('role', 'dialog');
+    sandboxDemo.setAttribute('aria-modal', 'true');
+    sandboxDemo.setAttribute('aria-labelledby', 'sbx-demo-title');
+    sandboxDemo.innerHTML = '<div class="rgt-modal-overlay" data-sbx-demo-cancel></div><div class="rgt-modal-window">'
+      + '<header class="rgt-modal-head"><h3 id="sbx-demo-title">New project sandbox <span>DEMO</span></h3><button class="rgt-modal-close" data-sbx-demo-cancel aria-label="Close">×</button></header>'
+      + '<div class="rgt-modal-body sbx-demo-body"></div><footer class="rgt-modal-foot sbx-demo-foot"></footer></div>';
+    document.body.appendChild(sandboxDemo);
+    document.body.classList.add('rgt-modal-open');
+    requestAnimationFrame(function () { if (sandboxDemo) sandboxDemo.classList.add('open'); });
+    renderSandboxDemo('setup');
+  }
+
+  // Capture phase is important: the board's global key handlers were
+  // registered earlier. While this dialog is up, no key (even from a SELECT)
+  // can leak through to create/delete/toggle board actions. Modifier shortcuts
+  // retain their browser default because we only stop propagation for them.
+  document.addEventListener('keydown', function (e) {
+    if (!sandboxDemo) return;
+    if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); closeSandboxDemo(); return; }
+    if (e.key === 'Tab') {
+      var items = sandboxFocusables();
+      var first = items[0], last = items[items.length - 1];
+      if (items.length && ((e.shiftKey && document.activeElement === first) || (!e.shiftKey && document.activeElement === last))) {
+        e.preventDefault(); (e.shiftKey ? last : first).focus();
+      }
+    }
+    e.stopImmediatePropagation();
+  }, true);
+  document.addEventListener('click', function (e) {
+    if (!sandboxDemo) return;
+    if (e.target.closest('[data-sbx-demo-cancel], [data-sbx-demo-done]')) { closeSandboxDemo(); return; }
+    if (e.target.closest('[data-sbx-demo-continue]')) { renderSandboxDemo('confirm'); return; }
+    if (e.target.closest('[data-sbx-demo-back]')) { renderSandboxDemo('setup'); return; }
+    if (e.target.closest('[data-sbx-demo-create]')) { renderSandboxDemo('success'); }
+  });
+
   // ── Actions ────────────────────────────────────────────────────
 
   function createCard() {
@@ -1013,6 +1139,7 @@ function hideModal(id, onHide) {
   document.addEventListener('keydown', function (e) {
     var tag = document.activeElement && document.activeElement.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     var rgtModal     = document.getElementById('rgt-modal');
     var noteModal    = document.getElementById('note-modal');
     var helpModal    = document.getElementById('kb-help-modal');
@@ -1063,7 +1190,7 @@ function hideModal(id, onHide) {
         else showToast('Select a card first (click one)');
         break;
       case 'f': showToast('Fetching PR into a new worktree…');        e.preventDefault(); break;
-      case 'n': showToast('Creating sandbox for this worktree…');     e.preventDefault(); break;
+      case 'n': openSandboxDemo();                                    e.preventDefault(); break;
       case 'p':
         if (STATE.selectedCardId === 'main') pullMain();
         else showToast('Pulling from remote…');
@@ -1092,7 +1219,7 @@ function hideModal(id, onHide) {
         else showToast('Select a card first (click one)');
         return;
       case 'f': showToast('Fetching PR into a new worktree…'); return;
-      case 'n': showToast('Creating sandbox for this worktree…'); return;
+      case 'n': openSandboxDemo(); return;
       case 'p':
         if (STATE.selectedCardId === 'main') pullMain();
         else showToast('Pulling from remote…');

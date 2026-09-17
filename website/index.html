@@ -28,7 +28,7 @@
     href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap"
     rel="stylesheet">
 
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=0.6.0">
 
   <script>
     (function () {
@@ -187,8 +187,8 @@
     <div class="container">
       <span class="section-label">Docker Sandboxes</span>
       <h2>Isolation by default</h2>
-      <p class="sandbox-intro">Each worktree gets its own isolated Docker environment: filesystem, Docker daemon, and
-        network. Agents can install packages, build containers, and modify files without touching your host.</p>
+      <p class="sandbox-intro">Each agent gets an isolated Docker environment per project, shared by its worktrees.
+        Toolchains run inside the sandbox; workspace files stay available on your host.</p>
       <div class="sandbox-grid">
         <div class="sandbox-card"><span class="icon">🔒</span>
           <h3>Isolated Environments</h3>
@@ -199,8 +199,9 @@
           <p>Claude gets one sandbox, Codex gets another. Clean separation of toolchains and state.</p>
         </div>
         <div class="sandbox-card"><span class="icon">⌨️</span>
-          <h3>Lifecycle from the Dashboard</h3>
-          <p>Create, start, stop, remove, all from the dashboard. No terminal context-switching.</p>
+          <h3>One Setup Flow</h3>
+          <p>Press <kbd>n</kbd> in the projects panel, choose an agent, optionally add compatible kits, and create.
+            Kits use Docker Hub images, not Git URLs. Start, stop, and remove from the dashboard.</p>
         </div>
       </div>
       <div class="sandbox-diagram-html">
@@ -300,13 +301,16 @@
   <section id="workflow" class="workflow">
     <div class="container">
       <span class="section-label">Workflow</span>
-      <h2>From zero to PR in six keystrokes</h2>
+      <h2>From project to pull request</h2>
       <p>The core loop, from creating a worktree to shipping a pull request.</p>
       <div class="workflow-steps">
         <div class="step"><span class="step-number">1</span>
           <div>
             <h3>Register</h3>
             <p><code>biomelab</code> auto-adds your current repo on first launch. Or press <kbd>a</kbd> to add more.</p>
+            <p>For a sandbox, press <kbd>n</kbd> in the projects panel. Choose your agent and answer
+              “Do you want to add kits?” Choose Yes to load compatible kits, or No to skip them, then confirm creation.
+              No second setup in the worktree panel. Kits are selected at creation time only.</p>
           </div>
         </div>
         <div class="step"><span class="step-number">2</span>
@@ -655,7 +659,7 @@
         <div class="kb-footer-hint">
           <span class="kb-footer-mode">Try <kbd class="kb-g-glow">g</kbd> for grid view</span>
           <span class="kb-footer-sep">·</span>
-          <span class="kb-footer-cta">Press <kbd class="kb-g-glow">?</kbd> to see the keybindings</span>
+          <span class="kb-footer-cta">Try <kbd class="kb-g-glow">n</kbd> for sandbox setup · <kbd class="kb-g-glow">?</kbd> for keybindings</span>
         </div>
       </div><!-- /.kanban-diagram-html -->
     </div>
@@ -852,7 +856,7 @@ gh pr create --title <span class="notes-arg">"$(cat .biomelab/pr-title.md)"</spa
           <div class="key-item"><span class="key-cap key-magenta">l</span><span class="key-action">Open regent log</span></div>
           <div class="key-item"><span class="key-cap key-blue">f</span><span class="key-action">Fetch PR / MR</span></div>
           <div class="key-item"><span class="key-cap key-cyan">g</span><span class="key-action">Toggle kanban / grid</span></div>
-          <div class="key-item"><span class="key-cap">n</span><span class="key-action">New sandbox</span></div>
+          <div class="key-item"><span class="key-cap">n</span><span class="key-action">New sandbox (projects panel)</span></div>
           <div class="key-item"><span class="key-cap key-orange">p</span><span class="key-action">Pull from remote</span></div>
           <div class="key-item"><span class="key-cap key-magenta">P</span><span class="key-action">Send PR</span></div>
           <div class="key-item"><span class="key-cap">r</span><span class="key-action">Refresh card</span></div>
@@ -930,7 +934,7 @@ gh pr create --title <span class="notes-arg">"$(cat .biomelab/pr-title.md)"</spa
   <!-- Toast for transient feedback from keyboard simulator actions. -->
   <div id="kb-toast" class="kb-toast" hidden role="status" aria-live="polite"></div>
 
-  <script defer src="js/main.js"></script>
+  <script defer src="js/main.js?v=0.6.0"></script>
 </body>
 
 </html>
