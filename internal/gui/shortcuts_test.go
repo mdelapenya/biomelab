@@ -100,6 +100,29 @@ func TestHandleKeyName_NonEscapeIsSwallowedWhileDialogOpen(t *testing.T) {
 	}
 }
 
+// TestHandleKeyName_AddRepoFromEmptyState ensures the initial empty screen
+// does not require switching focus to a repository panel that does not exist.
+func TestHandleKeyName_AddRepoFromEmptyState(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+	win := testApp.NewWindow("test")
+	defer win.Close()
+
+	a := &App{
+		window: win,
+		focus:  focusRight,
+	}
+
+	a.handleKeyName(fyne.KeyA)
+
+	if !a.dialogOpen {
+		t.Fatal("a should open the add-repository dialog when no repositories are registered")
+	}
+	if a.activeDialog == nil {
+		t.Fatal("add-repository dialog should be tracked as the active dialog")
+	}
+}
+
 // TestOpenDialog_CleanupResetsState verifies the cleanup closure returned by
 // openDialog() resets every piece of dialog state. The Escape regression
 // fix duplicates this cleanup inline; this test pins the canonical version
