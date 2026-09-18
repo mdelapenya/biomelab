@@ -17,11 +17,12 @@
 - **Docker Sandbox mode** (recommended) -- One sandbox per agent per repo. Real-time status monitoring (running/stopped/not found). Create, start, stop, and remove sandboxes from the dashboard.
 - **Create/delete worktrees** -- Press `c` to create, `d` to delete (with confirmation).
 - **Fetch PR** -- Press `f` to fetch a PR into a new worktree. Accepts `123` or `owner/repo#123`.
+- **Create worktree from an issue** -- Press `i` on the main card to look up a GitHub issue and preview a new worktree. Accepts `123` or `owner/repo#123`; the lookup is cancellable and shows the issue, source and destination repositories, and editable branch before creation.
 - **Send PR** -- Press `Shift+P` to push and create a PR (multi-phase: dirty check → remote selection → confirmation). Detects existing PRs for push-only mode.
 - **Pull** -- Press `p` to fetch all remotes and merge from origin.
 - **Open in terminal** -- Press `Enter` to open a worktree in a terminal. If a terminal is already detected for that worktree, it is brought to the foreground instead of opening a new one. On macOS, activation uses TTY matching via AppleScript (requires Automation permission on first use).
 - **Open in editor** -- Press `e` to open in `$BIOME_EDITOR` (defaults to VS Code).
-- **Task notes** -- Press `m` (or right-click a card) to open a Markdown editor with a live preview, scoped to that worktree. Notes are stored at `<worktree>/.biomelab/note.md` (description) and `<worktree>/.biomelab/pr-title.md` (single-line title), auto-excluded from git, and mounted into the sandbox alongside the source so agents can read them. When you `Shift+P` to send a PR, biomelab offers to use the prepared title and description in place of the commit-derived defaults. External tools that write to those two paths become contributors to the next PR.
+- **Task context and progress** -- Issue-created worktrees preserve the original requirements in `<worktree>/.biomelab/issue.md` and initialize `<worktree>/.biomelab/progress.md` with a handoff template. Agents update progress as work advances. The editable PR drafts remain `<worktree>/.biomelab/note.md` (description) and `<worktree>/.biomelab/pr-title.md` (single-line title); `m` edits those drafts and Send PR offers them separately from progress.
 - **Agent audit trail** ([re_gent](https://github.com/regent-vcs/re_gent)) -- When `rgt` is installed, biomelab auto-initializes `.regent/` in every regular-mode worktree and writes Claude Code hooks into `.claude/settings.json` — no terminal step. Press `l` (or systray → Dependencies) to open the activity window: one resizable view per session with `Human` / `Agent` rows, collapsible tool lists (full file paths, no truncation), and an **Export JSON…** button that writes the raw `rgt log --json` via the OS-native save dialog.
 - **System dependencies dialog** -- Systray entry (`Dependencies: N/M ✓`) opens a modal listing every external CLI biomelab relies on (`gh`, `glab`, `sbx`, `rgt`) with status dot, version, install hint, and docs link. A first-run banner above the dashboard nags only when a primary tool is missing or degraded; redundant CLIs (e.g. `glab` when `gh` is fine) are suppressed.
 - **Zoom** -- `Ctrl+=` / `Ctrl+-` / `Ctrl+0` to scale the UI font.
@@ -131,6 +132,7 @@ Launch `biomelab` from any directory, or open `Biomelab.app` from Spotlight/Find
 | `l` | Open regent activity log | Any card |
 | `c` | Create worktree | Main card |
 | `f` | Fetch PR/MR | Main card |
+| `i` | Create worktree from GitHub issue | Main card |
 | `d` | Delete worktree / remove sandbox | Linked: delete; Main+sandbox: remove |
 | `p` | Pull from remote | Any card |
 | `Shift+P` | Send PR (push + create) | Linked cards |
@@ -174,6 +176,52 @@ workflow is not currently offered. Canceling initial setup or a failed creation
 leaves the repository's previous mode unchanged.
 
 See the product-owner skill (`/product-owner`) for detailed sandbox workflows including: enrolling repos, adding agents, creating/deleting worktrees in sandboxes, and sandbox lifecycle management.
+
+### Create a worktree from an issue
+
+On the main card, press `i` and enter a positive GitHub issue number for the
+selected repository or `owner/repo#number`. Biomelab uses the authenticated
+`gh` CLI and performs the lookup asynchronously; the loading dialog can be
+cancelled. The preview shows the issue title, state, body, canonical link,
+source repository, destination repository, and a suggested editable branch
+(`issue-<number>-<title-slug>`). GitHub issue URLs, GitLab issues, and a base
+branch picker are not supported by this flow yet.
+
+Create uses the main checkout's current local HEAD at creation time. It does
+not pull, launch a terminal or agent, fetch an issue ref, push, or open a PR.
+Existing branch or path collisions fail without replacing the existing
+worktree. The new worktree receives `.biomelab/issue.md` as an original
+requirements snapshot and `.biomelab/progress.md` as a handoff template
+covering completed work, decisions, remaining tasks or blockers, validation,
+and revision or uncommitted state. It also seeds `.biomelab/note.md` with the
+issue heading, source URL, and body, plus `.biomelab/pr-title.md` with the issue
+title. The issue snapshot is preserved; rerunning helpers preserves existing
+progress. Read or edit the PR drafts with `m`; Send PR offers only those drafts
+through its existing opt-in task-notes checkbox, never the progress file. There
+are no additional GUI tabs for issue or progress artifacts; agents and editors
+can open those files directly in the worktree.
+
+Creation also adds a marked task-context instruction to `AGENTS.md`, an
+existing `AGENTS.override.md`, `CLAUDE.md`, `GEMINI.md`, and
+`.kiro/steering/biomelab-task.md`. New instruction files are ignored by Git;
+existing tracked files are intentionally modified. These instructions tell the
+agent to read the original issue snapshot and current progress before work,
+including its first session, then inspect Git status, diff, recent history, and
+relevant code. Agents should reconcile stale notes with the repository, update
+progress after meaningful milestones, and update it before handing off or
+ending. Re-running setup upgrades an exact earlier generated instruction block
+in place without duplicating it and preserves other guidance. The handoff is
+supported by normal instruction loading for Codex,
+Claude, Copilot, Gemini, Kiro, and OpenCode; BiomeLab does not summarize
+progress, reload it in the background, or mark it consumed.
+The built-in Docker Agent sandbox kit loads `AGENTS.md` through its
+`agentInstructions.filename` setting (see
+[Docker's kit customization docs](https://docs.docker.com/ai/sandboxes/customize/kits/)).
+Regular mode opens a shell only. A manually invoked custom Docker Agent must
+arrange its own prompt-file or `add_prompt_files` configuration to load the
+notes. If note or instruction setup is only partially successful, the new
+worktree is retained and the error identifies the affected artifact. The note
+editor can repair note content; it does not repair every bootstrap failure.
 
 ## Release process
 

@@ -169,6 +169,48 @@ From the main card, press `f`. Accepts:
 Requires an authenticated CLI (`gh` for GitHub, `glab` for GitLab). The PR's
 head branch is checked out as a new linked worktree. In sandbox mode the worktree is created on the host too and is visible in-container.
 
+### Create Worktree from a GitHub Issue
+
+Press `i` on the main card to enter a positive issue number for the selected
+repository or `owner/repo#number`. The authenticated `gh` CLI looks up the
+issue asynchronously; the lookup can be cancelled before the preview appears.
+The preview includes the title, state, body, canonical issue link, source and
+destination repositories, the main checkout's current local HEAD, and an
+editable branch suggested as `issue-<number>-<title-slug>`. Issue URLs, GitLab,
+and base-branch selection are deferred.
+
+Create uses the local HEAD at creation time and preserves normal worktree
+collision behavior. It does not pull, fetch an issue ref, launch a terminal or
+agent, create a sandbox, push, or open a PR. It preserves the original issue
+requirements in `.biomelab/issue.md` and initializes `.biomelab/progress.md`
+with sections for completed work, decisions, remaining tasks or blockers,
+validation, and revision or uncommitted state. It also seeds the editable PR
+drafts `.biomelab/note.md` with the issue heading, source URL, and body and
+`.biomelab/pr-title.md` with the issue title. Press `m` to read or edit the
+drafts; Send PR uses them only when its task-notes option is selected and never
+includes progress automatically. Existing issue snapshots and progress are
+preserved when helpers are rerun.
+
+The new worktree gets a marked instruction block in `AGENTS.md`, an existing
+`AGENTS.override.md`, `CLAUDE.md`, `GEMINI.md`, and
+`.kiro/steering/biomelab-task.md`. New instruction files are ignored by Git;
+tracked existing files intentionally show changes. These instructions tell
+the agent to read the original issue snapshot and current progress before work,
+including its first session, then inspect Git status, diff, recent history, and
+relevant code. The agent must reconcile stale notes with the repository, update
+progress after meaningful milestones, and update it before handing off or
+ending. BiomeLab does not infer or summarize progress, continuously reload it,
+or mark it consumed; missing progress means inspecting the code rather than
+assuming no work has started.
+The built-in Docker Agent sandbox kit uses `agentInstructions.filename` with
+`AGENTS.md`; see [Docker's kit customization docs](https://docs.docker.com/ai/sandboxes/customize/kits/).
+Regular mode opens a shell only. A manually invoked custom Docker Agent must
+configure its own prompt-file or `add_prompt_files` handoff.
+
+If note or instruction setup is only partially successful, the new worktree is
+retained and the error identifies the affected artifact. The note editor can
+repair note content; it does not repair every bootstrap failure.
+
 ### 7. Pull from Remote
 
 Press `p` to fetch all remotes and merge from origin. Multi-remote aware:
@@ -389,6 +431,7 @@ This data is fetched from `gh pr view --json reviews` (GitHub) and `glab mr view
 | `Right` / `l` | Navigate right (grid: move right; kanban: next column) | Linked cards |
 | `c` | Create worktree | Main card only |
 | `f` | Fetch PR/MR | Main card only |
+| `i` | Create worktree from GitHub issue | Main card only |
 | `n` | New sandbox / create sandbox | Main card only |
 | `s` | Start stopped sandbox | Main card, sandbox stopped |
 | `S` | Stop running sandbox | Main card, sandbox running |

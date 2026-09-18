@@ -83,6 +83,11 @@ type App struct {
 	// systray summary. TTL is short enough to feel live; the dialog also
 	// exposes an explicit Re-check button that forces a refresh.
 	sysdepsCache *sysdeps.Cache
+
+	// issueDeps is per-App so GUI tests can replace network and filesystem
+	// operations without process-wide mutable hooks.
+	issueDeps *issueDependencies
+	issueFlow *issueFlow
 }
 
 // NewApp creates a new biomelab Fyne application.
@@ -103,6 +108,7 @@ func NewApp(
 		refreshInterval: refreshInterval,
 		sbxStatuses:     make(map[string]sandbox.Status),
 		sysdepsCache:    sysdeps.NewCache(sysdepsCacheTTL),
+		issueDeps:       defaultIssueDependencies(),
 	}
 }
 
