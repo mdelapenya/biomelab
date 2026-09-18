@@ -3,8 +3,9 @@
 biomelab is a Go desktop GUI (Fyne) that manages git worktrees for AI coding
 agents. Multi-repo dashboard with sandbox (Docker) and regular modes.
 
-For product features and decision rationale, invoke the `/product-owner` skill.
-For Fyne framework reference and pitfalls, invoke the `/fyne-developer` skill.
+For user-facing behavior, start with the [user guides](README.md#user-guides).
+For product decision rationale, see [.claude/skills/product-owner/SKILL.md](.claude/skills/product-owner/SKILL.md).
+For Fyne framework reference and pitfalls, see [.claude/skills/fyne-developer/SKILL.md](.claude/skills/fyne-developer/SKILL.md).
 For internal architecture, design decisions, and state machines, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Build and test commands
@@ -31,7 +32,7 @@ task package-darwin-universal # macOS universal binary (.app bundle)
 task install-macos            # Package + install to /Applications
 ```
 
-Go version: 1.25+ (check `go env GOROOT` if you hit version mismatches).
+Go version: see `go.mod` (currently 1.25.6). Check `go env GOROOT` if you hit version mismatches.
 
 ## Key dependencies
 
@@ -49,20 +50,21 @@ internal/
   gui/                 Fyne GUI: app, dashboard, cards, repo panel, dialogs,
                        keyboard handling, theme, refresh manager, system tray,
                        sysdeps dialog + banner, regent log window, OS-native
-                       save dialog helper
+                       save dialog helper, kanban, theme persistence, repo dragging
   ops/                 Shared business operations (refresh, worktree CRUD,
-                       sandbox ops) — extracted from old TUI for reuse
-  config/              Repo list persistence (~/.config/biomelab/repos.json)
+                       sandbox ops), independent of GUI widgets
+  config/              OS-specific repo, mode, kit, order, and theme persistence
   git/                 Go-git v6 wrapper + EnsureExcluded helper
   agent/               Agent process detection
   ide/                 IDE process detection
   process/             Shared process enumeration
   provider/            PR/MR provider abstraction (GitHub, GitLab)
   sandbox/             Docker Sandbox (sbx) CLI wrapper
+  kits/                Compatible kit discovery + Docker Hub OCI references
   notes/               Per-worktree Markdown notes (.biomelab/note.md)
   regent/              re_gent (rgt) integration: detect, init, hooks, log
   sysdeps/             External CLI dependency checks (gh/glab/sbx/rgt)
-  terminal/            Open new terminal window
+  terminal/            Terminal detection, launch, and activation
   github/              GitHub-specific PR helpers
 ```
 

@@ -186,7 +186,7 @@ func buildCardContent(
 			}
 			line := fmt.Sprintf("%s%s (PID %s)", prefix, string(a.Kind), a.PID)
 			items = append(items, monoText(line, colorGreen, false))
-			// Agent detail line (state + started) matching TUI.
+			// Agent detail line: process state and start time.
 			if a.State != "" || a.Started != "" {
 				detail := fmt.Sprintf("  state: %s  started: %s", a.State, a.Started)
 				detailText := monoText(detail, colorGreen, false)

@@ -27,6 +27,29 @@ All pipelines build for three platforms:
 - **Windows**: MinGW GCC (pre-installed on `windows-latest` runners).
 - **All**: Go (from `go.mod`), Task CLI, fyne CLI.
 
+## Documentation and website checks
+
+Before tagging a release:
+
+- Compare download names and architectures in [installation](docs/installation.md) and `website/index.html` with the release workflow artifacts.
+- Check prerequisites against `go.mod` and `Taskfile.yml`; distinguish packaged installation from source builds.
+- Walk through the [dashboard](docs/dashboard.md), sandbox setup, notes, and activity guides in the GUI. Compare shortcuts with `internal/gui/shortcuts.go` and dialog controls.
+- Revisit [known limitations](docs/known-limitations.md) and remove resolved items only after verification.
+- Run `python3 scripts/check-doc-links.py` and `node --check website/js/main.js`. CI runs these checks too; they validate local targets, anchors, assets, and JavaScript syntax, not external service availability.
+- Serve `website/` locally (`python3 -m http.server 8765 --directory website`) and check desktop/mobile layouts, both themes, installation tabs, and playground note Save/Cancel/Delete, PR flow, and sandbox setup. Keep simulated actions labeled.
+- Update GUI screenshots when the layout changes. Use sample data and label it; do not expose personal repositories or activity logs.
+- Check external installation/documentation links before publishing. Website deployment runs on pushes to `main` affecting `website/**`; docs links on the website target `main`, so publish the linked guides alongside the website change.
+
+### Refresh dashboard images
+
+Run `go test -tags docs_screenshots ./internal/gui -run '^TestDocsCapture$' -count=1`
+with the source-build prerequisites. This explicit asset-generation test renders
+`NewRepoPanel` and `NewDashboard` in Fyne's test canvas using fictional paths and
+PRs, writing `website/img/dashboard-dark.png` and `dashboard-light.png`. Normal
+test runs exclude it. These images show application widgets, not a capture of a
+user's desktop; preserve that distinction in their captions. Inspect both images
+before committing them.
+
 ## Stable release
 
 To cut a release:

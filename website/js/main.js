@@ -160,9 +160,7 @@ function hideModal(id, onHide) {
   setTimeout(function () { modal.setAttribute('hidden', ''); }, 200);
 }
 
-// Regent activity modal — click any kanban card (works in both
-// kanban and grid views since the DOM nodes are the same) or press
-// 'l' to open a WhatsApp-style log mirroring the biomelab GUI.
+// Regent activity modal — select a card and press 'l' to view sample logs.
 (function () {
   var modal = document.getElementById('rgt-modal');
   if (!modal) return;
@@ -186,10 +184,7 @@ function hideModal(id, onHide) {
     el.addEventListener('click', close);
   });
 
-  // Only Esc closes the modal — opening is click-only on the web.
-  // The 'l' shortcut exists in the desktop app (where every card
-  // has a clear "selected" state); on the web a stray keypress on
-  // the landing page would pop the modal unexpectedly.
+  // Opening is handled by the selected-card keyboard simulator below.
   document.addEventListener('keydown', function (e) {
     if (modal.hasAttribute('hidden')) return;
     if (e.key === 'Escape') close();
@@ -888,13 +883,32 @@ function hideModal(id, onHide) {
       showToast('Send PR only works on cards in Created');
       return;
     }
-    card.prNumber = nextPRNumber();
-    card.prState = 'open';
-    card.ciState = 'pending';
-    card.stage = 'sent';
-    renderAll();
-    pulseCard(card.id);
-    showToast('Pushed branch · opened PR #' + card.prNumber);
+    var saved = demoNotes[card.id];
+    var hasNotes = saved && (saved.title || saved.body);
+    openConfirmModal('Send PR — demo',
+      "Push '" + card.branch + "' to origin and create a PR?\n\nThis is a simulation; no remote is contacted.",
+      'Push + create PR', function () {
+        var useNotes = document.getElementById('demo-use-notes');
+        card.prTitle = useNotes && useNotes.checked ? saved.title : card.branch;
+        card.prBody = useNotes && useNotes.checked ? saved.body : '';
+        card.prNumber = nextPRNumber();
+        card.prState = 'open';
+        card.ciState = 'pending';
+        card.stage = 'sent';
+        renderAll();
+        pulseCard(card.id);
+        showToast('Demo PR #' + card.prNumber + ': ' + (card.prTitle || card.branch));
+      });
+    if (hasNotes) {
+      var label = document.createElement('label');
+      label.className = 'demo-use-notes';
+      var checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.id = 'demo-use-notes';
+      checkbox.checked = true;
+      label.append(checkbox, document.createTextNode(' Use saved task notes for the PR title and description'));
+      document.getElementById('confirm-modal-body').appendChild(label);
+    }
   }
 
   function nextPRNumber() {
@@ -918,10 +932,15 @@ function hideModal(id, onHide) {
     }
   }
 
+  var demoNotes = Object.create(null);
+  var noteCardId = null;
+
   function openNoteModal() {
     if (!STATE.selectedCardId) { showToast('Select a card first (click one)'); return; }
     showModal('note-modal', function () {
       document.getElementById('note-modal-title').textContent = 'Note — ' + STATE.selectedCardId;
+      noteCardId = STATE.selectedCardId;
+      var titleEntry = document.getElementById('note-title-entry');
       var entry = document.getElementById('note-entry');
       var preview = document.getElementById('note-preview');
       var sample =
@@ -930,14 +949,33 @@ function hideModal(id, onHide) {
         + '- Use *Markdown* — bold, italic, `inline code`\n'
         + '- Live preview on the right →\n'
         + '- Saved alongside the worktree as `.biomelab/note.md`\n\n'
-        + 'When you `Shift+P` to send the PR, biomelab uses this note as the body.';
-      entry.value = sample;
-      preview.innerHTML = renderMd(sample);
+        + 'When creating a PR with `Shift+P`, biomelab offers to use your saved title and description.';
+      var saved = demoNotes[noteCardId];
+      titleEntry.value = saved ? saved.title : 'feat: ' + noteCardId;
+      entry.value = saved ? saved.body : sample;
+      preview.innerHTML = renderMd(entry.value);
       entry.oninput = function () { preview.innerHTML = renderMd(entry.value); };
     });
   }
 
   function closeNoteModal() { hideModal('note-modal'); }
+
+  function saveDemoNote() {
+    if (!noteCardId) return;
+    demoNotes[noteCardId] = {
+      title: document.getElementById('note-title-entry').value.trim(),
+      body: document.getElementById('note-entry').value
+    };
+    closeNoteModal();
+    showToast('Demo note saved in this page only');
+  }
+
+  function deleteDemoNote() {
+    if (!noteCardId) return;
+    demoNotes[noteCardId] = { title: '', body: '' };
+    closeNoteModal();
+    showToast('Demo title and description cleared');
+  }
 
   // ── '?' keyboard shortcuts modal ──────────────────────────────
   //
@@ -960,7 +998,7 @@ function hideModal(id, onHide) {
     showModal('confirm-modal', function () {
       document.getElementById('confirm-modal-title').textContent = title;
       document.getElementById('confirm-modal-body').textContent = message;
-      var yesBtn = document.querySelector('.confirm-yes');
+      var yesBtn = document.querySelector('#confirm-modal .confirm-yes');
       if (yesBtn && yesLabel) yesBtn.textContent = yesLabel;
     });
   }
@@ -1131,6 +1169,11 @@ function hideModal(id, onHide) {
     card.addEventListener('click', function () {
       selectCard(card.dataset.kb);
     }, true);
+    card.addEventListener('contextmenu', function (e) {
+      e.preventDefault();
+      selectCard(card.dataset.kb);
+      openNoteModal();
+    });
   }
   document.querySelectorAll('.kb-card[data-kb]').forEach(wireCard);
 
@@ -1255,25 +1298,27 @@ function hideModal(id, onHide) {
   // / buttons without per-element wiring. One listener replaces three
   // per-element registrations.
   document.addEventListener('click', function (e) {
+    if (e.target.closest('[data-note-save]')) { saveDemoNote(); return; }
+    if (e.target.closest('[data-note-delete]')) { deleteDemoNote(); return; }
     if (e.target.closest('[data-note-close]'))    { closeNoteModal();    return; }
     if (e.target.closest('[data-kbhelp-close]'))  { closeHelpModal();    return; }
     if (e.target.closest('[data-term-close]'))    { closeTerminalModal(); return; }
     if (e.target.closest('[data-editor-close]'))  { closeEditorModal();  return; }
     if (e.target.closest('[data-confirm-close]')) { closeConfirmModal(); return; }
-    if (e.target.closest('.confirm-yes'))         { confirmYes();        return; }
+    if (e.target.closest('#confirm-modal .confirm-yes'))         { confirmYes();        return; }
   });
   // Esc while typing in the textarea: the global keydown handler bows
   // out on TEXTAREA focus, so add a dedicated Escape on the entry so
   // the user doesn't have to mouse to the × button to close.
-  var noteEntry = document.getElementById('note-entry');
-  if (noteEntry) {
-    noteEntry.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        closeNoteModal();
-      }
-    });
-  }
+  document.getElementById('note-modal').addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeNoteModal();
+    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+      e.preventDefault();
+      saveDemoNote();
+    }
+  });
 
   // ── Bootstrap STATE from the initial handcrafted DOM ───────────
   //

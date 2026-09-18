@@ -12,467 +12,24 @@ metadata:
   category: product-knowledge
 ---
 
-# biomelab — Product Owner Knowledge Base
+# BiomeLab product reference
 
-biomelab is a terminal-based dashboard for managing git worktrees in the context
-of AI coding agents. It gives developers a single place to see every worktree
-across multiple repositories, know which agents and IDEs are active in each, and
-perform common operations (create, delete, pull, fetch PRs, open editors/terminals)
-without leaving the terminal.
+BiomeLab is a Go/Fyne desktop GUI for managing Git worktrees and coding agents across repositories. Use this reference for product decisions and user-facing copy; consult implementation files when a feature boundary is uncertain.
 
-**Sandbox mode (Docker Sandboxes via `sbx`) is the recommended way to work.**
-Each sandbox gives a worktree its own isolated Docker environment — filesystem,
-Docker daemon, and network — so agents can install packages, build containers,
-and modify files without touching the host.
+## Current product behavior
 
----
+Use the maintained user guides as the source for workflows and shortcuts:
 
-## Product Concepts
+- [Dashboard and worktrees](../../../docs/dashboard.md): default five-column kanban, grid, repository ordering, context-sensitive shortcuts, confirmation dialogs, themes, and tray.
+- [Sandbox workflows](../../../docs/sandboxes.md): one sandbox per agent per repository, shared host worktrees, optional kits only at creation, lifecycle and registration.
+- [Notes and activity](../../../docs/notes-and-activity.md): `m` edits notes and PR titles; `l` opens recorded re_gent activity. Host `rgt` is needed by the viewer.
+- [Installation](../../../docs/installation.md): supported artifacts, build prerequisites, optional tools.
+- [Configuration](../../../docs/configuration.md): OS-specific paths, flags, environment, terminal limitations.
+- [Known limitations](../../../docs/known-limitations.md): implementation gaps that must not be advertised as supported behavior.
 
-### Repository
-A git repository registered in biomelab. Each repo appears in the left panel and
-can have one or more *modes*.
+Local state refreshes every five seconds; network state defaults to 30 seconds. Host mode is available and is used by automatic repository registration. Sandbox mode is recommended, not universally enabled. Worktrees and notes are shared files, not isolated copies.
 
-### Mode
-A mode determines how worktrees are managed for a given repo:
-- **Regular (host)**: Worktrees live on the host filesystem under `.biomelab-worktrees/`.
-- **Sandbox**: Worktrees live on the host under `.biomelab-worktrees/` exactly like regular mode; because sbx mirrors the workspace mount path, they are visible inside the sandbox at the same path. Each sandbox entry is tied to one agent (e.g. claude, codex).
-
-The same repo can have multiple sandbox modes (one per agent) simultaneously.
-
-### Worktree
-A git worktree linked to a repository. There is always one *main worktree*
-(the repo root) and zero or more *linked worktrees* (feature branches, PR
-checkouts, etc.).
-
-### Agent
-An AI coding agent running inside a worktree. biomelab auto-detects agents by
-scanning system processes: **Claude, Copilot, Codex, Kiro, OpenCode, Gemini**.
-
-### IDE
-An editor/IDE open in a worktree. Auto-detected: **VS Code, Cursor, Zed,
-Windsurf, GoLand, IntelliJ, PyCharm, Neovim, Vim**.
-
-### Terminal
-A terminal emulator with a shell whose working directory matches a worktree.
-Auto-detected by scanning system processes for shells (bash, zsh, fish, pwsh)
-whose ancestor is a known terminal emulator: **Terminal.app, iTerm2, Alacritty,
-kitty, WezTerm, gnome-terminal, Konsole, Tilix, xfce4-terminal, Hyper,
-Windows Terminal**.
-
-### Card
-The visual representation of a worktree in the right panel. Each card shows:
-branch name, path, sandbox status, PR/MR info, agent status, IDE status,
-terminal status, dirty/clean state, and sync status (ahead/behind/diverged).
-
----
-
-## Layout
-
-Two-column terminal UI:
-
-| Left panel (~15%) | Right panel (~85%) |
-|---|---|
-| Repository list as a tree: repo headers with indented mode lines beneath | Worktree dashboard for the selected mode |
-
-**Left panel tree example:**
-```
-mdelapenya/biomelab
-  > [claude]          selected sandbox mode (green dot = running)
-    [gemini]          another sandbox (yellow dot = stopped)
-docker/sandboxes
-    [host]            regular mode
-```
-
-**Right panel structure:**
-- Refresh timestamps at top
-- Main worktree card (pinned, double-bordered)
-- Contextual help below main card
-- Linked worktree cards in a responsive grid (scrollable)
-- Global help bar at bottom
-
----
-
-## Features
-
-### 1. Multi-Repository Dashboard
-
-Register multiple repositories. Navigate between them in the left panel.
-Each repo shows its modes (regular, sandbox per agent) as an indented tree.
-Switching modes within the same repo is instant; switching across repos
-pauses/resumes the dashboard state.
-
-### 2. Worktree Cards
-
-Every worktree is rendered as a card showing at-a-glance status:
-
-| Field | Indicators |
-|---|---|
-| **Branch** | Name in bold; `[main]` badge for main worktree; `(detached)` if applicable |
-| **Path** | Absolute worktree path |
-| **Sandbox** | `(running)` green / `(stopped)` yellow / `(not found)` red |
-| **PR/MR** | `PR #123 Title (open/draft/merged/closed)` with CI icon: success/failure/pending |
-| **Agent** | `claude (PID 1234)` green, or `no agent` dimmed; sub-agents shown indented |
-| **IDE** | `vscode (PID 567)` blue, or `no IDE` dimmed; multiple IDEs listed separately |
-| **Terminal** | `Terminal (PID 890)` purple, or `no terminal` dimmed; one entry per emulator window |
-| **Dirty** | `dirty` orange or `clean` green |
-| **Sync** | `up-to-date` / `ahead` / `behind` / `diverged` / `no upstream` |
-
-Cards update automatically via refresh cycles (local every 5 s, network every 30 s
-by default).
-
-### 3. Sandbox Mode (Recommended)
-
-Enroll a repo with a sandbox to give each worktree an isolated Docker environment.
-
-**Sandbox lifecycle controls from the dashboard:**
-- **Create** sandbox when not found (press `n` from main card, confirmation popup shows the full `sbx create` command)
-- **Start** a stopped sandbox (press `s`)
-- **Stop** a running sandbox (press `S`)
-- **Remove** a sandbox (press `d` from main card, confirmation popup shows `sbx rm --force`)
-
-**Sandbox worktree creation:**
-Creating a worktree in sandbox mode creates it on the host under
-`.biomelab-worktrees/<branch>/`, same as regular mode — no sbx call, no new VM.
-Opening the main card (Enter) attaches via `sbx run --name <sandbox>`. Opening a
-linked worktree runs `sbx exec -it -w <worktree-path> <sandbox> bash -c '…'`, which
-launches the sandbox's own `start-agent` script (falling back to the bare agent
-binary) with the worktree as working directory. A stopped sandbox is started
-automatically by `sbx exec`.
-
-**Sandbox status monitoring:**
-Every local refresh cycle (5 s), biomelab checks `sbx ls --json` and reports
-running/stopped/not-found. The status bar shows a hint when the sandbox needs
-attention (e.g. "press `n` to create" or "run `sbx run <name>`").
-
-### 4. Create Worktree
-
-From the main card, press `c`, type a branch name, press Enter.
-- Regular mode: creates under `.biomelab-worktrees/<branch>/`
-- Sandbox mode: same host path; visible inside the sandbox at the identical path
-
-### 5. Delete Worktree
-
-From a linked card, press `d`. Two-step confirmation: press `y` to arm, then
-Enter to execute. The worktree directory, branch, and metadata are removed.
-Deletion is not available on the main worktree.
-
-IDEs open in the worktree are intentionally NOT closed — the user is responsible
-for closing them before or after removal.
-
-### 6. Fetch PR / MR
-
-From the main card, press `f`. Accepts:
-- Plain number: `123` (current repo)
-- Fork reference: `owner/repo#123`
-
-Requires an authenticated CLI (`gh` for GitHub, `glab` for GitLab). The PR's
-head branch is checked out as a new linked worktree. In sandbox mode the worktree is created on the host too and is visible in-container.
-
-### 7. Pull from Remote
-
-Press `p` to fetch all remotes and merge from origin. Multi-remote aware:
-fetches origin, upstream, and any configured forks before merging.
-
-### 8. Open in Terminal (activate-or-open)
-
-Press Enter on any card to open the worktree in a terminal. If a terminal is
-already detected for that worktree (see Feature 10b), biomelab brings it to
-the foreground instead of opening a new one. If no terminal is detected, a new
-window opens.
-
-**Activation mechanism (macOS):** biomelab resolves the detected shell's PID to
-its TTY device (via `lsof`), then uses AppleScript to search Terminal.app or
-iTerm2 tabs for a matching `tty` property and brings that window to front. This
-is immune to shell prompts overwriting the window title. Falls back to bringing
-the terminal app to the foreground generically if TTY matching fails.
-
-**Activation mechanism (Linux):** uses `xdotool search --pid` to find the
-terminal emulator's window by its root PID, then `windowactivate` to raise it.
-Falls back to `wmctrl -x -a` by window class if xdotool is unavailable.
-
-**New terminal windows** include an ANSI title escape (`\033]0;biomelab: <branch>\007`)
-for visual identification in the terminal's title bar or tab.
-
-In sandbox mode, Enter always opens a new terminal (sandbox sessions are remote
-and not tracked by local process detection).
-
-macOS uses `.command` files via `open` (no permissions required). Linux uses
-`x-terminal-emulator` (system default). Override with `BIOME_TERMINAL` env var.
-
-> **macOS note:** First use triggers a macOS Automation permission prompt
-> (System Settings > Privacy & Security > Automation) to allow biomelab to
-> control Terminal.app or iTerm2 via AppleScript.
-
-### 9. Open in Editor
-
-Press `e` on any card to open the worktree in an editor. Uses `$BIOME_EDITOR`
-environment variable (defaults to `code`).
-
-### 10. Agent & IDE Detection
-
-Automatic process scanning detects which agents and IDEs are active in each
-worktree. Results appear on cards and refresh every 5 seconds.
-
-Agents show PID, process state, and start time. Sub-agent processes (child PIDs)
-are grouped under the parent. IDEs show kind and one entry per independent
-window (Electron helper processes are grouped by process tree).
-
-### 10b. Terminal Detection
-
-The same process scanning that detects agents and IDEs also detects terminal
-sessions. biomelab finds shell processes (bash, zsh, fish, pwsh), walks up their
-PPID chain to identify the terminal emulator ancestor (Terminal.app, iTerm2,
-Alacritty, etc.), and matches the shell's working directory to worktree paths.
-
-Terminal status appears on cards in purple (`▶ Terminal (PID 890)` or
-`▷ no terminal`). Kanban cards show a compact `▶ Terminal` line when detected.
-
-Detection shares the same process snapshot as agent/IDE detection (one
-`gopsutil` call per refresh cycle), so it adds no extra system overhead.
-Shells spawned by non-terminal parents (editors, scripts, cron) are filtered
-out by the PPID walk — only shells descending from a known terminal emulator
-are reported. Multiple terminals open for the same worktree under different
-emulators are listed separately.
-
-### 11. PR / MR Status
-
-For each worktree branch, biomelab looks up the associated PR (GitHub) or MR
-(GitLab) and displays: number, title, state (open/draft/merged/closed), and
-CI check status (success/failure/pending).
-
-Requires `gh` CLI for GitHub or `glab` CLI for GitLab, authenticated.
-If the CLI is missing or unauthenticated, the card shows a diagnostic message
-with instructions.
-
-### 12. Sync Status
-
-Compares the local branch against tracking branches on reference remotes
-(origin, upstream). Reports: up-to-date, ahead, behind, diverged, or no
-upstream. A git fetch runs on every network refresh cycle to keep this current.
-
-### 13. Mouse Mode
-
-Off by default so users can select and copy text from the terminal. Press `m`
-to toggle on. When on, clicking selects cards and repos; mouse wheel scrolls
-both panels.
-
-### 14. Refresh Cycles
-
-| Cycle | Interval | What it checks |
-|---|---|---|
-| **Local** | 5 s | Worktree list, dirty status, agent/IDE/terminal detection, sandbox status |
-| **Network** | 30 s (configurable) | Git fetch all remotes, PR/MR lookup, CI status, sync status |
-| **Manual** | On-demand (`r`) | Full network refresh for the selected card only |
-| **Quick** | After create/delete/pull/fetch-PR | Worktree list only (fast) |
-
-Refresh timestamps are shown at the top of the right panel with brief flash
-indicators.
-
-### 15. Add / Remove Repos and Modes
-
-**Add a repo:** Press `a` in the left panel, enter the path, choose sandbox
-(recommended) or regular mode. For sandbox, choose an agent and answer
-"Do you want to add kits?" Yes loads compatible kits; No skips catalog loading.
-Confirm creation to create or reuse the sandbox and register it.
-
-**Create a sandbox for an existing repo:** Press `n` in the left panel, choose
-the agent, optionally select kits, and confirm creation. No second action on
-the main card is needed. Registration follows successful creation/discovery;
-cancellation or failure leaves the previous mode intact. Adding a sandbox to
-a regular-only repo replaces the regular entry. Kits install via Docker Hub
-OCI references (`docker.io/sbx/<directory>-kit:latest`), not Git URLs. Existing
-sandboxes are registered without changing their kits. Adding kits later would
-recreate the agent container inside the sandbox; that workflow is not offered
-for now. There is no standalone `k` action or sandbox recreation workflow.
-
-**Remove a mode:** Press `x` in the left panel. If it's the last sandbox mode,
-the repo converts to regular. If it's the last mode overall, the repo is removed.
-
-### 16. Zoom (GUI only)
-
-The Fyne GUI supports font scaling via keyboard shortcuts:
-
-| Shortcut | Action |
-|---|---|
-| `Ctrl+=` / `Cmd+=` | Zoom in (increase font size by 2) |
-| `Ctrl+-` / `Cmd+-` | Zoom out (decrease font size by 2) |
-| `Ctrl+0` / `Cmd+0` | Reset to default font size (14) |
-
-Font size range: 10–24. The entire UI re-renders on change, including
-the repo tree panel and all worktree cards.
-
-### 17. Auto-Add Current Repo
-
-If biomelab is launched from inside a git repository, that repo is automatically
-registered in regular mode. If launched from a non-git directory, biomelab shows
-an empty state with instructions to add a repo.
-
-### 18. Reorder Repositories (drag handle)
-
-Each repo header in the left panel shows a small burger icon (`☰`) to the left
-of its name. Drag that icon vertically to move the repo up or down in the list.
-While dragging, a coloured bar marks the drop target between groups. Releasing
-the mouse commits the new order, persists it to `repos.json`, and keeps the
-previously-selected mode active under the same repo.
-
-Only the burger icon is draggable. Clicks on the repo name and its mode lines
-remain ordinary taps for selection. The hover cursor over the handle changes
-to a vertical-resize indicator to signal grab affordance.
-
-### 19. Kanban Board View
-
-The default view groups linked worktrees into five columns by PR/MR lifecycle stage:
-
-| Column | Condition |
-|---|---|
-| **Closed Unmerged** | PR exists but is closed and not merged |
-| **Created** | No PR associated |
-| **PR Sent** | Open PR (including drafts) with no review activity yet |
-| **PR In Review** | Open PR that has received at least one review (approved, changes requested, or commented) |
-| **PR Merged** | PR has been merged |
-
-The main worktree card remains pinned at the top regardless of view.
-
-**Toggling views:** Press `g` to switch to the responsive card grid. Press `g` again
-to return to the kanban board. The preference is per repo/mode.
-
-**Kanban card layout:** Each card in the kanban view is compact and shows only
-essential information in up to four rows:
-
-| Row | Content | Visibility |
-|---|---|---|
-| 1 | `●` (stage-coloured dot) + bold branch name | Always |
-| 2 | `● agent-name` in green | Only when an agent is running |
-| 3 | underlined `#42` (tappable PR link) + `🔍` review icon + `🤖` CI icon | Only when a PR exists |
-| 4 | `~ dirty` in yellow | Only when worktree has uncommitted changes |
-
-Review and CI icons use distinct symbols to avoid confusion even when both are
-the same colour. Hovering over either shows a tooltip explaining its meaning:
-
-| Category | Approved/Success | Changes Requested/Failure | Commented/Pending |
-|---|---|---|---|
-| Review (🔍) | `✓` green | `!` red | `~` yellow |
-| CI (🤖) | `✓` green | `✗` red | `○` yellow |
-
-This data is fetched from `gh pr view --json reviews` (GitHub) and `glab mr view --json approvedBy` (GitLab).
-
-**Kanban navigation:**
-- `↑`: move up within the current column (from first card → back to main)
-- `↓ / j`: move down within the current column (from main → first card of first non-empty column)
-- `← / h`: jump to the same-row card in the previous non-empty column
-- `→ / l`: jump to the same-row card in the next non-empty column
-
----
-
-## Keyboard Reference
-
-### Left Panel (Repo List)
-
-| Key | Action |
-|---|---|
-| `Up` | Previous mode |
-| `Down` / `j` | Next mode |
-| `a` | Add repository |
-| `n` | Create sandbox for selected repo, with optional kits |
-| `x` | Remove selected mode |
-| `Enter` | Switch focus to right panel |
-| `Tab` | Switch focus to right panel |
-
-### Right Panel — Normal Mode
-
-| Key | Action | Context |
-|---|---|---|
-| `Up` | Navigate up | Any card |
-| `Down` / `j` | Navigate down | Any card |
-| `Left` / `h` | Navigate left (grid: move left; kanban: previous column) | Linked cards |
-| `Right` / `l` | Navigate right (grid: move right; kanban: next column) | Linked cards |
-| `c` | Create worktree | Main card only |
-| `f` | Fetch PR/MR | Main card only |
-| `n` | New sandbox / create sandbox | Main card only |
-| `s` | Start stopped sandbox | Main card, sandbox stopped |
-| `S` | Stop running sandbox | Main card, sandbox running |
-| `d` | Delete worktree or sandbox | Linked card: delete worktree; main card in sandbox: remove sandbox |
-| `e` | Open in editor | Any card |
-| `Enter` | Activate existing terminal or open new | Any card |
-| `p` | Pull from remote | Any card |
-| `r` | Refresh selected card | Any card |
-| `g` | Toggle kanban ↔ grid view | Global |
-| `m` | Toggle mouse mode | Global |
-| `q` / `Ctrl+C` | Quit | Global |
-| `Tab` / `Shift+Tab` | Switch panel focus | Global |
-
-### Input Modes
-
-| Mode | Enter to confirm | Esc to cancel |
-|---|---|---|
-| Repository path | Validates path, proceeds to mode selection | Returns to normal |
-| Mode selection | `s` = sandbox, `r` = regular | Returns to normal |
-| Agent and optional kits | Loads kits only for Yes, then confirms creation | Returns to normal |
-| Branch name | Creates worktree | Returns to normal |
-| PR reference | Fetches PR | Returns to normal |
-
-### Confirmation Popups
-
-All confirmation dialogs are modal overlays (dimmed background, centered popup).
-Navigation is blocked while active.
-
-| Popup | Confirm | Cancel |
-|---|---|---|
-| Delete worktree | `y` then `Enter` (two-step) | `Esc` or any non-y key |
-| Create sandbox | `y` | `Esc` or any non-y key |
-| Remove sandbox | `y` | `Esc` or any non-y key |
-| Remove repo/mode | `y` | Any non-y key |
-
----
-
-## Configuration
-
-### Config File
-
-`~/.config/biomelab/repos.json`
-
-```json
-{
-  "repos": [
-    {
-      "path": "/absolute/path/to/repo",
-      "name": "owner/repo",
-      "modes": [
-        { "type": "regular" },
-        { "type": "sandbox", "sandbox_name": "owner-repo-claude", "agent": "claude" },
-        { "type": "sandbox", "sandbox_name": "owner-repo-gemini", "agent": "gemini" }
-      ]
-    }
-  ]
-}
-```
-
-Legacy config format (flat fields) is auto-migrated on load.
-
-### CLI Flags
-
-| Flag | Short | Description | Default |
-|---|---|---|---|
-| `--version` | `-v` | Print version and exit | — |
-| `--refresh` | `-r` | Network refresh interval (e.g. `30s`, `1m`, `500ms`) | `30s` |
-
-### Environment Variables
-
-| Variable | Description | Default |
-|---|---|---|
-| `BIOME_REFRESH` | Network refresh interval (overridden by `--refresh`) | `30s` |
-| `BIOME_EDITOR` | Editor command for `e` key | `code` |
-
-### External Dependencies
-
-| Tool | Required for | Install |
-|---|---|---|
-| `gh` | GitHub PR features | `brew install gh` then `gh auth login` |
-| `glab` | GitLab MR features | `brew install glab` then `glab auth login` |
-| `sbx` | Sandbox mode | Docker Sandboxes CLI |
-
----
+When proposing product changes, distinguish existing behavior from the proposed outcome. Keep the affected user guide, website copy/demo, and this decision log consistent. Detailed implementation belongs in [ARCHITECTURE.md](../../../ARCHITECTURE.md).
 
 ## Decision Log
 
@@ -486,31 +43,22 @@ respect the intent behind existing features.
 entry.
 
 **Why:** Agents that can install packages, run containers, and modify files
-without touching the host are safer and more reproducible. Sandbox isolation
-prevents agents from accidentally breaking the developer's environment. Regular
+in an isolated execution environment are easier to manage. Workspace files
+remain shared with the host and agent edits affect those files. Regular
 mode exists as a fallback for repos that don't need isolation or where Docker
 isn't available.
 
-### DL-002: Mouse mode off by default
+### DL-002: Mouse interaction is always available
 
-**Decision:** Mouse support is disabled by default; users opt in with `m`.
+**Decision:** The desktop GUI supports card selection, scrolling, and repository drag handles without a mode toggle. `m` opens task notes.
 
-**Why:** Terminal users frequently need to select and copy text (branch names,
-error messages, paths). Enabling mouse by default would capture those
-interactions and break copy/paste workflows. The toggle lets power users who
-prefer clicking opt in without penalizing keyboard-first users.
+**Why:** Native desktop interaction is expected. The former terminal mouse-capture tradeoff no longer applies.
 
-### DL-003: Two-step worktree deletion
+### DL-003: Confirm destructive operations in a dialog
 
-**Decision:** Deleting a linked worktree requires pressing `y` to arm and then
-`Enter` to confirm — two distinct keypresses.
+**Decision:** Worktree deletion opens a Yes/No dialog. Enter confirms and Escape cancels; there is no separate arming key. Sandbox removal has its own Remove/Cancel dialog showing the command.
 
-**Why:** Worktree deletion removes the directory, the branch, and prunes
-metadata. A single-key confirmation is too easy to trigger accidentally,
-especially when navigating quickly. The two-step pattern creates a deliberate
-pause. Sandbox removal, which is even more destructive (removes all containers
-and worktrees), uses a single `y` confirmation because the popup text already
-displays the full command being executed, making the consequences explicit.
+**Why:** The user should see which resource will be removed before executing a destructive action.
 
 ### DL-004: IDEs not killed on worktree deletion
 
@@ -655,17 +203,7 @@ help bar (global/card-general actions).
 would be irrelevant to the current context. Splitting by location means the
 user sees only the actions available right now. Main-card actions (create,
 fetch PR, sandbox lifecycle) are distinct from linked-card actions (delete,
-open) and from global actions (navigate, pull, mouse, quit).
-
-### DL-018: Manual panel borders instead of lipgloss
-
-**Decision:** Panel borders are drawn character-by-character in code rather than
-using the lipgloss `Border()` API.
-
-**Why (product impact):** lipgloss border rendering produced panels of mismatched
-heights when content included ANSI-styled text, creating a visually broken
-layout. Manual borders guarantee pixel-perfect alignment regardless of content,
-which is essential for a dashboard that is always visible.
+open) and from general actions (navigate, pull, notes, activity).
 
 ### DL-019: Removing last sandbox mode converts to regular
 
@@ -679,8 +217,10 @@ in biomelab, just not as a sandbox").
 
 ### DL-020: Supported hosting providers
 
-**Decision:** GitHub and GitLab (including self-hosted) are the only supported
-hosting providers. Unknown providers show "not yet supported" rather than
+**Decision:** GitHub and GitLab support status and request creation. GitLab hosts are
+recognized by `gitlab.com` or a hostname containing `gitlab.`; arbitrary
+self-hosted domains are not automatically recognized. Fetch-to-worktree currently
+supports GitHub PRs only. Unknown providers show "not yet supported" rather than
 failing silently.
 
 **Why:** GitHub and GitLab cover the vast majority of use cases. Each provider
@@ -691,14 +231,14 @@ leaves the door open for future providers (Bitbucket, Gitea, etc.).
 ### DL-021: Kanban board is the default view
 
 **Decision:** When a repo/mode is first displayed, the linked worktrees are
-shown in the kanban board (four PR lifecycle columns) rather than the
+shown in the kanban board (five PR lifecycle columns) rather than the
 responsive card grid. Press `g` to toggle between views. The preference is
-stored per repo/mode in `RepoState.ViewMode`.
+held in memory in `RepoState.ViewMode`; it is not persisted across launches.
 
 **Why:** The primary use-case for biomelab is running multiple AI agents on
 multiple branches simultaneously. The most important question is "what state is
 each branch in?" — not "what are all my branches?" The kanban board answers
-that question at a glance: Created → PR Sent → PR In Review → PR Merged. The
+that question at a glance: Closed Unmerged, Created, PR Sent, PR In Review, and PR Merged. The
 card grid remains available for users who prefer a flat, alphabetical view or
 who have many branches at the same stage.
 
