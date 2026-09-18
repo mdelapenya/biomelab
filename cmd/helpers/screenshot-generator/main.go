@@ -38,7 +38,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if flags.NArg() != 0 {
-		fmt.Fprintln(stderr, "screenshot-generator: unexpected positional arguments; use -help for usage")
+		// The exit status reports failure even if stderr is unavailable.
+		_, _ = fmt.Fprintln(stderr, "screenshot-generator: unexpected positional arguments; use -help for usage")
 		return 2
 	}
 	// The offscreen driver expects theme updates from a worker goroutine,
@@ -46,7 +47,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	result := make(chan error, 1)
 	go func() { result <- generate(*outputDir, stdout) }()
 	if err := <-result; err != nil {
-		fmt.Fprintln(stderr, "screenshot-generator:", err)
+		// Preserve the generation failure status if the diagnostic cannot be written.
+		_, _ = fmt.Fprintln(stderr, "screenshot-generator:", err)
 		return 1
 	}
 	return 0
@@ -102,7 +104,9 @@ func generate(outputDir string, stdout io.Writer) error {
 		if err := os.WriteFile(path, encoded.Bytes(), 0o644); err != nil {
 			return fmt.Errorf("write %s: %w", path, err)
 		}
-		fmt.Fprintln(stdout, path)
+		if _, err := fmt.Fprintln(stdout, path); err != nil {
+			return fmt.Errorf("report generated image %s: %w", path, err)
+		}
 	}
 	return nil
 }

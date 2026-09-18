@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -168,4 +170,34 @@ func brightness(img image.Image) uint64 {
 		}
 	}
 	return total
+}
+
+// A closed output stream must not turn a failed invocation into success.
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) {
+	return 0, errors.New("output stream closed")
+}
+
+func TestRunReportsStdoutFailure(t *testing.T) {
+	var stderr bytes.Buffer
+	if code := run([]string{"-output-dir", t.TempDir()}, failingWriter{}, &stderr); code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "report generated image") || !strings.Contains(stderr.String(), "output stream closed") {
+		t.Fatalf("missing stdout failure diagnostic: %q", stderr.String())
+	}
+}
+
+func TestRunPreservesFailureStatusWhenStderrFails(t *testing.T) {
+	if code := run([]string{"unexpected"}, io.Discard, failingWriter{}); code != 2 {
+		t.Fatalf("invalid arguments exit code = %d, want 2", code)
+	}
+	blocked := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(blocked, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code := run([]string{"-output-dir", blocked}, io.Discard, failingWriter{}); code != 1 {
+		t.Fatalf("generation failure exit code = %d, want 1", code)
+	}
 }
