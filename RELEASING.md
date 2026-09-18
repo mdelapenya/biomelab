@@ -35,10 +35,25 @@ Before tagging a release:
 - Check prerequisites against `go.mod` and `Taskfile.yml`; distinguish packaged installation from source builds.
 - Walk through the [dashboard](docs/dashboard.md), sandbox setup, notes, and activity guides in the GUI. Compare shortcuts with `internal/gui/shortcuts.go` and dialog controls.
 - Revisit [known limitations](docs/known-limitations.md) and remove resolved items only after verification.
-- Run `python3 scripts/check-doc-links.py` and `node --check website/js/main.js`. CI runs these checks too; they validate local targets, anchors, assets, and JavaScript syntax, not external service availability.
+- Run the Lychee command below and `node --check website/js/main.js`. CI uses [lychee-action](https://github.com/lycheeverse/lychee-action) pinned to a full commit SHA, with a fixed Lychee version. These checks validate local links/anchors and JavaScript syntax, not external service availability.
 - Serve `website/` locally (`python3 -m http.server 8765 --directory website`) and check desktop/mobile layouts, both themes, installation tabs, and playground note Save/Cancel/Delete, PR flow, and sandbox setup. Keep simulated actions labeled.
 - Update GUI screenshots when the layout changes. Use sample data and label it; do not expose personal repositories or activity logs.
 - Check external installation/documentation links before publishing. Website deployment runs on pushes to `main` affecting `website/**`; docs links on the website target `main`, so publish the linked guides alongside the website change.
+
+### Check documentation links locally
+
+Install [Lychee](https://lychee.cli.rs/) v0.24.2 to match CI, then run from the repository root:
+
+```bash
+lychee --offline --include-fragments --no-progress \
+  --root-dir "$PWD/website" \
+  --remap "^https://github\.com/mdelapenya/biomelab/blob/main/ file://$PWD/" \
+  '*.md' 'docs/**/*.md' '.claude/**/*.md' 'website/**/*.html'
+```
+
+The remapping checks this repository's GitHub `blob/main` links against the
+local checkout, so new guides can pass before merging. Offline mode skips
+external websites; fragment checking validates local heading and HTML anchors.
 
 ### Refresh dashboard images
 

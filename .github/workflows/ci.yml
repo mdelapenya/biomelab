@@ -15,8 +15,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Check local documentation links and website assets
-        run: python3 scripts/check-doc-links.py
+      - name: Check documentation and website links
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          lycheeVersion: v0.24.2
+          fail: true
+          failIfEmpty: true
+          # Validate local targets/anchors, including links to docs not yet on main.
+          args: >-
+            --offline --include-fragments --no-progress
+            --root-dir '${{ github.workspace }}/website'
+            --remap '^https://github\.com/mdelapenya/biomelab/blob/main/ file://${{ github.workspace }}/'
+            '*.md' 'docs/**/*.md' '.claude/**/*.md' 'website/**/*.html'
       - name: Check website JavaScript syntax
         run: node --check website/js/main.js
 
