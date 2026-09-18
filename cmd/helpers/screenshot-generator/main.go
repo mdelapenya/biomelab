@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"image/png"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -22,23 +24,35 @@ import (
 // This helper renders documentation images from the GUI widgets using sample data.
 // Fyne's test app provides an offscreen renderer; no desktop window is opened.
 func main() {
-	outputDir := flag.String("output-dir", "website/img", "Directory for dashboard-dark.png and dashboard-light.png (existing files are overwritten)")
-	flag.Parse()
-	if flag.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "screenshot-generator: unexpected positional arguments; use -help for usage")
-		os.Exit(2)
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+func run(args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("screenshot-generator", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	outputDir := flags.String("output-dir", "website/img", "Directory for dashboard-dark.png and dashboard-light.png (existing files are overwritten)")
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(stderr, "screenshot-generator: unexpected positional arguments; use -help for usage")
+		return 2
 	}
 	// The offscreen driver expects theme updates from a worker goroutine,
 	// just as when it is used by Go's test runner.
 	result := make(chan error, 1)
-	go func() { result <- generate(*outputDir) }()
+	go func() { result <- generate(*outputDir, stdout) }()
 	if err := <-result; err != nil {
-		fmt.Fprintln(os.Stderr, "screenshot-generator:", err)
-		os.Exit(1)
+		fmt.Fprintln(stderr, "screenshot-generator:", err)
+		return 1
 	}
+	return 0
 }
 
-func generate(outputDir string) error {
+func generate(outputDir string, stdout io.Writer) error {
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return fmt.Errorf("create output directory: %w", err)
 	}
@@ -88,7 +102,7 @@ func generate(outputDir string) error {
 		if err := os.WriteFile(path, encoded.Bytes(), 0o644); err != nil {
 			return fmt.Errorf("write %s: %w", path, err)
 		}
-		fmt.Println(path)
+		fmt.Fprintln(stdout, path)
 	}
 	return nil
 }

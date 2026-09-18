@@ -82,8 +82,17 @@ go build -o bin/screenshot-generator ./cmd/helpers/screenshot-generator
 ```
 
 The output directory is relative to the working directory unless an absolute
-path is provided. No build tag is needed. CI's ordinary Go checks compile the
-helper, but images are generated only when the helper is explicitly run.
+path is provided. No build tag is needed. CI's `task test-race` runs the helper's
+normal Go tests too: they render both themes, decode the PNGs, check dimensions and nonblank output, and exercise CLI
+and filesystem error handling. All test images go into temporary directories;
+only an explicit helper invocation writes the website assets.
+
+To run just the helper tests locally:
+
+```bash
+go test -race ./cmd/helpers/screenshot-generator
+```
+
 These images show application widgets, not a capture of a user's desktop;
 preserve that distinction in their captions. Inspect both images before
 committing them.
