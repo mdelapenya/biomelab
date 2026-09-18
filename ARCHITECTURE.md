@@ -12,6 +12,9 @@ cmd/biomelab/
   common.go            Shared: version var, resolveRefreshInterval
   icon.png             App icon (embedded via //go:embed)
 
+cmd/helpers/screenshot-generator/
+  main.go              Offscreen documentation image generator (see RELEASING.md)
+
 internal/
   gui/
     app.go                  FyneApp: window, HSplit layout, multi-repo management, mode switching

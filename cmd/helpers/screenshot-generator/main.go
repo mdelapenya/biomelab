@@ -1,11 +1,12 @@
-//go:build docs_screenshots
-
-package gui
+package main
 
 import (
+	"bytes"
+	"flag"
+	"fmt"
 	"image/png"
 	"os"
-	"testing"
+	"path/filepath"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -14,17 +15,38 @@ import (
 	"github.com/mdelapenya/biomelab/internal/agent"
 	"github.com/mdelapenya/biomelab/internal/config"
 	"github.com/mdelapenya/biomelab/internal/git"
+	"github.com/mdelapenya/biomelab/internal/gui"
 	"github.com/mdelapenya/biomelab/internal/provider"
 )
 
-// TestDocsCapture renders documentation assets from real GUI widgets and sample data.
-// Run explicitly with -tags docs_screenshots; normal test runs do not write assets.
-func TestDocsCapture(t *testing.T) {
+// This helper renders documentation images from the GUI widgets using sample data.
+// Fyne's test app provides an offscreen renderer; no desktop window is opened.
+func main() {
+	outputDir := flag.String("output-dir", "website/img", "Directory for dashboard-dark.png and dashboard-light.png (existing files are overwritten)")
+	flag.Parse()
+	if flag.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "screenshot-generator: unexpected positional arguments; use -help for usage")
+		os.Exit(2)
+	}
+	// The offscreen driver expects theme updates from a worker goroutine,
+	// just as when it is used by Go's test runner.
+	result := make(chan error, 1)
+	go func() { result <- generate(*outputDir) }()
+	if err := <-result; err != nil {
+		fmt.Fprintln(os.Stderr, "screenshot-generator:", err)
+		os.Exit(1)
+	}
+}
+
+func generate(outputDir string) error {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return fmt.Errorf("create output directory: %w", err)
+	}
 	app := test.NewApp()
 	defer app.Quit()
 	root := "/projects/biomelab"
 	mode := config.ModeEntry{Type: "regular"}
-	state := &RepoState{
+	state := &gui.RepoState{
 		ActiveMode: &mode, Provider: provider.ProviderGitHub,
 		Worktrees: []git.Worktree{{Path: root, Branch: "main", IsMain: true, Sync: git.SyncUpToDate}},
 		PRs:       provider.PRResult{}, Agents: agent.DetectionResult{},
@@ -46,27 +68,27 @@ func TestDocsCapture(t *testing.T) {
 			state.Agents[path] = []agent.Info{{Kind: agent.Claude, PID: "1234", State: "S", Started: "10:20"}}
 		}
 	}
-	for _, variant := range []ThemeVariant{VariantDark, VariantLight} {
-		app.Settings().SetTheme(newBiomeTheme(variant))
-		dashboard := NewDashboard(state)
-		repos := NewRepoPanel([]*RepoGroup{{Path: root, Name: "example/biomelab", Modes: []config.ModeEntry{mode}, LinkedWorktreeCount: 5}}, nil)
+	for _, variant := range []gui.ThemeVariant{gui.VariantDark, gui.VariantLight} {
+		app.Settings().SetTheme(gui.NewTheme(variant))
+		dashboard := gui.NewDashboard(state)
+		repos := gui.NewRepoPanel([]*gui.RepoGroup{{Path: root, Name: "example/biomelab", Modes: []config.ModeEntry{mode}, LinkedWorktreeCount: 5}}, nil)
 		split := container.NewHSplit(repos.Content(), dashboard.Content())
 		split.Offset = .20
 		w := app.NewWindow("BiomeLab")
 		w.SetContent(split)
 		w.Resize(fyne.NewSize(1440, 720))
 		w.Show()
-		path := "../../website/img/dashboard-" + string(variant) + ".png"
-		f, err := os.Create(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := png.Encode(f, w.Canvas().Capture()); err != nil {
-			t.Fatal(err)
-		}
-		if err := f.Close(); err != nil {
-			t.Fatal(err)
-		}
+		var encoded bytes.Buffer
+		err := png.Encode(&encoded, w.Canvas().Capture())
 		w.Close()
+		if err != nil {
+			return fmt.Errorf("encode %s dashboard: %w", variant, err)
+		}
+		path := filepath.Join(outputDir, "dashboard-"+string(variant)+".png")
+		if err := os.WriteFile(path, encoded.Bytes(), 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", path, err)
+		}
+		fmt.Println(path)
 	}
+	return nil
 }

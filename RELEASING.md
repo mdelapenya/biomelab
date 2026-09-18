@@ -57,13 +57,36 @@ external websites; fragment checking validates local heading and HTML anchors.
 
 ### Refresh dashboard images
 
-Run `go test -tags docs_screenshots ./internal/gui -run '^TestDocsCapture$' -count=1`
-with the source-build prerequisites. This explicit asset-generation test renders
-`NewRepoPanel` and `NewDashboard` in Fyne's test canvas using fictional paths and
-PRs, writing `website/img/dashboard-dark.png` and `dashboard-light.png`. Normal
-test runs exclude it. These images show application widgets, not a capture of a
-user's desktop; preserve that distinction in their captions. Inspect both images
-before committing them.
+The helper at `cmd/helpers/screenshot-generator` renders `NewRepoPanel` and
+`NewDashboard` in Fyne's offscreen test canvas with fictional paths and PRs.
+It opens no desktop window and does not load your repositories or config.
+
+From the repository root, with the [source-build prerequisites](docs/installation.md#from-source):
+
+```bash
+go run ./cmd/helpers/screenshot-generator
+```
+
+This creates or overwrites `website/img/dashboard-dark.png` and
+`website/img/dashboard-light.png`. To inspect new images before replacing the
+website assets, use a separate directory:
+
+```bash
+go run ./cmd/helpers/screenshot-generator -output-dir /tmp/biomelab-screenshots
+```
+
+It can also be built as a standalone binary:
+
+```bash
+go build -o bin/screenshot-generator ./cmd/helpers/screenshot-generator
+```
+
+The output directory is relative to the working directory unless an absolute
+path is provided. No build tag is needed. CI's ordinary Go checks compile the
+helper, but images are generated only when the helper is explicitly run.
+These images show application widgets, not a capture of a user's desktop;
+preserve that distinction in their captions. Inspect both images before
+committing them.
 
 ## Stable release
 

@@ -2776,9 +2776,6 @@ body.rgt-modal-open { overflow: hidden }
 }
 .note-modal-window .rgt-modal-foot { flex-wrap: wrap; }
 .note-modal-window .rgt-modal-hint { flex: 1 1 240px; }
-.app-screenshot { margin: 2rem 0; }
-.app-screenshot img { display: block; width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--border); }
-.app-screenshot figcaption { margin-top: .75rem; color: var(--text-muted); font-size: .9rem; }
 
 .note-modal-window label.note-pane-head { display: block; border: 0; background: transparent; padding-left: 0; }
 .note-modal-window .rgt-modal-foot .rgt-modal-hint { flex-basis: 100%; }

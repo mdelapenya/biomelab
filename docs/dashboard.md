@@ -20,6 +20,14 @@ Arrow keys navigate cards. In the grid, left/right move one card and up/down mov
 
 Local state refreshes every five seconds. Git fetch, PR/MR, review, CI, and sync data refresh every 30 seconds by default; `r` refreshes the selected card. Header timestamps show when each refresh last ran.
 
+## Dashboard images
+
+These images are rendered from the application widgets with sample data. Open
+an image to inspect the full-size layout:
+
+- [Dark theme](../website/img/dashboard-dark.png)
+- [Light theme](../website/img/dashboard-light.png)
+
 ## Detected activity
 
 | Category | Recognized applications |
