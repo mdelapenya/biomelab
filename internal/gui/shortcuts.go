@@ -101,6 +101,8 @@ func (a *App) handleKeyName(key fyne.KeyName) {
 		a.handleRefresh()
 	case fyne.KeyC:
 		a.handleCreate()
+	case fyne.KeyI:
+		a.handleCreateFromIssue()
 	case fyne.KeyD:
 		a.handleDeleteOrRemoveSandbox()
 	case fyne.KeyF:

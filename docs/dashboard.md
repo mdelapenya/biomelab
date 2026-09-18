@@ -48,6 +48,12 @@ Detection matches local processes to worktree paths. Terminal detection follows 
 
 `p` fetches all configured remotes and merges from origin. `f` on the main card checks out a **GitHub PR** into a new worktree, accepting `123` or `owner/repo#123`; GitLab MR checkout is not implemented. GitLab status and creation use `glab`.
 
+## Create a worktree from a GitHub issue
+
+Select the main card and press `i`. Enter a positive issue number for the selected repository, or `owner/repo#number`. BiomeLab looks up the issue with the authenticated `gh` CLI; the lookup can be cancelled. The preview shows the title, state, body, canonical link, source and destination repositories, the main checkout's current local HEAD, and an editable branch suggested as `issue-<number>-<title-slug>`.
+
+Creation uses the main checkout's current local HEAD. It does not pull, fetch an issue ref, launch a terminal or agent, create a sandbox, push, or open a PR. Branch or path collisions fail without replacing an existing worktree. The new worktree receives the issue requirements and a progress handoff; see [notes and agent activity](notes-and-activity.md#issue-context-and-agent-handoff). Issue URLs, GitLab issues, and base-branch selection are not currently supported.
+
 ## Keyboard shortcuts
 
 ### Left panel (repo tree)
@@ -76,6 +82,7 @@ Detection matches local processes to worktree paths. Terminal detection follows 
 | `l` | Open regent activity log | Any card |
 | `c` | Create worktree | Main card |
 | `f` | Fetch GitHub PR | Main card |
+| `i` | Create worktree from GitHub issue | Main card |
 | `d` | Delete worktree / remove sandbox | Linked: delete; Main+sandbox: remove |
 | `p` | Pull from remote | Any card |
 | `Shift+P` | Send PR (push + create) | Linked cards |

@@ -19,9 +19,9 @@ See [installation](docs/installation.md) for packaged downloads, nightly builds,
 - **Multiple repositories:** switch between host and per-agent sandbox modes; drag repository handles to save your preferred order.
 - **Kanban and grid:** follow five PR/MR lifecycle stages, or press `g` for detailed worktree cards. See dirty state, sync status, reviews, and CI results.
 - **Activity detection:** find Claude, Kiro, Copilot, Codex, OpenCode, and Gemini processes, plus supported IDEs and host terminals.
-- **Worktree operations:** create/delete worktrees, fetch GitHub PRs, pull changes, and push/create GitHub PRs or GitLab MRs.
+- **Worktree operations:** create/delete worktrees, create a worktree from a GitHub issue, fetch GitHub PRs, pull changes, and push/create GitHub PRs or GitLab MRs.
 - **Docker Sandboxes:** create, register, start, stop, and remove a sandbox per agent per repository; optionally select compatible kits during creation.
-- **Task notes:** edit Markdown and a PR title beside the code, then choose to use them when creating a PR/MR.
+- **Task notes and handoff:** issue-created worktrees retain the original requirements and an agent progress handoff beside editable Markdown and PR-title drafts; choose the drafts when creating a PR/MR.
 - **Agent activity:** view recorded re_gent sessions and export JSON when the optional `rgt` integration is available.
 - **Desktop controls:** mouse and keyboard navigation, dark/light themes, zoom, terminal activation, editor launch, and a tray with dependency diagnostics.
 - **Automatic refresh:** local state every five seconds; network state every 30 seconds by default, configurable by flag or environment.
@@ -37,9 +37,9 @@ Docker Sandboxes are recommended for agent execution. Host mode is also availabl
 | Guide | Covers |
 |---|---|
 | [Installation](docs/installation.md) | Releases, prerequisites, source builds, nightlies |
-| [Dashboard and worktrees](docs/dashboard.md) | Views, shortcuts, navigation, PR/MR workflow, tray |
+| [Dashboard and worktrees](docs/dashboard.md) | Views, shortcuts, navigation, issue and PR/MR workflow, tray |
 | [Sandbox workflows](docs/sandboxes.md) | Setup, kits, shared files, lifecycle |
-| [Notes and agent activity](docs/notes-and-activity.md) | PR drafts, re_gent setup, logs and export |
+| [Notes and agent activity](docs/notes-and-activity.md) | Issue context and progress, PR drafts, re_gent setup, logs and export |
 | [Configuration and troubleshooting](docs/configuration.md) | OS-specific settings, CLI flags, environment, diagnostics |
 | [Known limitations](docs/known-limitations.md) | Current implementation gaps and workarounds |
 

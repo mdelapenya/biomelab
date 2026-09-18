@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	gogit "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/format/gitignore"
 	githttp "github.com/go-git/go-git/v6/plumbing/transport/http"
 	xworktree "github.com/go-git/go-git/v6/x/plumbing/worktree"
 )
@@ -430,7 +432,7 @@ func (r *Repository) mainWorktree() (*Worktree, error) {
 	if err != nil {
 		return nil, err
 	}
-	wt.IsDirty = isDirtyIgnoringBiomelab(status)
+	wt.IsDirty = isDirtyIgnoringBiomelabAndBootstrap(status, wt.Path)
 	wt.Sync = r.syncStatus(wt.Branch)
 
 	return wt, nil
@@ -453,6 +455,90 @@ func isDirtyIgnoringBiomelab(status gogit.Status) bool {
 		return true
 	}
 	return false
+}
+
+var agentBootstrapExcludeLines = map[string]string{
+	"AGENTS.md":                       "/AGENTS.md",
+	"AGENTS.override.md":              "/AGENTS.override.md",
+	"CLAUDE.md":                       "/CLAUDE.md",
+	"GEMINI.md":                       "/GEMINI.md",
+	".kiro/steering/biomelab-task.md": "/.kiro/steering/biomelab-task.md",
+}
+
+// isDirtyIgnoringBiomelabAndBootstrap accounts for the agent instruction
+// files Biomelab creates and records in the repository's common info/exclude.
+// go-git does not find that exclude file from a linked worktree because its
+// .git entry is a file. Only an untracked bootstrap file with its exact,
+// root-anchored exclusion is hidden; tracked changes and other files remain
+// visible. If the exclusion state cannot be read, the conservative result is
+// dirty.
+func isDirtyIgnoringBiomelabAndBootstrap(status gogit.Status, worktreePath string) bool {
+	if !isDirtyIgnoringBiomelab(status) {
+		return false
+	}
+
+	var candidates []string
+	for path, fileStatus := range status {
+		if fileStatus.Staging != gogit.Untracked || fileStatus.Worktree != gogit.Untracked {
+			continue
+		}
+		if _, ok := agentBootstrapExcludeLines[path]; ok {
+			candidates = append(candidates, path)
+		}
+	}
+	if len(candidates) == 0 {
+		return true
+	}
+
+	excludePath, err := excludeFilePath(worktreePath)
+	if err != nil {
+		return true
+	}
+	excludes, err := os.ReadFile(excludePath)
+	if err != nil {
+		return true
+	}
+	patterns := excludePatterns(excludes)
+	repositoryPatterns, err := gitignore.ReadPatterns(osfs.New(worktreePath), nil)
+	if err != nil {
+		return true
+	}
+	// Git gives repository .gitignore files higher priority than
+	// info/exclude. Preserve that order so a later negation keeps the file
+	// visible even when Biomelab's exact registration line is present.
+	patterns = append(patterns, repositoryPatterns...)
+	matcher := gitignore.NewMatcher(patterns)
+
+	for path, fileStatus := range status {
+		if fileStatus.Staging == gogit.Unmodified && fileStatus.Worktree == gogit.Unmodified {
+			continue
+		}
+		if path == ".biomelab" || strings.HasPrefix(path, ".biomelab/") {
+			continue
+		}
+		excludeLine, isBootstrap := agentBootstrapExcludeLines[path]
+		if isBootstrap &&
+			fileStatus.Staging == gogit.Untracked && fileStatus.Worktree == gogit.Untracked &&
+			hasExcludeLine(excludes, excludeLine) &&
+			matcher.Match(strings.Split(path, "/"), false) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func excludePatterns(content []byte) []gitignore.Pattern {
+	var patterns []gitignore.Pattern
+	scanner := bufio.NewScanner(strings.NewReader(string(content)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "#") || len(strings.TrimSpace(line)) == 0 {
+			continue
+		}
+		patterns = append(patterns, gitignore.ParsePattern(line, nil))
+	}
+	return patterns
 }
 
 // referenceRemotes are the remote names checked for sync status.
@@ -564,7 +650,7 @@ func (r *Repository) linkedWorktree(name string) (*Worktree, error) {
 	if err != nil {
 		return nil, err
 	}
-	wt.IsDirty = isDirtyIgnoringBiomelab(status)
+	wt.IsDirty = isDirtyIgnoringBiomelabAndBootstrap(status, wt.Path)
 	wt.Sync = r.syncStatus(wt.Branch)
 
 	return wt, nil
@@ -617,8 +703,32 @@ func sanitizeWorktreeName(name string) string {
 func (r *Repository) CreateWorktree(branchName string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err := r.reopen(); err != nil {
+		return fmt.Errorf("refresh repository: %w", err)
+	}
 	safe := sanitizeWorktreeName(branchName)
 	wtPath := filepath.Join(r.worktreesDir(), safe)
+	branchRef := plumbing.NewBranchReferenceName(safe)
+	if _, err := r.repo.Reference(branchRef, false); err == nil {
+		return fmt.Errorf("branch %q already exists", safe)
+	} else if !errors.Is(err, plumbing.ErrReferenceNotFound) {
+		return fmt.Errorf("check branch %q: %w", safe, err)
+	}
+	if _, err := os.Lstat(wtPath); err == nil {
+		return fmt.Errorf("worktree path %q already exists", wtPath)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("check worktree path %q: %w", wtPath, err)
+	}
+	metadataRoot, err := worktreeMetadataRoot(r.repoRoot)
+	if err != nil {
+		return fmt.Errorf("resolve worktree metadata directory: %w", err)
+	}
+	metadataPath := filepath.Join(metadataRoot, safe)
+	if _, err := os.Lstat(metadataPath); err == nil {
+		return fmt.Errorf("worktree metadata %q already exists", metadataPath)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("check worktree metadata %q: %w", metadataPath, err)
+	}
 	wtFS := osfs.New(wtPath)
 	if err := r.wt.Add(wtFS, safe); err != nil {
 		return err
@@ -628,6 +738,47 @@ func (r *Repository) CreateWorktree(branchName string) error {
 	_ = r.ensureBiomelabDir(wtPath)
 	r.generation.Add(1)
 	return nil
+}
+
+// worktreeMetadataRoot resolves the common Git directory before returning its
+// worktrees directory. Repositories created with --separate-git-dir, submodule
+// worktrees, and linked worktrees store a gitdir pointer in .git rather than a
+// directory, so joining paths beneath <root>/.git would fail with ENOTDIR.
+func worktreeMetadataRoot(repoRoot string) (string, error) {
+	gitPath := filepath.Join(repoRoot, ".git")
+	info, err := os.Stat(gitPath)
+	if err != nil {
+		return "", fmt.Errorf("stat .git: %w", err)
+	}
+	if info.IsDir() {
+		return filepath.Join(gitPath, "worktrees"), nil
+	}
+
+	data, err := os.ReadFile(gitPath)
+	if err != nil {
+		return "", fmt.Errorf("read .git: %w", err)
+	}
+	const prefix = "gitdir:"
+	line := strings.TrimSpace(string(data))
+	if !strings.HasPrefix(line, prefix) {
+		return "", fmt.Errorf(".git file missing %q prefix", prefix)
+	}
+	gitDir := strings.TrimSpace(strings.TrimPrefix(line, prefix))
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(repoRoot, gitDir)
+	}
+	gitDir = filepath.Clean(gitDir)
+	commonDir := gitDir
+	if raw, readErr := os.ReadFile(filepath.Join(gitDir, "commondir")); readErr == nil {
+		commonDir = strings.TrimSpace(string(raw))
+		if !filepath.IsAbs(commonDir) {
+			commonDir = filepath.Join(gitDir, commonDir)
+		}
+		commonDir = filepath.Clean(commonDir)
+	} else if !errors.Is(readErr, os.ErrNotExist) {
+		return "", fmt.Errorf("read commondir: %w", readErr)
+	}
+	return filepath.Join(commonDir, "worktrees"), nil
 }
 
 // Pull fetches from all remotes and merges into the main worktree's current branch.

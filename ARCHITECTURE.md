@@ -29,6 +29,8 @@ internal/
     keycapture.go           desktop.Canvas.SetOnKeyDown setup, zoom shortcuts
     dialogs.go              Confirmation dialogs (delete, sandbox create/remove, send PR flow)
     input_dialogs.go        Input dialogs (branch, PR ref, repo path, agent select)
+    issue_dialog.go         Issue input, cancellable lookup, preview, and create dialogs
+    issue_worktree.go       Issue workflow orchestration and originating-repo ownership
     sandbox_setup.go        Project-panel sandbox creation, optional kit discovery, registration
     refresh.go              RefreshManager: goroutine tickers for local (5s) and network refresh
     state.go                RepoState: domain + UI state, worktree sorting
@@ -42,6 +44,7 @@ internal/
   ops/
     refresh.go         QuickRefresh, LocalRefresh, NetworkRefresh, CardRefresh
     worktree.go        CreateWorktree, RemoveWorktree, FetchPR, Pull, SendPR, OpenEditor, OpenTerminal
+    issue.go           Create an issue worktree and seed issue context
     sandbox_ops.go     CreateSandbox, StartSandbox, StopSandbox, RemoveSandbox
     sandbox_setup.go   EnsureSandbox: discover/reuse or create, kits only at initial creation
 
@@ -56,8 +59,11 @@ internal/
   sandbox/sandbox.go   Docker Sandbox (sbx) CLI wrapper
   terminal/            Terminal detection, launch, activation (platform-specific)
   github/pr.go         GitHub-specific PR helpers (ParsePRRef, ValidatePR)
+  github/issue.go      GitHub issue reference parsing and authenticated gh lookup
   kits/kits.go         Compatible catalog discovery and OCI kit references
-  notes/notes.go       Per-worktree Markdown notes (.biomelab/note.md, pr-title.md)
+  notes/notes.go       Per-worktree Markdown notes and PR drafts
+  notes/context.go     Issue snapshot and progress handoff artifacts
+  notes/bootstrap.go   Agent instruction handoff for issue worktrees
   regent/              re_gent (rgt) integration: detection, init, hook install, log fetch
   sysdeps/             External CLI dependency checks (gh/glab/sbx/rgt) + cache
 ```
@@ -177,13 +183,15 @@ rolling tag, not an immutable installed-version identifier.
 
 ## Task notes
 
-Each worktree has two optional artifact files that biomelab reads during the
-Send PR flow. The package is `internal/notes/`.
+Each worktree may have issue context, progress, and PR draft artifacts under
+`.biomelab/`. The package is `internal/notes/`.
 
 | Path                                | Purpose                            |
 |-------------------------------------|------------------------------------|
-| `<worktree>/.biomelab/note.md`      | PR description — free-form Markdown |
-| `<worktree>/.biomelab/pr-title.md`  | PR title — single line              |
+| `<worktree>/.biomelab/issue.md`     | Original issue requirements snapshot |
+| `<worktree>/.biomelab/progress.md`  | Editable progress and handoff record |
+| `<worktree>/.biomelab/note.md`      | PR description draft — free-form Markdown |
+| `<worktree>/.biomelab/pr-title.md`  | PR title draft — single line              |
 
 **Contract**
 
@@ -194,8 +202,8 @@ Send PR flow. The package is `internal/notes/`.
   `info/exclude` (resolved via `<wt-gitdir>/commondir` for linked worktrees).
   The per-worktree `info/exclude` file created by `git worktree add` is
   **not** consulted by `git status` / `git check-ignore` — verified
-  empirically. One exclude entry covers both files in every worktree of the
-  repo; idempotent on repeat writes.
+  empirically. One exclude entry covers the artifact directory in every
+  worktree of the repo; idempotent on repeat writes.
 - `note.md` (`notes.Write`): trailing whitespace is stripped and the file
   ends in a single newline. All-whitespace input is treated as a delete.
 - `pr-title.md` (`notes.WriteTitle`): whitespace runs (including embedded
@@ -206,11 +214,14 @@ Send PR flow. The package is `internal/notes/`.
 
 **Lifecycle**
 
-- Created on save from the editor (`m` key or right-click → editor → Save,
-  or Cmd/Ctrl+S).
-- Deleted when the user clears the corresponding field and saves, clicks
-  "Delete note" in the editor (removes both files after confirmation), or
-  removes the worktree (`ops.RemoveWorktree` wipes the entire directory).
+- Issue-created context is initialized during issue worktree creation. PR
+  drafts are created on save from the editor (`m` key or right-click → editor
+  → Save, or Cmd/Ctrl+S).
+- PR drafts are deleted when the user clears the corresponding field and saves,
+  clicks "Delete note" in the editor (removes both drafts after confirmation),
+  or removes the worktree (`ops.RemoveWorktree` wipes the entire directory).
+  The issue snapshot and progress remain available until the worktree is
+  removed.
 - Survives sandbox restarts because the artifact dir is part of the mounted
   worktree, not container-only state.
 
@@ -232,8 +243,59 @@ back to `--fill` for both — the note files are ignored, not removed.
 
 This contract is what the [`/pr-scribe`](https://github.com/mdelapenya/coding-skills)
 skill (and similar tools) target: write the generated title and description
-to those two paths, and biomelab turns them into the actual PR on the next
-`Shift+P`.
+to the two PR draft paths, and biomelab turns them into the actual PR on the
+next `Shift+P`. Progress is not automatically included in a PR body.
+
+## Issue worktree flow
+
+The main-card `i` shortcut starts the issue workflow in
+`internal/gui/issue_worktree.go`. The input accepts a positive number for the
+selected repository or a validated `owner/repo#number`. GitHub lookup runs in a
+goroutine with a context timeout and a cancellable loading dialog. The lookup
+uses `gh issue view <number> --json number,title,body,url,state`, adding
+`--repo` only for an explicitly qualified reference; `cmd.Dir` remains the
+selected local repository. Results are validated before the preview is shown.
+
+The preview owns the originating repository and refresh manager. It displays
+the issue metadata, body, source and destination repositories, current local
+HEAD, and the editable slash-free branch. Creation calls
+`internal/ops/issue.go`, which uses normal worktree creation under the
+repository's existing `.biomelab-worktrees/` directory. The base is the main
+checkout's local HEAD when Create is pressed; there is no pull, merge, issue
+ref fetch, terminal launch, agent launch, sandbox creation, push, or PR.
+Branch/path collisions leave the existing worktree untouched.
+
+After a successful worktree creation, the operation writes the immutable
+`.biomelab/issue.md` requirements snapshot and initializes
+`.biomelab/progress.md` with sections for completed work, decisions, remaining
+tasks or blockers, validation, and revision or uncommitted state. Existing
+issue snapshots and progress are preserved when helpers are rerun. It also
+writes `.biomelab/pr-title.md` and `.biomelab/note.md` through the notes APIs;
+these remain editable PR drafts. The note contains a Markdown issue heading,
+`Source: <canonical URL>`, and the body; empty issue bodies are valid.
+`notes.EnsureAgentBootstrap` then appends an idempotent marked block telling
+the agent to read the original issue and current progress before work. It
+preserves existing `AGENTS.md`, `AGENTS.override.md` when present, `CLAUDE.md`,
+`GEMINI.md`, and always-included `.kiro/steering/biomelab-task.md`; newly
+created instruction files are excluded from Git. These files cover normal
+instruction loading for Codex, Claude, Copilot, Gemini, Kiro, and OpenCode.
+An exact earlier generated block is upgraded in place on rerun without
+duplicating instructions, while unrelated guidance is preserved.
+The built-in Docker Agent sandbox kit documents `agentInstructions.filename:
+AGENTS.md` in [Docker's kit customization guide](https://docs.docker.com/ai/sandboxes/customize/kits/).
+Regular mode opens only a shell. A custom Docker Agent invoked manually must
+configure its own prompt-file or `add_prompt_files` handoff.
+
+The result separates creation errors from context, note, and bootstrap errors.
+If setup is incomplete, the new worktree is retained and the UI reports the
+path and error so the artifacts can be repaired; it does not claim that every
+bootstrap step succeeded or remove the worktree. Each new session reads the
+issue snapshot and progress, then inspects Git status, diff, recent history,
+and relevant code before planning. Agents update progress after meaningful
+milestones and before handing off or ending. BiomeLab does not infer or
+summarize progress, continuously reload it, or use a consumed marker; missing
+progress means inspecting the code and Git state rather than assuming no work
+has started.
 
 ## re_gent integration
 

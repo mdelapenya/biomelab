@@ -279,7 +279,7 @@ func (d *Dashboard) build() fyne.CanvasObject {
 	})
 
 	// Contextual help below the main card, based on the selected mode.
-	helpStr := "[c] create  [f] fetch PR  [p] pull"
+	helpStr := "[c] create  [i] issue  [f] fetch PR  [p] pull"
 	sbxInfo := d.sandboxInfo()
 	if sbxInfo != nil {
 		switch sbxInfo.Status {

@@ -20,9 +20,9 @@ BiomeLab is a Go/Fyne desktop GUI for managing Git worktrees and coding agents a
 
 Use the maintained user guides as the source for workflows and shortcuts:
 
-- [Dashboard and worktrees](../../../docs/dashboard.md): default five-column kanban, grid, repository ordering, context-sensitive shortcuts, confirmation dialogs, themes, and tray.
+- [Dashboard and worktrees](../../../docs/dashboard.md): default five-column kanban, grid, repository ordering, issue and PR/MR workflows, context-sensitive shortcuts, confirmation dialogs, themes, and tray.
 - [Sandbox workflows](../../../docs/sandboxes.md): one sandbox per agent per repository, shared host worktrees, optional kits only at creation, lifecycle and registration.
-- [Notes and activity](../../../docs/notes-and-activity.md): `m` edits notes and PR titles; `l` opens recorded re_gent activity. Host `rgt` is needed by the viewer.
+- [Notes and activity](../../../docs/notes-and-activity.md): issue context and progress handoff, `m` edits notes and PR titles, and `l` opens recorded re_gent activity. Host `rgt` is needed by the viewer.
 - [Installation](../../../docs/installation.md): supported artifacts, build prerequisites, optional tools.
 - [Configuration](../../../docs/configuration.md): OS-specific paths, flags, environment, terminal limitations.
 - [Known limitations](../../../docs/known-limitations.md): implementation gaps that must not be advertised as supported behavior.

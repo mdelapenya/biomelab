@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-git/go-billy/v6/osfs"
 	gogit "github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	xworktree "github.com/go-git/go-git/v6/x/plumbing/worktree"
 )
@@ -24,6 +25,103 @@ func runGit(t *testing.T, dir string, args ...string) string {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
 	return strings.TrimSpace(string(out))
+}
+
+func TestCreateWorktree_PreservesCollisionTargets(t *testing.T) {
+	t.Run("existing branch", func(t *testing.T) {
+		dir, raw := setupTestRepo(t)
+		head, err := raw.Head()
+		if err != nil {
+			t.Fatal(err)
+		}
+		ref := plumbing.NewHashReference(plumbing.NewBranchReferenceName("occupied"), head.Hash())
+		if err := raw.Storer.SetReference(ref); err != nil {
+			t.Fatal(err)
+		}
+		repo, err := OpenRepository(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := repo.CreateWorktree("occupied"); err == nil {
+			t.Fatal("CreateWorktree succeeded with an existing branch")
+		}
+		if _, err := os.Lstat(filepath.Join(dir, ".biomelab-worktrees", "occupied")); !os.IsNotExist(err) {
+			t.Fatalf("destination created after branch collision: %v", err)
+		}
+	})
+
+	for _, kind := range []string{"directory", "symlink"} {
+		t.Run(kind, func(t *testing.T) {
+			dir, _ := setupTestRepo(t)
+			repo, err := OpenRepository(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			destination := filepath.Join(dir, ".biomelab-worktrees", "occupied")
+			if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if kind == "directory" {
+				if err := os.Mkdir(destination, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(destination, "sentinel"), []byte("keep"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.Symlink("missing-target", destination); err != nil {
+				t.Fatal(err)
+			}
+			if err := repo.CreateWorktree("occupied"); err == nil {
+				t.Fatal("CreateWorktree succeeded with an occupied destination")
+			}
+			if kind == "directory" {
+				data, err := os.ReadFile(filepath.Join(destination, "sentinel"))
+				if err != nil || string(data) != "keep" {
+					t.Fatalf("existing directory changed: data=%q err=%v", data, err)
+				}
+			} else if target, err := os.Readlink(destination); err != nil || target != "missing-target" {
+				t.Fatalf("symlink changed: target=%q err=%v", target, err)
+			}
+			raw, err := gogit.PlainOpen(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := raw.Reference(plumbing.NewBranchReferenceName("occupied"), false); err == nil {
+				t.Fatal("branch created after destination collision")
+			}
+		})
+	}
+}
+
+func TestCreateWorktree_WithSeparateGitDir(t *testing.T) {
+	parent := t.TempDir()
+	repoDir := filepath.Join(parent, "repo")
+	gitDir := filepath.Join(parent, "gitdir")
+	cmd := exec.Command("git", "init", "--separate-git-dir="+gitDir, repoDir)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	runGit(t, repoDir, "config", "user.name", "Test")
+	runGit(t, repoDir, "config", "user.email", "test@example.com")
+	if err := os.WriteFile(filepath.Join(repoDir, "README.md"), []byte("initial\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repoDir, "add", "README.md")
+	runGit(t, repoDir, "commit", "-m", "initial")
+
+	repo, err := OpenRepository(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.CreateWorktree("topic"); err != nil {
+		t.Fatalf("CreateWorktree: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, ".biomelab-worktrees", "topic")); err != nil {
+		t.Fatalf("created worktree: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(gitDir, "worktrees", "topic")); err != nil {
+		t.Fatalf("worktree metadata: %v", err)
+	}
 }
 
 // setupTestRepo creates a temporary git repository with an initial commit.
