@@ -2754,3 +2754,30 @@ body.rgt-modal-open { overflow: hidden }
   box-shadow: 0 0 6px rgba(92, 241, 255, .6);
   animation: termBlink 1s steps(2, end) infinite
 }
+
+/* Product documentation and browser-only note demo. */
+.demo-disclaimer {
+  max-width: 760px;
+  margin: 0 auto 1.5rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+#note-title-entry {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 1rem;
+  padding: .65rem;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+}
+.note-modal-window .rgt-modal-foot { flex-wrap: wrap; }
+.note-modal-window .rgt-modal-hint { flex: 1 1 240px; }
+
+.note-modal-window label.note-pane-head { display: block; border: 0; background: transparent; padding-left: 0; }
+.note-modal-window .rgt-modal-foot .rgt-modal-hint { flex-basis: 100%; }
+.note-modal-window .rgt-modal-foot [data-note-save] { margin-left: auto; background: var(--green); }
+.demo-use-notes { display: block; margin-top: 1rem; }

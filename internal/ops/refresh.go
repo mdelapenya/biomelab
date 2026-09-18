@@ -1,5 +1,5 @@
-// Package ops contains business operations extracted from the TUI layer
-// so they can be shared between the bubbletea TUI and the Fyne GUI.
+// Package ops contains business operations used by the desktop GUI,
+// independent of widget rendering and input handling.
 package ops
 
 import (

@@ -154,7 +154,7 @@ func (a *App) openDialog() func() {
 // The linked worktree cards are in a grid (container.NewGridWrap).
 // Up/Down jump by the number of columns (moving vertically in the grid).
 // Left/Right move by 1 (moving horizontally within a row).
-// This matches the TUI behavior (model.go:883-913).
+// Kanban navigation instead follows the populated lifecycle columns.
 
 // gridColumns returns the number of columns in the linked cards grid.
 // Computed from the dashboard slot width and the card cell width, matching

@@ -1,236 +1,54 @@
-# biomelab
+# BiomeLab
 
-**BiomeLab** -- A desktop GUI for managing git worktrees and the coding agents running inside them.
+A desktop GUI for managing Git worktrees and the coding agents running inside them. Built with Go and Fyne for macOS, Linux, and Windows.
 
-> **Recommended: use [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) (`sbx`) for coding agents.** Sandbox mode gives each worktree an isolated Docker environment — its own filesystem, Docker daemon, and network — so agents can install packages, build containers, and modify files without touching the host.
+## Get started
 
-## Features
-
-- **Multi-repo dashboard** -- Register multiple repositories and switch between them in a two-panel layout. The left panel shows registered repos as a tree with indented mode lines (regular `📂 [host]` or sandbox `🐳 [agent]`). The right panel shows the selected mode's worktree dashboard. Press `Tab` to switch focus between panels.
-- **Persistent config** -- Registered repos are saved to `~/.config/biomelab/repos.json` and restored on next launch. Starting biomelab inside a git repo auto-adds it.
-- **Worktree cards** -- Each card shows: branch name, path, dirty/clean status, sync status (ahead/behind/diverged/up-to-date), active agents, open IDEs, terminal sessions, and PR info.
-- **Agent detection** -- Automatically detects coding agents (Claude, Kiro, Copilot, Codex, OpenCode, Gemini) running in each worktree by scanning system processes.
-- **IDE detection** -- Detects open IDEs (VS Code, Cursor, Zed, Windsurf, GoLand, IntelliJ, PyCharm, Neovim, Vim) in each worktree.
-- **Terminal detection** -- Detects terminal sessions (Terminal.app, iTerm2, Alacritty, kitty, WezTerm, gnome-terminal, Konsole, and more) by finding shells whose working directory matches a worktree path. Shown in purple on cards.
-- **PR/MR status** -- Fetches pull request (GitHub) or merge request (GitLab) information and CI check status for each branch.
-- **Sync status** -- Compares each branch against remote tracking branches and shows ahead/behind/diverged status.
-- **Docker Sandbox mode** (recommended) -- One sandbox per agent per repo. Real-time status monitoring (running/stopped/not found). Create, start, stop, and remove sandboxes from the dashboard.
-- **Create/delete worktrees** -- Press `c` to create, `d` to delete (with confirmation).
-- **Fetch PR** -- Press `f` to fetch a PR into a new worktree. Accepts `123` or `owner/repo#123`.
-- **Create worktree from an issue** -- Press `i` on the main card to look up a GitHub issue and preview a new worktree. Accepts `123` or `owner/repo#123`; the lookup is cancellable and shows the issue, source and destination repositories, and editable branch before creation.
-- **Send PR** -- Press `Shift+P` to push and create a PR (multi-phase: dirty check → remote selection → confirmation). Detects existing PRs for push-only mode.
-- **Pull** -- Press `p` to fetch all remotes and merge from origin.
-- **Open in terminal** -- Press `Enter` to open a worktree in a terminal. If a terminal is already detected for that worktree, it is brought to the foreground instead of opening a new one. On macOS, activation uses TTY matching via AppleScript (requires Automation permission on first use).
-- **Open in editor** -- Press `e` to open in `$BIOME_EDITOR` (defaults to VS Code).
-- **Task context and progress** -- Issue-created worktrees preserve the original requirements in `<worktree>/.biomelab/issue.md` and initialize `<worktree>/.biomelab/progress.md` with a handoff template. Agents update progress as work advances. The editable PR drafts remain `<worktree>/.biomelab/note.md` (description) and `<worktree>/.biomelab/pr-title.md` (single-line title); `m` edits those drafts and Send PR offers them separately from progress.
-- **Agent audit trail** ([re_gent](https://github.com/regent-vcs/re_gent)) -- When `rgt` is installed, biomelab auto-initializes `.regent/` in every regular-mode worktree and writes Claude Code hooks into `.claude/settings.json` — no terminal step. Press `l` (or systray → Dependencies) to open the activity window: one resizable view per session with `Human` / `Agent` rows, collapsible tool lists (full file paths, no truncation), and an **Export JSON…** button that writes the raw `rgt log --json` via the OS-native save dialog.
-- **System dependencies dialog** -- Systray entry (`Dependencies: N/M ✓`) opens a modal listing every external CLI biomelab relies on (`gh`, `glab`, `sbx`, `rgt`) with status dot, version, install hint, and docs link. A first-run banner above the dashboard nags only when a primary tool is missing or degraded; redundant CLIs (e.g. `glab` when `gh` is fine) are suppressed.
-- **Zoom** -- `Ctrl+=` / `Ctrl+-` / `Ctrl+0` to scale the UI font.
-- **System tray** -- Closing the window hides to system tray. Tray menu toggles Show/Hide.
-- **Auto-refresh** -- Local state refreshes every 5s, network state every 30s (configurable).
-
-## Requirements
-
-- **Go 1.25+** and CGo -- Required to build from source. Linux needs `gcc libgl1-mesa-dev xorg-dev`.
-- **gh CLI** (GitHub) -- For PR status. Install and authenticate with `gh auth login`.
-- **glab CLI** (GitLab) -- For MR status. Install and authenticate with `glab auth login`.
-- **sbx CLI** (recommended) -- For sandbox mode. Install and run `sbx ls` once to complete setup.
-- **Global gitignore** -- Add `.biomelab-worktrees` and `.sbx` to your global gitignore:
-
-  ```bash
-  echo ".biomelab-worktrees" >> ~/.config/git/ignore
-  echo ".sbx" >> ~/.config/git/ignore
-  ```
-
-## Installation
-
-### macOS (Homebrew cask)
+On macOS:
 
 ```bash
 brew install --cask mdelapenya/tap/biomelab
 ```
 
-This installs `Biomelab.app` to `/Applications` — find it in Spotlight.
+Open `Biomelab.app`, focus the projects panel, and press `a` to add a repository. Or launch `biomelab` from inside a repository to register it in host mode. Select the main card and press `c` to create a worktree, then select its card and press `Enter` to open a terminal.
 
-### macOS (manual)
+See [installation](docs/installation.md) for packaged downloads, nightly builds, source builds, and optional CLI integrations.
 
-Download `Biomelab-darwin-universal.zip` from the [latest release](https://github.com/mdelapenya/biomelab/releases/latest), unzip, and drag `Biomelab.app` to `/Applications`.
+## Features
 
-> **Gatekeeper note:** The binary is not signed. Run `xattr -d com.apple.quarantine /Applications/Biomelab.app` if macOS blocks it.
+- **Multiple repositories:** switch between host and per-agent sandbox modes; drag repository handles to save your preferred order.
+- **Kanban and grid:** follow five PR/MR lifecycle stages, or press `g` for detailed worktree cards. See dirty state, sync status, reviews, and CI results.
+- **Activity detection:** find Claude, Kiro, Copilot, Codex, OpenCode, and Gemini processes, plus supported IDEs and host terminals.
+- **Worktree operations:** create/delete worktrees, create a worktree from a GitHub issue, fetch GitHub PRs, pull changes, and push/create GitHub PRs or GitLab MRs.
+- **Docker Sandboxes:** create, register, start, stop, and remove a sandbox per agent per repository; optionally select compatible kits during creation.
+- **Task notes and handoff:** issue-created worktrees retain the original requirements and an agent progress handoff beside editable Markdown and PR-title drafts; choose the drafts when creating a PR/MR.
+- **Agent activity:** view recorded re_gent sessions and export JSON when the optional `rgt` integration is available.
+- **Desktop controls:** mouse and keyboard navigation, dark/light themes, zoom, terminal activation, editor launch, and a tray with dependency diagnostics.
+- **Automatic refresh:** local state every five seconds; network state every 30 seconds by default, configurable by flag or environment.
 
-### Linux
+Docker Sandboxes are recommended for agent execution. Host mode is also available. Sandboxes isolate toolchains and execution; worktrees and notes are shared with the host, so agent edits remain visible in your workspace.
 
-Download `Biomelab-linux-amd64.tar.xz` from the [latest release](https://github.com/mdelapenya/biomelab/releases/latest) and extract.
+![BiomeLab desktop dashboard with sample worktrees](website/img/dashboard-dark.png)
 
-### Windows
+*Rendered from the application’s Fyne widgets with sample data.*
 
-Download `Biomelab-windows-amd64.zip` from the [latest release](https://github.com/mdelapenya/biomelab/releases/latest), extract, and run `Biomelab.exe`.
+## User guides
 
-### Nightly builds
+| Guide | Covers |
+|---|---|
+| [Installation](docs/installation.md) | Releases, prerequisites, source builds, nightlies |
+| [Dashboard and worktrees](docs/dashboard.md) | Views, shortcuts, navigation, issue and PR/MR workflow, tray |
+| [Sandbox workflows](docs/sandboxes.md) | Setup, kits, shared files, lifecycle |
+| [Notes and agent activity](docs/notes-and-activity.md) | Issue context and progress, PR drafts, re_gent setup, logs and export |
+| [Configuration and troubleshooting](docs/configuration.md) | OS-specific settings, CLI flags, environment, diagnostics |
+| [Known limitations](docs/known-limitations.md) | Current implementation gaps and workarounds |
 
-```bash
-brew install --cask mdelapenya/tap/biomelab-nightly
-brew reinstall --cask mdelapenya/tap/biomelab-nightly  # update to latest
-```
+The [website](https://biomelab.dev/) includes an interactive browser demonstration with sample data.
 
-Or download from the [releases page](https://github.com/mdelapenya/biomelab/releases) — look for `v<version>-nightly`.
+## Contributing and releases
 
-### From source
-
-Requires [Git](https://git-scm.com/), [Task](https://taskfile.dev/), and a C toolchain (Fyne uses CGO). Everything else — `gvm`, the Go toolchain, and the `fyne` CLI — is bootstrapped by `task setup` / `task setup-fyne`.
-
-```bash
-# Install a C toolchain for your OS
-#   macOS:    xcode-select --install
-#   Linux:    sudo apt install gcc libgl1-mesa-dev xorg-dev
-#   Windows:  scoop install gcc           (PowerShell; or MSYS2 / WinLibs)
-
-git clone https://github.com/mdelapenya/biomelab.git
-cd biomelab
-task build          # builds bin/biomelab
-task install        # installs to $GOPATH/bin
-task install-macos  # builds universal .app + installs to /Applications (macOS only)
-```
-
-## Usage
-
-Launch `biomelab` from any directory, or open `Biomelab.app` from Spotlight/Finder. If started inside a git repository, it auto-adds it to the dashboard.
-
-### Environment variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `BIOME_REFRESH` | Network refresh interval (e.g. `30s`, `1m`) | `30s` |
-| `BIOME_EDITOR` | Editor command for `e` key | `code` |
-| `BIOME_TERMINAL` | Terminal command for `Enter` key | auto-detect |
-
-### Keyboard shortcuts
-
-#### Left panel (repo tree)
-
-| Key | Action |
-|-----|--------|
-| `↑` | Previous mode |
-| `↓` | Next mode |
-| `a` | Add repository |
-| `n` | Create a sandbox for the selected repo, with optional kits |
-| `x` | Remove selected mode |
-| `Enter` | Switch focus to right panel |
-| `Tab` | Switch focus to right panel |
-
-#### Right panel (worktree dashboard)
-
-| Key | Action | Context |
-|-----|--------|---------|
-| `↑` | Navigate up (by row in grid) | Any card |
-| `↓` | Navigate down (by row in grid) | Any card |
-| `←` | Navigate left | Linked cards |
-| `→` | Navigate right | Linked cards |
-| `Enter` | Activate existing terminal or open new | Any card |
-| `e` | Open in editor | Any card |
-| `m` | Open note editor (right-click also works) | Any card |
-| `l` | Open regent activity log | Any card |
-| `c` | Create worktree | Main card |
-| `f` | Fetch PR/MR | Main card |
-| `i` | Create worktree from GitHub issue | Main card |
-| `d` | Delete worktree / remove sandbox | Linked: delete; Main+sandbox: remove |
-| `p` | Pull from remote | Any card |
-| `Shift+P` | Send PR (push + create) | Linked cards |
-| `r` | Refresh card | Any card |
-| `n` | Create/enroll sandbox | Main card |
-| `s` | Start stopped sandbox | Main card |
-| `Shift+S` | Stop running sandbox | Main card |
-| `g` | Toggle kanban / grid view | Global |
-| `Tab` | Toggle focus between panels | Global |
-| `Ctrl+T` | Toggle dark / light theme | Global |
-| `Ctrl+=` | Zoom in | Global |
-| `Ctrl+-` | Zoom out | Global |
-| `Ctrl+0` | Reset zoom | Global |
-| `Esc` | Dismiss dialog / switch panel | Global |
-
-### Navigation model
-
-The main worktree sits at the top. Linked worktrees form a grid below.
-- **←/→** move horizontally within the grid
-- **↑** from first row → main card. **↓** from main → first linked card
-- **↑/↓** within the grid jump by row (column count). If no card exists directly below, jumps to the last card in the next row
-
-## Sandbox workflows
-
-From the projects panel, press `n`, choose an agent, and answer **Do you want
-to add kits?** Choosing **No** skips kit discovery. Choosing **Yes** loads a
-picker of compatible kits before the final creation confirmation. The sandbox
-is created and registered in this flow; no second `n` on the main card is needed.
-Adding a new repository in sandbox mode uses the same flow.
-
-Kits are installed from Docker Hub OCI artifacts such as
-`docker.io/sbx/code-server-kit:latest` during initial creation.
-The catalog metadata is still discovered through `gh` from
-`docker/sbx-kits-contrib`, but installation does not use Git URLs. Saved kit
-metadata records the OCI reference and the rolling `latest` tag (not a pinned
-digest or a Git commit).
-
-An existing sandbox can be registered without changing its kits. Adding kits
-after creation would recreate the agent container inside the sandbox; this
-workflow is not currently offered. Canceling initial setup or a failed creation
-leaves the repository's previous mode unchanged.
-
-See the product-owner skill (`/product-owner`) for detailed sandbox workflows including: enrolling repos, adding agents, creating/deleting worktrees in sandboxes, and sandbox lifecycle management.
-
-### Create a worktree from an issue
-
-On the main card, press `i` and enter a positive GitHub issue number for the
-selected repository or `owner/repo#number`. Biomelab uses the authenticated
-`gh` CLI and performs the lookup asynchronously; the loading dialog can be
-cancelled. The preview shows the issue title, state, body, canonical link,
-source repository, destination repository, and a suggested editable branch
-(`issue-<number>-<title-slug>`). GitHub issue URLs, GitLab issues, and a base
-branch picker are not supported by this flow yet.
-
-Create uses the main checkout's current local HEAD at creation time. It does
-not pull, launch a terminal or agent, fetch an issue ref, push, or open a PR.
-Existing branch or path collisions fail without replacing the existing
-worktree. The new worktree receives `.biomelab/issue.md` as an original
-requirements snapshot and `.biomelab/progress.md` as a handoff template
-covering completed work, decisions, remaining tasks or blockers, validation,
-and revision or uncommitted state. It also seeds `.biomelab/note.md` with the
-issue heading, source URL, and body, plus `.biomelab/pr-title.md` with the issue
-title. The issue snapshot is preserved; rerunning helpers preserves existing
-progress. Read or edit the PR drafts with `m`; Send PR offers only those drafts
-through its existing opt-in task-notes checkbox, never the progress file. There
-are no additional GUI tabs for issue or progress artifacts; agents and editors
-can open those files directly in the worktree.
-
-Creation also adds a marked task-context instruction to `AGENTS.md`, an
-existing `AGENTS.override.md`, `CLAUDE.md`, `GEMINI.md`, and
-`.kiro/steering/biomelab-task.md`. New instruction files are ignored by Git;
-existing tracked files are intentionally modified. These instructions tell the
-agent to read the original issue snapshot and current progress before work,
-including its first session, then inspect Git status, diff, recent history, and
-relevant code. Agents should reconcile stale notes with the repository, update
-progress after meaningful milestones, and update it before handing off or
-ending. Re-running setup upgrades an exact earlier generated instruction block
-in place without duplicating it and preserves other guidance. The handoff is
-supported by normal instruction loading for Codex,
-Claude, Copilot, Gemini, Kiro, and OpenCode; BiomeLab does not summarize
-progress, reload it in the background, or mark it consumed.
-The built-in Docker Agent sandbox kit loads `AGENTS.md` through its
-`agentInstructions.filename` setting (see
-[Docker's kit customization docs](https://docs.docker.com/ai/sandboxes/customize/kits/)).
-Regular mode opens a shell only. A manually invoked custom Docker Agent must
-arrange its own prompt-file or `add_prompt_files` configuration to load the
-notes. If note or instruction setup is only partially successful, the new
-worktree is retained and the error identifies the affected artifact. The note
-editor can repair note content; it does not repair every bootstrap failure.
-
-## Release process
-
-See [RELEASING.md](RELEASING.md) for the full release workflow, CI pipelines, and homebrew tap management.
-
-## Contributing
-
-For internal architecture, package layout, and design decisions, see [ARCHITECTURE.md](ARCHITECTURE.md).
+See [ARCHITECTURE.md](ARCHITECTURE.md) for package layout and design, and [RELEASING.md](RELEASING.md) for build pipelines and release checks. `task build`, `task test-race`, and `task lint` use the source build prerequisites in the installation guide.
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+[MIT](LICENSE).
