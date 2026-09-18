@@ -84,6 +84,14 @@ func (a *App) handleKeyName(key fyne.KeyName) {
 		return
 	}
 
+	// With no repositories there is no left panel to focus, so the normal
+	// panel-scoped shortcut below is unreachable. Keep the add action
+	// available from the empty state regardless of the current focus value.
+	if key == fyne.KeyA && len(a.repos) == 0 {
+		a.handleAddRepo()
+		return
+	}
+
 	if a.focus == focusLeft {
 		switch key {
 		case fyne.KeyA:
@@ -938,7 +946,7 @@ func (a *App) handleAddSandboxMode() {
 
 func (a *App) handleAddRepo() {
 	done := a.openDialog()
-	showAddRepoInput(a.window, done, func(path string) {
+	a.activeDialog = showAddRepoInput(a.window, done, func(path string) {
 		repoRoot, err := git.RepoRoot(path)
 		if err != nil {
 			dialog.ShowError(err, a.window)
@@ -951,7 +959,7 @@ func (a *App) handleAddRepo() {
 		}
 
 		done2 := a.openDialog()
-		showModeSelection(a.window, done2, func() {
+		a.activeDialog = showModeSelection(a.window, done2, func() {
 			// Regular mode.
 			a.addRepoToConfig(repoRoot, repo.RepoName(), config.ModeEntry{Type: "regular"})
 		}, func() {

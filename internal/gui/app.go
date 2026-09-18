@@ -582,7 +582,7 @@ func (a *App) refreshTrayTheme() {
 }
 
 func (a *App) emptyState() fyne.CanvasObject {
-	msg := widget.NewLabel("No repositories registered.\nRun biomelab from a git repository to auto-add it.")
+	msg := widget.NewLabel("No repositories registered.\nPress [a] to add one, or run biomelab from a git repository to auto-add it.")
 	msg.Alignment = fyne.TextAlignCenter
 	return container.NewCenter(msg)
 }
