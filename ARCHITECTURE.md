@@ -2,7 +2,7 @@
 
 This document describes the internal architecture of biomelab for contributors
 and AI coding agents. For user-facing features, see [README.md](README.md).
-For the Fyne framework reference, invoke the `/fyne-developer` skill.
+For framework notes, see the [Fyne developer reference](.claude/skills/fyne-developer/SKILL.md).
 
 ## Package layout
 
@@ -12,10 +12,16 @@ cmd/biomelab/
   common.go            Shared: version var, resolveRefreshInterval
   icon.png             App icon (embedded via //go:embed)
 
+cmd/helpers/screenshot-generator/
+  main.go              Offscreen documentation image generator (see RELEASING.md)
+
 internal/
   gui/
     app.go                  FyneApp: window, HSplit layout, multi-repo management, mode switching
     dashboard.go            Right panel: main card + scrollable linked cards grid, refresh timestamps
+    kanban.go               Five lifecycle columns, compact cards, review/CI tooltips
+    note_dialog.go          Per-worktree resizable note editor and live Markdown preview
+    dialog_widgets.go       Focusable dialog controls for Enter/Escape
     card.go                 Worktree card rendering: branch, path, PR, agents, IDEs, status
     repo_panel.go           Left panel: tappable VBox of repo/mode items (NOT widget.Tree)
     repo_panel_drag.go      Drag-handle widget + reorder math for repo panel
@@ -26,7 +32,7 @@ internal/
     sandbox_setup.go        Project-panel sandbox creation, optional kit discovery, registration
     refresh.go              RefreshManager: goroutine tickers for local (5s) and network refresh
     state.go                RepoState: domain + UI state, worktree sorting
-    theme.go                Dark theme with zoom support (Ctrl+/Ctrl-)
+    theme.go                Dark/light themes, saved variant, session font zoom
     icon.go                 AppIcon resource (set from embedded icon at startup)
     systray.go              System tray: Show/Hide toggle, Quit, Dependencies summary
     sysdeps_dialog.go       System Dependencies modal + first-run banner
@@ -39,7 +45,7 @@ internal/
     sandbox_ops.go     CreateSandbox, StartSandbox, StopSandbox, RemoveSandbox
     sandbox_setup.go   EnsureSandbox: discover/reuse or create, kits only at initial creation
 
-  config/config.go     Repo list persistence (~/.config/biomelab/repos.json)
+  config/config.go     OS-specific config: repos, modes, kit metadata, theme, repo order
   git/worktree.go      Go-git v6 wrapper: list, create, remove, pull, fetch, sync status
   git/exclude.go       Per-worktree git info/exclude writer (used by notes + regent)
   git/credential.go    Git credential helper protocol (git credential fill)
@@ -48,8 +54,9 @@ internal/
   process/process.go   Shared process enumeration types (Lister, Info, OSLister)
   provider/            PRProvider interface, GitHub (gh), GitLab (glab), detection
   sandbox/sandbox.go   Docker Sandbox (sbx) CLI wrapper
-  terminal/terminal.go Open new terminal window (macOS .command / Linux x-terminal-emulator)
+  terminal/            Terminal detection, launch, activation (platform-specific)
   github/pr.go         GitHub-specific PR helpers (ParsePRRef, ValidatePR)
+  kits/kits.go         Compatible catalog discovery and OCI kit references
   notes/notes.go       Per-worktree Markdown notes (.biomelab/note.md, pr-title.md)
   regent/              re_gent (rgt) integration: detection, init, hook install, log fetch
   sysdeps/             External CLI dependency checks (gh/glab/sbx/rgt) + cache
@@ -69,8 +76,21 @@ internal/
 2. `gui.App.Run()` creates the Fyne window, builds the content (repo panel + dashboard), registers keyboard handlers via `desktop.Canvas.SetOnKeyDown`, sets up the system tray, and starts the event loop.
 3. Each repo's `RefreshManager` runs goroutine tickers: local refresh (5s) for dirty/agents/IDE/sandbox status, network refresh (configurable, default 30s) for git fetch + PR lookup.
 4. Refresh results are delivered via `fyne.Do(func() { dashboard.ApplyRefresh(result) })` to ensure all UI mutations happen on the main thread.
-5. `Dashboard.Rebuild()` recreates the card widgets from current `RepoState`. Cards are sorted alphabetically by branch name.
+5. `Dashboard.Rebuild()` recreates the card widgets from current `RepoState`. Linked worktrees are sorted by branch name and rendered in either a five-column kanban (default) or a responsive grid.
 6. The repo panel uses tappable VBox items (not `widget.Tree`) to avoid stealing keyboard focus.
+
+## Views and desktop state
+
+`RepoState.ViewMode` selects kanban or grid in memory; it is not serialized.
+`kanbanStageOf` maps provider state/reviews into Closed Unmerged, Created, PR Sent,
+PR In Review, and PR Merged. The main worktree remains above the linked cards.
+The known final-column navigation bound is tracked in [known limitations](docs/known-limitations.md).
+
+`repo_panel_drag.go` provides the drag handle; `reorderRepos` updates both the
+in-memory repository order and the config slice while preserving selection.
+`applyThemeVariant` rebuilds themed content and persists `Config.Theme`.
+Zoom is session-only. The tray offers theme selection, Show Config, dependency
+diagnostics, sandbox documentation, Show/Hide, and Quit.
 
 ## Keyboard handling
 
@@ -108,18 +128,27 @@ The tray menu toggles between "Show" and "Hide" based on window visibility.
 
 ## Config format
 
-`~/.config/biomelab/repos.json`:
+`config.DefaultPath()` uses `os.UserConfigDir()` plus `biomelab/repos.json`.
+See [platform paths](docs/configuration.md#saved-settings). The main persisted types are:
 
 ```go
 type ModeEntry struct {
     Type        string // "regular" or "sandbox"
     SandboxName string
     Agent       string
+    Kits        []KitInstall
 }
 type RepoEntry struct {
     Path  string
     Name  string
     Modes []ModeEntry
+}
+type KitInstall struct {
+    Name, Ref, Reference string
+}
+type Config struct {
+    Repos []RepoEntry // slice order is the displayed repository order
+    Theme string // "dark" or "light"
 }
 ```
 
@@ -160,7 +189,7 @@ Send PR flow. The package is `internal/notes/`.
 
 - Files live **inside** the worktree, so they're mounted into the sandbox
   microVM alongside the source. Agents running in the sandbox read them as
-  ordinary files at the worktree root.
+  ordinary files in the worktree’s `.biomelab/` directory.
 - On first save, biomelab appends `/.biomelab/` to the **common gitdir's**
   `info/exclude` (resolved via `<wt-gitdir>/commondir` for linked worktrees).
   The per-worktree `info/exclude` file created by `git worktree add` is
@@ -217,7 +246,7 @@ user installs `rgt`:
   `regent.EnsureInit` after every new worktree creation, and
   `app.buildRepoEntry` walks existing worktrees on startup
   (`migrateRegentForRepo`) so an `rgt install` retroactively wires up
-  every regular-mode worktree on the next refresh. Sandbox worktrees
+  existing regular-mode worktrees when the repository is loaded. Sandbox worktrees
   skip this path — rgt belongs inside the container, installed via the
   regent kit.
 - **`EnsureInit` runs `rgt init --skip-hook --skip-skills`** with
@@ -249,6 +278,10 @@ user installs `rgt`:
   `regent.LogJSONRaw` and saves the bytes via the OS-native save dialog
   helper (`gui/save_file.go`: osascript on macOS, zenity/kdialog on
   Linux, PowerShell on Windows; falls back to `dialog.NewFileSave`).
+
+The activity viewer invokes host `rgt`, even for sandbox-mode cards. Sandbox
+recording and host log viewing have separate prerequisites; see the
+[activity guide](docs/notes-and-activity.md).
 
 ## System dependencies
 

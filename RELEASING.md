@@ -27,6 +27,76 @@ All pipelines build for three platforms:
 - **Windows**: MinGW GCC (pre-installed on `windows-latest` runners).
 - **All**: Go (from `go.mod`), Task CLI, fyne CLI.
 
+## Documentation and website checks
+
+Before tagging a release:
+
+- Compare download names and architectures in [installation](docs/installation.md) and `website/index.html` with the release workflow artifacts.
+- Check prerequisites against `go.mod` and `Taskfile.yml`; distinguish packaged installation from source builds.
+- Walk through the [dashboard](docs/dashboard.md), sandbox setup, notes, and activity guides in the GUI. Compare shortcuts with `internal/gui/shortcuts.go` and dialog controls.
+- Revisit [known limitations](docs/known-limitations.md) and remove resolved items only after verification.
+- Run the Lychee command below and `node --check website/js/main.js`. CI uses [lychee-action](https://github.com/lycheeverse/lychee-action) pinned to a full commit SHA, with a fixed Lychee version. These checks validate local links/anchors and JavaScript syntax, not external service availability.
+- Serve `website/` locally (`python3 -m http.server 8765 --directory website`) and check desktop/mobile layouts, both themes, installation tabs, and playground note Save/Cancel/Delete, PR flow, and sandbox setup. Keep simulated actions labeled.
+- Update GUI screenshots when the layout changes. Use sample data and label it; do not expose personal repositories or activity logs.
+- Check external installation/documentation links before publishing. Website deployment runs on pushes to `main` affecting `website/**`; docs links on the website target `main`, so publish the linked guides alongside the website change.
+
+### Check documentation links locally
+
+Install [Lychee](https://lychee.cli.rs/) v0.24.2 to match CI, then run from the repository root:
+
+```bash
+lychee --offline --include-fragments --no-progress \
+  --root-dir "$PWD/website" \
+  --remap "^https://github\.com/mdelapenya/biomelab/blob/main/ file://$PWD/" \
+  '*.md' 'docs/**/*.md' '.claude/**/*.md' 'website/**/*.html'
+```
+
+The remapping checks this repository's GitHub `blob/main` links against the
+local checkout, so new guides can pass before merging. Offline mode skips
+external websites; fragment checking validates local heading and HTML anchors.
+
+### Refresh dashboard images
+
+The helper at `cmd/helpers/screenshot-generator` renders `NewRepoPanel` and
+`NewDashboard` in Fyne's offscreen test canvas with fictional paths and PRs.
+It opens no desktop window and does not load your repositories or config.
+
+From the repository root, with the [source-build prerequisites](docs/installation.md#from-source):
+
+```bash
+go run ./cmd/helpers/screenshot-generator
+```
+
+This creates or overwrites `website/img/dashboard-dark.png` and
+`website/img/dashboard-light.png`. To inspect new images before replacing the
+website assets, use a separate directory:
+
+```bash
+go run ./cmd/helpers/screenshot-generator -output-dir /tmp/biomelab-screenshots
+```
+
+It can also be built as a standalone binary:
+
+```bash
+go build -o bin/screenshot-generator ./cmd/helpers/screenshot-generator
+```
+
+The output directory is relative to the working directory unless an absolute
+path is provided. No build tag is needed. CI's `task test-race` runs the helper's
+normal Go tests too: they render both themes, decode the PNGs, check dimensions and nonblank output, and exercise CLI
+and filesystem error handling. All test images go into temporary directories;
+only an explicit helper invocation writes the website assets.
+
+To run just the helper tests locally:
+
+```bash
+go test -race ./cmd/helpers/screenshot-generator
+```
+
+These images show application widgets, not a capture of a user's desktop;
+preserve that distinction in their captions. Inspect both images before
+committing them.
+
 ## Stable release
 
 To cut a release:

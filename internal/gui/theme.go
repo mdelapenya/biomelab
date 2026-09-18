@@ -98,6 +98,13 @@ type biomeTheme struct {
 	variant  ThemeVariant
 }
 
+// NewTheme creates the application theme for standalone GUI renderers.
+// It also installs the widget palette, so call it before constructing widgets.
+// Like runtime theme changes, it must not run concurrently with GUI rendering.
+func NewTheme(v ThemeVariant) fyne.Theme {
+	return newBiomeTheme(v)
+}
+
 func newBiomeTheme(v ThemeVariant) *biomeTheme {
 	if v != VariantLight {
 		v = VariantDark

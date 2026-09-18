@@ -46,7 +46,7 @@ type Config struct {
 	Theme string `json:"theme,omitempty"`
 }
 
-// DefaultPath returns the default config file path (~/.config/biomelab/repos.json).
+// DefaultPath returns biomelab/repos.json under the OS user configuration directory.
 func DefaultPath() string {
 	dir, err := os.UserConfigDir()
 	if err != nil {

@@ -278,7 +278,7 @@ func (d *Dashboard) build() fyne.CanvasObject {
 		}
 	})
 
-	// Contextual help below main card (dynamic, matches TUI).
+	// Contextual help below the main card, based on the selected mode.
 	helpStr := "[c] create  [f] fetch PR  [p] pull"
 	sbxInfo := d.sandboxInfo()
 	if sbxInfo != nil {
