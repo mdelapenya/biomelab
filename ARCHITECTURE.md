@@ -127,7 +127,7 @@ generations. CLI authentication checks are cached across resume; deliberate
 network refresh rechecks them so users can recover after authenticating a tool.
 
 Noninteractive CLI helpers use `internal/command.Background` or
-`BackgroundContext`. On Windows these allocate no console (`CREATE_NO_WINDOW`);
+`BackgroundContext`. On Windows these create no console window (`CREATE_NO_WINDOW`);
 other platforms retain normal process behavior. Commands preserve caller-owned
 arguments, environment, working directory and I/O. A two-second `WaitDelay`
 bounds inherited output-pipe waits after exit/cancellation, not runtime.

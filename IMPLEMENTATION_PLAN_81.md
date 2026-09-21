@@ -232,7 +232,7 @@ Add tests where they prove behavior rather than just assert flag assignment:
 
 | Layer | Required verification |
 | --- | --- |
-| Windows subprocess integration | A GUI-subsystem test launcher runs a console helper that reports console attachment, arguments, CWD, environment, stdin and output. Verify no console attachment for background execution, preserved I/O/errors, and bounded timeout behavior. Include a descendant case. |
+| Windows subprocess integration | A GUI-subsystem test launcher runs a console helper that reports its console window handle and code page. Verify no console window for background execution; a windowless console may still report a code page. Also verify preserved arguments, CWD, environment, I/O/errors, and bounded timeout behavior. Include a descendant case. |
 | Refresh lifecycle | With controllable slow operations, burst manual triggers, pause/resume and stop. Assert bounded concurrency, cancellation, no stale callback application and no work scheduled after stop. Run race tests. |
 | Terminal action controller | One pending launch per target; repeated Enter does not multiply launches; launch/activation failure is visible once; unsupported Windows configuration fails before spawn; stale detection and repo switching cannot misdirect results. |
 | Visibility boundary | Requested terminal/editor/save-dialog actions remain usable while their helper consoles stay suppressed. No refresh result calls launch, Show or RequestFocus. |

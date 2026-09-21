@@ -8,14 +8,14 @@ import (
 	"time"
 )
 
-// Background constructs a helper that does not allocate a Windows console.
+// Background constructs a helper that does not create a Windows console window.
 // It preserves exec.Cmd's argument, environment, directory and I/O behavior.
 // Prefer BackgroundContext when the caller has a cancellation scope or deadline.
 func Background(name string, args ...string) *exec.Cmd {
 	return configure(exec.Command(name, args...))
 }
 
-// BackgroundContext constructs a cancellable helper without a Windows console.
+// BackgroundContext constructs a cancellable helper without a Windows console window.
 // The caller owns the deadline; interactive sessions must not use this function.
 func BackgroundContext(ctx context.Context, name string, args ...string) *exec.Cmd {
 	return configure(exec.CommandContext(ctx, name, args...))

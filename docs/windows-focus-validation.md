@@ -64,7 +64,7 @@ defect needs investigation even if command suppression works.
 ## Automated coverage and limits
 
 Windows CI executes the command runtime tests through a GUI-subsystem launcher,
-checks that background children have no attached console, and tests Windows
+checks that background children have no console window, and tests Windows
 terminal rejection before launch. Cross-platform tests cover command I/O,
 errors, cancellation, inherited output-pipe waits, refresh coalescing and stale
 results, and terminal request/error handling.
