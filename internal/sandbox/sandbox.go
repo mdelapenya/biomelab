@@ -1,12 +1,16 @@
 package sandbox
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
+
+	"github.com/mdelapenya/biomelab/internal/command"
 )
 
 // Available returns true if the sbx binary is found in PATH.
@@ -72,21 +76,21 @@ func RemoveArgs(name string) []string {
 
 // Remove runs sbx rm to remove a sandbox. Returns output and any error.
 func Remove(name string) (string, error) {
-	cmd := exec.Command("sbx", "rm", "--force", name)
+	cmd := command.Background("sbx", "rm", "--force", name)
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
 }
 
 // Start runs sbx run -d to start a stopped sandbox (detached, no attach).
 func Start(name string) (string, error) {
-	cmd := exec.Command("sbx", "run", "-d", name)
+	cmd := command.Background("sbx", "run", "-d", name)
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
 }
 
 // Stop runs sbx stop to stop a sandbox without removing it.
 func Stop(name string) (string, error) {
-	cmd := exec.Command("sbx", "stop", name)
+	cmd := command.Background("sbx", "stop", name)
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
 }
@@ -165,7 +169,7 @@ func CommandString(args []string) string {
 // Create runs sbx create as a background process and returns when it completes.
 // Returns the combined stdout+stderr output and any error.
 func Create(args []string) (string, error) {
-	cmd := exec.Command(args[0], args[1:]...)
+	cmd := command.Background(args[0], args[1:]...)
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
 }
@@ -189,7 +193,13 @@ func CheckAllStatuses() map[string]Status {
 // ListStatuses distinguishes an unavailable daemon from a missing sandbox.
 // Creation must not interpret discovery errors as permission to create anew.
 func ListStatuses() (map[string]Status, error) {
-	cmd := exec.Command("sbx", "ls", "--json")
+	return ListStatusesContext(context.Background())
+}
+
+func ListStatusesContext(ctx context.Context) (map[string]Status, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	cmd := command.BackgroundContext(ctx, "sbx", "ls", "--json")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("list sandboxes: %w (%s)", err, strings.TrimSpace(string(out)))
@@ -217,7 +227,7 @@ func ListStatuses() (map[string]Status, error) {
 // CheckStatus returns the status of a sandbox by name.
 // Runs "sbx ls --json" and looks for a matching entry.
 func CheckStatus(name string) Status {
-	cmd := exec.Command("sbx", "ls", "--json")
+	cmd := command.Background("sbx", "ls", "--json")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return StatusNotFound
@@ -250,7 +260,13 @@ type VersionInfo struct {
 
 // Version returns the sbx client and server versions.
 func Version() VersionInfo {
-	cmd := exec.Command("sbx", "version")
+	return VersionContext(context.Background())
+}
+
+func VersionContext(ctx context.Context) VersionInfo {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	cmd := command.BackgroundContext(ctx, "sbx", "version")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return VersionInfo{}
@@ -275,7 +291,7 @@ func Preflight() error {
 	if !Available() {
 		return fmt.Errorf("sbx CLI not found in PATH — install it from https://docs.docker.com/ai/sandboxes/")
 	}
-	cmd := exec.Command("sbx", "ls", "--json")
+	cmd := command.Background("sbx", "ls", "--json")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		output := strings.TrimSpace(string(out))

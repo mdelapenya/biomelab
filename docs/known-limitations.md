@@ -6,6 +6,7 @@ These are implementation follow-ups identified during the documentation audit, n
 - **Nix packaging:** `flake.nix` has a placeholder dependency hash and needs its Fyne build/runtime dependencies validated. It is not advertised as an installation method until verified.
 - **GitLab checkout:** status and creation support GitLab, but fetch-to-worktree uses GitHub helpers. Extend the provider abstraction before advertising MR checkout.
 - **Issue worktree inputs:** issue-created worktrees currently accept only a positive GitHub issue number or `owner/repo#number`. GitHub issue URLs, GitLab issues, and base-branch selection are not supported.
-- **Windows terminal launch:** packaged Windows builds exist; automatic terminal launch/activation is not implemented there. Custom launch currently assumes `-e sh -c`.
+- **Windows terminal launch:** packaged Windows builds exist; automatic terminal launch/activation is not implemented there. Launch requests, including `BIOME_TERMINAL` overrides, now report the limitation before spawning a process. Open a terminal in the worktree manually.
+- **Windows focus validation:** background helper commands now suppress console allocation, and refresh/action requests are bounded. Resolution of the reported constant focus loss still requires the [interactive Windows verification](windows-focus-validation.md); native/headless tests cannot establish foreground behavior on the affected desktop.
 
 These limits should be removed from the guides only after the corresponding behavior has been implemented and checked.

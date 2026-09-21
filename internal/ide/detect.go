@@ -40,7 +40,11 @@ func (d *Detector) Detect(worktreePaths []string) DetectionResult {
 // and worktree paths. Use this when sharing a single process snapshot across
 // multiple detectors.
 func (d *Detector) DetectFromProcesses(procs []process.Info, worktreePaths []string) DetectionResult {
-	ctx := context.Background()
+	return d.DetectFromProcessesContext(context.Background(), procs, worktreePaths)
+}
+
+// DetectFromProcessesContext allows refresh cancellation during process enrichment.
+func (d *Detector) DetectFromProcessesContext(ctx context.Context, procs []process.Info, worktreePaths []string) DetectionResult {
 
 	// Filter to IDE processes only.
 	// Match against process name only (not cmdline) to avoid false positives
@@ -52,6 +56,9 @@ func (d *Detector) DetectFromProcesses(procs []process.Info, worktreePaths []str
 
 	var ides []ideProc
 	for _, p := range procs {
+		if ctx.Err() != nil {
+			return nil
+		}
 		// Electron-based IDEs (VS Code, Cursor) leave behind CLI-launcher
 		// processes after `code <path>`/`cursor <path>` runs. They invoke
 		// `<App>/Contents/Resources/app/out/cli.js` to handoff to the
@@ -83,6 +90,9 @@ func (d *Detector) DetectFromProcesses(procs []process.Info, worktreePaths []str
 
 	// Enrich with CWD (only if not already provided).
 	for i := range ides {
+		if ctx.Err() != nil {
+			return nil
+		}
 		if ides[i].Cwd == "" {
 			process.Enrich(ctx, &ides[i].Info)
 		}

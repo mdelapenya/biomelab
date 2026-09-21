@@ -1,10 +1,12 @@
 package terminal
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // titlePrefix is the string prepended to all biomelab terminal window titles.
@@ -54,7 +56,9 @@ func ActivateApp(kind Kind) bool {
 // ttyForPID resolves the controlling terminal device for a process.
 // Returns a path like "/dev/ttys003" or "" if unavailable.
 func ttyForPID(pid int32) string {
-	cmd := exec.Command("lsof", "-p", fmt.Sprintf("%d", pid), "-a", "-d", "0", "-F", "n")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "lsof", "-p", fmt.Sprintf("%d", pid), "-a", "-d", "0", "-F", "n")
 	out, err := cmd.Output()
 	if err != nil {
 		return ""
@@ -95,7 +99,9 @@ tell application "Terminal"
 end tell
 return false`, tty)
 
-	cmd := exec.Command("osascript", "-e", script)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "osascript", "-e", script)
 	out, err := cmd.Output()
 	if err != nil {
 		return false, nil
@@ -121,7 +127,9 @@ tell application "iTerm"
 end tell
 return false`, tty)
 
-	cmd := exec.Command("osascript", "-e", script)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "osascript", "-e", script)
 	out, err := cmd.Output()
 	if err != nil {
 		return false, nil
@@ -136,14 +144,16 @@ func activateLinuxByPID(rootPID int32) bool {
 		return false
 	}
 
-	cmd := exec.Command("xdotool", "search", "--pid", fmt.Sprintf("%d", rootPID))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "xdotool", "search", "--pid", fmt.Sprintf("%d", rootPID))
 	out, err := cmd.Output()
 	if err != nil || len(strings.TrimSpace(string(out))) == 0 {
 		return false
 	}
 
 	windowID := strings.Split(strings.TrimSpace(string(out)), "\n")[0]
-	activateCmd := exec.Command("xdotool", "windowactivate", windowID)
+	activateCmd := exec.CommandContext(ctx, "xdotool", "windowactivate", windowID)
 	return activateCmd.Run() == nil
 }
 
@@ -163,7 +173,9 @@ func activateAppDarwin(kind Kind) bool {
 	if !ok {
 		return false
 	}
-	cmd := exec.Command("open", "-a", name)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "open", "-a", name)
 	return cmd.Run() == nil
 }
 
@@ -172,6 +184,8 @@ func activateAppLinux(kind Kind) bool {
 		return false
 	}
 	class := strings.ToLower(string(kind))
-	cmd := exec.Command("wmctrl", "-x", "-a", class)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "wmctrl", "-x", "-a", class)
 	return cmd.Run() == nil
 }

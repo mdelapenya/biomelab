@@ -35,6 +35,9 @@ func (o *OSLister) Processes(ctx context.Context) ([]Info, error) {
 
 	var result []Info
 	for _, p := range procs {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		name, err := p.NameWithContext(ctx)
 		if err != nil {
 			continue
@@ -59,7 +62,10 @@ func (o *OSLister) Processes(ctx context.Context) ([]Info, error) {
 
 // Enrich fills in Cwd, Status, and Created for a process.
 func Enrich(ctx context.Context, info *Info) {
-	p, err := process.NewProcess(info.PID)
+	if ctx.Err() != nil {
+		return
+	}
+	p, err := process.NewProcessWithContext(ctx, info.PID)
 	if err != nil {
 		return
 	}

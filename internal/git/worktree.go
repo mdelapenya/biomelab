@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -20,6 +19,8 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/gitignore"
 	githttp "github.com/go-git/go-git/v6/plumbing/transport/http"
 	xworktree "github.com/go-git/go-git/v6/x/plumbing/worktree"
+
+	"github.com/mdelapenya/biomelab/internal/command"
 )
 
 // biomelabDir is the per-worktree sidecar directory that biomelab uses
@@ -199,6 +200,14 @@ func parseRepoName(remoteURL string) string {
 // remotes (e.g. origin, upstream) stay current.
 // Uses a 15-second context timeout per remote to cancel slow fetches cleanly.
 func (r *Repository) Fetch() error {
+	return r.FetchContext(context.Background())
+}
+
+// FetchContext stops remote fetches and credential lookups with the refresh run.
+func (r *Repository) FetchContext(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -213,17 +222,20 @@ func (r *Repository) Fetch() error {
 
 	var firstErr error
 	for _, remote := range remotes {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		name := remote.Config().Name
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		remoteCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 
 		opts := &gogit.FetchOptions{RemoteName: name}
-		err := r.repo.FetchContext(ctx, opts)
+		err := r.repo.FetchContext(remoteCtx, opts)
 		if err != nil && err != gogit.NoErrAlreadyUpToDate {
 			if isAuthError(err) {
-				auth, credErr := r.resolveCredentialsForRemote(remote)
+				auth, credErr := r.resolveCredentialsForRemoteContext(remoteCtx, remote)
 				if credErr == nil {
 					opts.Auth = auth
-					err = r.repo.FetchContext(ctx, opts)
+					err = r.repo.FetchContext(remoteCtx, opts)
 				}
 			}
 			if err != nil && err != gogit.NoErrAlreadyUpToDate && firstErr == nil {
@@ -869,11 +881,15 @@ func (r *Repository) resolveCredentials() (*githttp.BasicAuth, error) {
 }
 
 func (r *Repository) resolveCredentialsForRemote(remote *gogit.Remote) (*githttp.BasicAuth, error) {
+	return r.resolveCredentialsForRemoteContext(context.Background(), remote)
+}
+
+func (r *Repository) resolveCredentialsForRemoteContext(ctx context.Context, remote *gogit.Remote) (*githttp.BasicAuth, error) {
 	urls := remote.Config().URLs
 	if len(urls) == 0 {
 		return nil, fmt.Errorf("remote %q has no URLs", remote.Config().Name)
 	}
-	return credentialFill(urls[0])
+	return credentialFillContext(ctx, urls[0])
 }
 
 // FetchPRRef fetches a pull request's head ref to a local branch without
@@ -942,7 +958,7 @@ func (r *Repository) FetchPR(prNumber int, branchName, remoteURL string) (string
 	}
 	safe := sanitizeWorktreeName(branchName)
 	wtPath := filepath.Join(r.worktreesDir(), safe)
-	cmd := exec.Command("git", "worktree", "add", wtPath, branchName)
+	cmd := command.Background("git", "worktree", "add", wtPath, branchName)
 	cmd.Dir = r.repoRoot
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return "", fmt.Errorf("create worktree: %w: %s", err, strings.TrimSpace(string(out)))

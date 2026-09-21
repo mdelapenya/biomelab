@@ -1,14 +1,18 @@
 package sysdeps
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/mdelapenya/biomelab/internal/config"
 	"github.com/mdelapenya/biomelab/internal/provider"
 	"github.com/mdelapenya/biomelab/internal/sandbox"
+
+	"github.com/mdelapenya/biomelab/internal/command"
 )
 
 // Registry returns the standard set of checks biomelab knows about.
@@ -143,7 +147,9 @@ var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07`)
 // skip color output entirely; the regex strips anything that leaks through.
 // Returns "" on any error so the caller can decide how to render the row.
 func probeVersion(bin, subcmd string) string {
-	cmd := exec.Command(bin, subcmd)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := command.BackgroundContext(ctx, bin, subcmd)
 	cmd.Env = append(os.Environ(), "NO_COLOR=1")
 	out, err := cmd.Output()
 	if err != nil {

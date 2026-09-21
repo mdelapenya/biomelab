@@ -1,10 +1,14 @@
 package provider
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
+
+	"github.com/mdelapenya/biomelab/internal/command"
 )
 
 // GitLabProvider fetches MR information using the glab CLI.
@@ -12,10 +16,16 @@ type GitLabProvider struct{}
 
 // CheckCLI verifies that glab is installed and authenticated.
 func (g *GitLabProvider) CheckCLI() CLIAvailability {
+	return g.CheckCLIContext(context.Background())
+}
+
+func (g *GitLabProvider) CheckCLIContext(ctx context.Context) CLIAvailability {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	if _, err := exec.LookPath("glab"); err != nil {
 		return CLINotFound
 	}
-	cmd := exec.Command("glab", "auth", "status")
+	cmd := command.BackgroundContext(ctx, "glab", "auth", "status")
 	if err := cmd.Run(); err != nil {
 		return CLINotAuthenticated
 	}
@@ -24,7 +34,13 @@ func (g *GitLabProvider) CheckCLI() CLIAvailability {
 
 // FetchPRs looks up open MRs for the given branch names using glab.
 func (g *GitLabProvider) FetchPRs(repoDir string, branches []string) PRResult {
-	return fetchPRsConcurrent(repoDir, branches, fetchGitLabMR)
+	return g.FetchPRsContext(context.Background(), repoDir, branches)
+}
+
+func (g *GitLabProvider) FetchPRsContext(ctx context.Context, repoDir string, branches []string) PRResult {
+	return fetchPRsConcurrent(ctx, repoDir, branches, func(dir, branch string) *PRInfo {
+		return fetchGitLabMRContext(ctx, dir, branch)
+	})
 }
 
 // Name returns "GitLab".
@@ -65,7 +81,7 @@ func (g *GitLabProvider) CreatePR(repoDir, branch, targetRepo, title, bodyFile s
 	if targetRepo != "" {
 		args = append(args, "--repo", targetRepo)
 	}
-	cmd := exec.Command("glab", args...)
+	cmd := command.Background("glab", args...)
 	cmd.Dir = repoDir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -85,7 +101,13 @@ func (g *GitLabProvider) CreatePR(repoDir, branch, targetRepo, title, bodyFile s
 }
 
 func fetchGitLabMR(repoDir, branch string) *PRInfo {
-	cmd := exec.Command("glab", "mr", "view", branch,
+	return fetchGitLabMRContext(context.Background(), repoDir, branch)
+}
+
+func fetchGitLabMRContext(ctx context.Context, repoDir, branch string) *PRInfo {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	cmd := command.BackgroundContext(ctx, "glab", "mr", "view", branch,
 		"--json", "iid,title,state,draft,webUrl,headPipeline,approvedBy",
 	)
 	cmd.Dir = repoDir

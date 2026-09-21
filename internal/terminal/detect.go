@@ -30,11 +30,18 @@ func (d *Detector) Detect(worktreePaths []string) DetectionResult {
 // and matches shell CWDs to worktree paths. Use this when sharing a single
 // process snapshot across multiple detectors.
 func (d *Detector) DetectFromProcesses(procs []process.Info, worktreePaths []string) DetectionResult {
-	ctx := context.Background()
+	return d.DetectFromProcessesContext(context.Background(), procs, worktreePaths)
+}
+
+// DetectFromProcessesContext allows refresh cancellation during process enrichment.
+func (d *Detector) DetectFromProcessesContext(ctx context.Context, procs []process.Info, worktreePaths []string) DetectionResult {
 
 	// Build PID→Info lookup for O(1) PPID walks.
 	byPID := make(map[int32]process.Info, len(procs))
 	for _, p := range procs {
+		if ctx.Err() != nil {
+			return nil
+		}
 		byPID[p.PID] = p
 	}
 
@@ -46,6 +53,9 @@ func (d *Detector) DetectFromProcesses(procs []process.Info, worktreePaths []str
 	}
 	var shells []shellProc
 	for _, p := range procs {
+		if ctx.Err() != nil {
+			return nil
+		}
 		name := strings.ToLower(filepath.Base(p.Name))
 		if !isShell(name) {
 			continue
@@ -68,6 +78,9 @@ func (d *Detector) DetectFromProcesses(procs []process.Info, worktreePaths []str
 
 	// Enrich shells with CWD (only if not already provided).
 	for i := range shells {
+		if ctx.Err() != nil {
+			return nil
+		}
 		if shells[i].Cwd == "" {
 			process.Enrich(ctx, &shells[i].Info)
 		}

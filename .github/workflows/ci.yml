@@ -108,6 +108,12 @@ jobs:
       - name: Install Task
         uses: go-task/setup-task@70f2430ad412f838533de8c0515c749ffb2b8bd3 # v1.1.0
 
+      - name: Test Windows background process behavior
+        if: runner.os == 'Windows'
+        run: |
+          go test -race ./internal/command ./internal/terminal
+          go build -o bin/focus-trace.exe ./cmd/helpers/focus-trace
+
       - name: Package on ${{ matrix.os }}
         run: task ${{ matrix.task }}
 

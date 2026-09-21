@@ -433,41 +433,7 @@ func (a *App) handleEnter() {
 	}
 	wt := re.state.Worktrees[idx]
 
-	mode := re.state.ActiveMode
-	if mode != nil && mode.Type == "sandbox" && mode.SandboxName != "" {
-		// Sandbox mode: no terminal detection (sandbox terminals are remote).
-		// The main card attaches to the sandbox's primary workspace via
-		// `sbx run`. Linked worktrees live on the host under the mounted repo
-		// and are visible in-container at the same path, so we start the
-		// agent there with `sbx exec -w`.
-		var args []string
-		if wt.IsMain {
-			args = sandbox.RunAttachArgs(mode.SandboxName)
-		} else {
-			args = sandbox.ExecAgentArgs(mode.SandboxName, wt.Path, mode.Agent)
-		}
-		cmd := sandbox.CommandString(args)
-		go func() { _ = ops.OpenTerminal("", cmd, "") }()
-		return
-	}
-
-	identifier := wt.Branch
-
-	// If a terminal is already detected for this worktree, try to activate it.
-	if terms := re.state.Terminals[wt.Path]; len(terms) > 0 {
-		t := terms[0]
-		go func() {
-			// Try 1: activate by TTY — resolves shell PID to its tty device,
-			// then finds the terminal window/tab that owns it.
-			if ops.ActivateTerminalByPID(t.ShellPID, t.RootPID, t.Kind) {
-				return
-			}
-			// Try 2: bring the terminal app to front generically.
-			ops.ActivateTerminalApp(t.Kind)
-		}()
-	} else {
-		go func() { _ = ops.OpenTerminal(wt.Path, "", identifier) }()
-	}
+	a.openOrActivateTerminal(re, wt)
 }
 
 func (a *App) handleEscape() {

@@ -117,7 +117,33 @@ The solution:
 
 All blocking operations (git fetch, sandbox status, PR lookup) run in goroutines.
 Results are delivered to the UI via `fyne.Do(func() { ... })`. The `RefreshManager`
-uses `context.Context` for pause/resume when switching repos.
+uses separate bounded lanes for quick, local and network refreshes: one active
+and at most one pending request per kind, including across pause/resume. Requests
+are coalesced, and a slow network operation does not occupy the local lane.
+Pause cancels the run context through process detection, Git fetch/credentials,
+provider and sandbox probes. Stop is permanent. Each run has a generation checked
+again inside the queued `fyne.Do` callback, independently of repository mutation
+generations. CLI authentication checks are cached across resume; deliberate
+network refresh rechecks them so users can recover after authenticating a tool.
+
+Noninteractive CLI helpers use `internal/command.Background` or
+`BackgroundContext`. On Windows these allocate no console (`CREATE_NO_WINDOW`);
+other platforms retain normal process behavior. Commands preserve caller-owned
+arguments, environment, working directory and I/O. A two-second `WaitDelay`
+bounds inherited output-pipe waits after exit/cancellation, not runtime.
+Credential lookup has a deadline and disables Git terminal and Git Credential
+Manager interactive prompts. Third-party descendants may still create their own
+UI; cancellation kills the direct process, not an entire process tree.
+
+Terminal, editor and system-file launches have a separate visibility policy.
+The Windows save-dialog helper suppresses its PowerShell console while preserving
+the requested WinForms dialog. Terminal actions coalesce pending requests and
+allow a five-second detection interval after opening. Errors update the originating
+repo's status without raising a window or automatically relaunching. Windows
+terminal launch remains unsupported and is rejected before a custom executable
+receives the POSIX argument recipe. The optional
+[foreground observer and Windows acceptance procedure](docs/windows-focus-validation.md)
+verify actual focus behavior independently of console suppression.
 
 ## macOS GUI considerations
 
