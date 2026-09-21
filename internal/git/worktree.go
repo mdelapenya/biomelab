@@ -643,9 +643,10 @@ func (r *Repository) linkedWorktree(name string) (*Worktree, error) {
 		wt.Branch = headStr[:min(7, len(headStr))]
 	}
 
-	// Open the linked repo for status check.
-	wtFS := osfs.New(wtPath)
-	linkedRepo, err := r.wt.Open(wtFS)
+	// Open the linked repo for status check. PlainOpen follows the worktree's
+	// .git pointer and also tolerates native git canonicalizing the paths it
+	// writes there (for example /var to /private/var on macOS).
+	linkedRepo, err := gogit.PlainOpen(wtPath)
 	if err != nil {
 		return nil, err
 	}
@@ -739,7 +740,22 @@ func (r *Repository) CreateWorktree(branchName string) error {
 	}
 	wtFS := osfs.New(wtPath)
 	if err := r.wt.Add(wtFS, safe); err != nil {
-		return err
+		if !errors.Is(err, plumbing.ErrReferenceNotFound) {
+			return err
+		}
+
+		// go-git's worktree implementation requires HEAD to resolve to a
+		// commit. Native git can create the first linked worktree from an
+		// unborn branch by inferring an orphan branch, which is the behavior
+		// users get from `git worktree add -b` in a freshly initialized repo.
+		if err := os.MkdirAll(r.worktreesDir(), 0o755); err != nil {
+			return fmt.Errorf("create worktrees dir: %w", err)
+		}
+		cmd := command.Background("git", "worktree", "add", "-b", safe, wtPath)
+		cmd.Dir = r.repoRoot
+		if out, cliErr := cmd.CombinedOutput(); cliErr != nil {
+			return fmt.Errorf("create worktree from unborn branch: %w: %s", cliErr, strings.TrimSpace(string(out)))
+		}
 	}
 	// Ensure .biomelab dir exists for new worktree so external tools can write
 	// files without needing to create the directory themselves.
