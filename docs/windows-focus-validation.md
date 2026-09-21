@@ -63,7 +63,8 @@ defect needs investigation even if command suppression works.
 
 ## Automated coverage and limits
 
-Windows CI executes the command runtime tests through a GUI-subsystem launcher,
+The CI test matrix runs the full suite with the race detector on Linux, macOS,
+and Windows. Windows executes the command runtime tests through a GUI-subsystem launcher,
 checks that background children have no console window, and tests Windows
 terminal rejection before launch. Cross-platform tests cover command I/O,
 errors, cancellation, inherited output-pipe waits, refresh coalescing and stale
@@ -90,7 +91,8 @@ code page or attachment count is diagnostic; the assertion requires no console
 window. Test output includes both parent and child snapshots and helper stderr
 on failure.
 
-CI disables test-result caching and uploads the trace files plus `test.log` as
+The Windows test job disables test-result caching and uploads the trace files
+plus the full suite output in `test.log` as
 `windows-console-<run-id>-<attempt>`, including when the test fails. Artifacts
 are retained for seven days. To inspect a run:
 
