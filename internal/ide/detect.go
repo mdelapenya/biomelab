@@ -65,7 +65,7 @@ func (d *Detector) DetectFromProcessesContext(ctx context.Context, procs []proce
 		// running window via IPC and then linger as zombies. They are NOT
 		// the IDE window — skip them so each worktree shows one entry per
 		// real window instead of N stale CLI handlers.
-		if strings.Contains(p.Cmdline, "/out/cli.js") {
+		if strings.Contains(filepath.ToSlash(p.Cmdline), "/out/cli.js") {
 			continue
 		}
 		name := strings.ToLower(filepath.Base(p.Name))
@@ -142,7 +142,7 @@ func (d *Detector) DetectFromProcessesContext(ctx context.Context, procs []proce
 	// Clean worktree paths once for comparison.
 	cleanPaths := make([]string, len(worktreePaths))
 	for i, p := range worktreePaths {
-		cleanPaths[i] = filepath.Clean(p)
+		cleanPaths[i] = filepath.ToSlash(filepath.Clean(p))
 	}
 
 	// Match IDE processes to worktree paths by CWD or cmdline.
@@ -156,7 +156,10 @@ func (d *Detector) DetectFromProcessesContext(ctx context.Context, procs []proce
 	var treeOrder []treeKey               // preserves insertion order
 
 	for _, ide := range ides {
-		cwd := filepath.Clean(ide.Cwd)
+		cwd := filepath.ToSlash(filepath.Clean(ide.Cwd))
+		// Windows command lines may use either slash style, independently
+		// of the native separators produced by filepath.Clean.
+		cmdline := filepath.ToSlash(ide.Cmdline)
 
 		// For cmdline matching, find the longest (most specific) worktree path
 		// that appears in the cmdline. This prevents a parent path like
@@ -165,7 +168,7 @@ func (d *Detector) DetectFromProcessesContext(ctx context.Context, procs []proce
 		bestCmdlineIdx := -1
 		bestCmdlineLen := 0
 		for j := range worktreePaths {
-			if strings.Contains(ide.Cmdline, cleanPaths[j]) && len(cleanPaths[j]) > bestCmdlineLen {
+			if strings.Contains(cmdline, cleanPaths[j]) && len(cleanPaths[j]) > bestCmdlineLen {
 				bestCmdlineIdx = j
 				bestCmdlineLen = len(cleanPaths[j])
 			}
