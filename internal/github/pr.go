@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+
+	"github.com/mdelapenya/biomelab/internal/command"
 )
 
 // GHAvailability represents whether the gh CLI is usable.
@@ -27,7 +29,7 @@ func CheckGH() GHAvailability {
 	if _, err := exec.LookPath("gh"); err != nil {
 		return GHNotFound
 	}
-	cmd := exec.Command("gh", "auth", "status")
+	cmd := command.Background("gh", "auth", "status")
 	if err := cmd.Run(); err != nil {
 		return GHNotAuthenticated
 	}
@@ -80,7 +82,7 @@ func FetchPRs(repoDir string, branches []string) PRResult {
 }
 
 func fetchPR(repoDir, branch string) *PRInfo {
-	cmd := exec.Command("gh", "pr", "view", branch,
+	cmd := command.Background("gh", "pr", "view", branch,
 		"--json", "number,title,state,isDraft,url,statusCheckRollup",
 	)
 	cmd.Dir = repoDir
@@ -90,11 +92,11 @@ func fetchPR(repoDir, branch string) *PRInfo {
 	}
 
 	var raw struct {
-		Number             int    `json:"number"`
-		Title              string `json:"title"`
-		State              string `json:"state"`
-		IsDraft            bool   `json:"isDraft"`
-		URL                string `json:"url"`
+		Number            int    `json:"number"`
+		Title             string `json:"title"`
+		State             string `json:"state"`
+		IsDraft           bool   `json:"isDraft"`
+		URL               string `json:"url"`
 		StatusCheckRollup []struct {
 			State      string `json:"state"`
 			Status     string `json:"status"`
@@ -214,7 +216,7 @@ func ValidatePR(repoDir string, ref PRRef) (string, error) {
 		args = append(args, "--repo", ref.Repo)
 	}
 
-	cmd := exec.Command("gh", args...)
+	cmd := command.Background("gh", args...)
 	cmd.Dir = repoDir
 	out, err := cmd.Output()
 	if err != nil {
@@ -222,7 +224,7 @@ func ValidatePR(repoDir string, ref PRRef) (string, error) {
 	}
 
 	var raw struct {
-		Number     int    `json:"number"`
+		Number      int    `json:"number"`
 		HeadRefName string `json:"headRefName"`
 	}
 	if err := json.Unmarshal(out, &raw); err != nil {
@@ -245,4 +247,3 @@ func StatusIcon(status string) string {
 		return ""
 	}
 }
-

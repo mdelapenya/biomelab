@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -83,10 +84,12 @@ type PRProvider interface {
 	// CheckCLI performs a pre-flight check for the provider's CLI tool.
 	// Intended to be called once at startup.
 	CheckCLI() CLIAvailability
+	CheckCLIContext(context.Context) CLIAvailability
 
 	// FetchPRs looks up open PRs/MRs for the given branch names.
 	// Returns results for branches that have an associated PR/MR.
 	FetchPRs(repoDir string, branches []string) PRResult
+	FetchPRsContext(context.Context, string, []string) PRResult
 
 	// CreatePR pushes the branch (if needed) and creates a PR/MR.
 	// targetRepo is "owner/repo" derived from the selected remote;
@@ -171,7 +174,7 @@ func (u *UnsupportedProvider) Provider() Provider {
 
 // fetchPRsConcurrent fetches PR/MR info for multiple branches concurrently,
 // using the provided fetch function for each branch. Limits concurrency to 4.
-func fetchPRsConcurrent(repoDir string, branches []string, fetchFn func(repoDir, branch string) *PRInfo) PRResult {
+func fetchPRsConcurrent(ctx context.Context, repoDir string, branches []string, fetchFn func(repoDir, branch string) *PRInfo) PRResult {
 	result := make(PRResult)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -184,7 +187,15 @@ func fetchPRsConcurrent(repoDir string, branches []string, fetchFn func(repoDir,
 		wg.Add(1)
 		go func(br string) {
 			defer wg.Done()
-			sem <- struct{}{}
+			select {
+			case <-ctx.Done():
+				return
+			case sem <- struct{}{}:
+			}
+			if ctx.Err() != nil {
+				<-sem
+				return
+			}
 			defer func() { <-sem }()
 
 			pr := fetchFn(repoDir, br)
@@ -197,4 +208,10 @@ func fetchPRsConcurrent(repoDir string, branches []string, fetchFn func(repoDir,
 	}
 	wg.Wait()
 	return result
+}
+
+func (u *UnsupportedProvider) CheckCLIContext(context.Context) CLIAvailability { return u.CheckCLI() }
+
+func (u *UnsupportedProvider) FetchPRsContext(_ context.Context, dir string, branches []string) PRResult {
+	return u.FetchPRs(dir, branches)
 }

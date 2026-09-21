@@ -40,7 +40,11 @@ func (d *Detector) Detect(worktreePaths []string) DetectionResult {
 // and worktree paths. Use this when sharing a single process snapshot across
 // multiple detectors.
 func (d *Detector) DetectFromProcesses(procs []process.Info, worktreePaths []string) DetectionResult {
-	ctx := context.Background()
+	return d.DetectFromProcessesContext(context.Background(), procs, worktreePaths)
+}
+
+// DetectFromProcessesContext allows refresh cancellation during process enrichment.
+func (d *Detector) DetectFromProcessesContext(ctx context.Context, procs []process.Info, worktreePaths []string) DetectionResult {
 
 	// Filter to IDE processes only.
 	// Match against process name only (not cmdline) to avoid false positives
@@ -52,13 +56,16 @@ func (d *Detector) DetectFromProcesses(procs []process.Info, worktreePaths []str
 
 	var ides []ideProc
 	for _, p := range procs {
+		if ctx.Err() != nil {
+			return nil
+		}
 		// Electron-based IDEs (VS Code, Cursor) leave behind CLI-launcher
 		// processes after `code <path>`/`cursor <path>` runs. They invoke
 		// `<App>/Contents/Resources/app/out/cli.js` to handoff to the
 		// running window via IPC and then linger as zombies. They are NOT
 		// the IDE window — skip them so each worktree shows one entry per
 		// real window instead of N stale CLI handlers.
-		if strings.Contains(p.Cmdline, "/out/cli.js") {
+		if strings.Contains(filepath.ToSlash(p.Cmdline), "/out/cli.js") {
 			continue
 		}
 		name := strings.ToLower(filepath.Base(p.Name))
@@ -83,6 +90,9 @@ func (d *Detector) DetectFromProcesses(procs []process.Info, worktreePaths []str
 
 	// Enrich with CWD (only if not already provided).
 	for i := range ides {
+		if ctx.Err() != nil {
+			return nil
+		}
 		if ides[i].Cwd == "" {
 			process.Enrich(ctx, &ides[i].Info)
 		}
@@ -132,7 +142,7 @@ func (d *Detector) DetectFromProcesses(procs []process.Info, worktreePaths []str
 	// Clean worktree paths once for comparison.
 	cleanPaths := make([]string, len(worktreePaths))
 	for i, p := range worktreePaths {
-		cleanPaths[i] = filepath.Clean(p)
+		cleanPaths[i] = filepath.ToSlash(filepath.Clean(p))
 	}
 
 	// Match IDE processes to worktree paths by CWD or cmdline.
@@ -146,7 +156,10 @@ func (d *Detector) DetectFromProcesses(procs []process.Info, worktreePaths []str
 	var treeOrder []treeKey               // preserves insertion order
 
 	for _, ide := range ides {
-		cwd := filepath.Clean(ide.Cwd)
+		cwd := filepath.ToSlash(filepath.Clean(ide.Cwd))
+		// Windows command lines may use either slash style, independently
+		// of the native separators produced by filepath.Clean.
+		cmdline := filepath.ToSlash(ide.Cmdline)
 
 		// For cmdline matching, find the longest (most specific) worktree path
 		// that appears in the cmdline. This prevents a parent path like
@@ -155,7 +168,7 @@ func (d *Detector) DetectFromProcesses(procs []process.Info, worktreePaths []str
 		bestCmdlineIdx := -1
 		bestCmdlineLen := 0
 		for j := range worktreePaths {
-			if strings.Contains(ide.Cmdline, cleanPaths[j]) && len(cleanPaths[j]) > bestCmdlineLen {
+			if strings.Contains(cmdline, cleanPaths[j]) && len(cleanPaths[j]) > bestCmdlineLen {
 				bestCmdlineIdx = j
 				bestCmdlineLen = len(cleanPaths[j])
 			}

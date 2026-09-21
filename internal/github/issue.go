@@ -6,10 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mdelapenya/biomelab/internal/command"
 )
 
 // IssueRef identifies an issue, optionally in an explicit GitHub repository.
@@ -121,7 +122,7 @@ type issueRunner interface {
 type execIssueRunner struct{}
 
 func (execIssueRunner) run(ctx context.Context, dir string, args []string) ([]byte, []byte, error) {
-	cmd := exec.CommandContext(ctx, "gh", args...)
+	cmd := command.BackgroundContext(ctx, "gh", args...)
 	cmd.Dir = dir
 	var stderr strings.Builder
 	cmd.Stderr = &stderr

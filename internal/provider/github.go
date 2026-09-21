@@ -1,10 +1,14 @@
 package provider
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
+
+	"github.com/mdelapenya/biomelab/internal/command"
 )
 
 // GitHubProvider fetches PR information using the gh CLI.
@@ -12,10 +16,16 @@ type GitHubProvider struct{}
 
 // CheckCLI verifies that gh is installed and authenticated.
 func (g *GitHubProvider) CheckCLI() CLIAvailability {
+	return g.CheckCLIContext(context.Background())
+}
+
+func (g *GitHubProvider) CheckCLIContext(ctx context.Context) CLIAvailability {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	if _, err := exec.LookPath("gh"); err != nil {
 		return CLINotFound
 	}
-	cmd := exec.Command("gh", "auth", "status")
+	cmd := command.BackgroundContext(ctx, "gh", "auth", "status")
 	if err := cmd.Run(); err != nil {
 		return CLINotAuthenticated
 	}
@@ -24,7 +34,13 @@ func (g *GitHubProvider) CheckCLI() CLIAvailability {
 
 // FetchPRs looks up open PRs for the given branch names using gh.
 func (g *GitHubProvider) FetchPRs(repoDir string, branches []string) PRResult {
-	return fetchPRsConcurrent(repoDir, branches, fetchGitHubPR)
+	return g.FetchPRsContext(context.Background(), repoDir, branches)
+}
+
+func (g *GitHubProvider) FetchPRsContext(ctx context.Context, repoDir string, branches []string) PRResult {
+	return fetchPRsConcurrent(ctx, repoDir, branches, func(dir, branch string) *PRInfo {
+		return fetchGitHubPRContext(ctx, dir, branch)
+	})
 }
 
 // Name returns "GitHub".
@@ -65,7 +81,7 @@ func (g *GitHubProvider) CreatePR(repoDir, branch, targetRepo, title, bodyFile s
 	if targetRepo != "" {
 		args = append(args, "--repo", targetRepo)
 	}
-	cmd := exec.Command("gh", args...)
+	cmd := command.Background("gh", args...)
 	cmd.Dir = repoDir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -90,7 +106,7 @@ func (g *GitHubProvider) CreatePR(repoDir, branch, targetRepo, title, bodyFile s
 // Used to derive a PR title when the caller supplies a custom body and we
 // need to fill in the title gh would otherwise have computed from --fill.
 func commitSubject(repoDir, branch string) (string, error) {
-	cmd := exec.Command("git", "log", "-1", "--pretty=%s", branch)
+	cmd := command.Background("git", "log", "-1", "--pretty=%s", branch)
 	cmd.Dir = repoDir
 	out, err := cmd.Output()
 	if err != nil {
@@ -100,7 +116,13 @@ func commitSubject(repoDir, branch string) (string, error) {
 }
 
 func fetchGitHubPR(repoDir, branch string) *PRInfo {
-	cmd := exec.Command("gh", "pr", "view", branch,
+	return fetchGitHubPRContext(context.Background(), repoDir, branch)
+}
+
+func fetchGitHubPRContext(ctx context.Context, repoDir, branch string) *PRInfo {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	cmd := command.BackgroundContext(ctx, "gh", "pr", "view", branch,
 		"--json", "number,title,state,isDraft,url,statusCheckRollup,reviews",
 	)
 	cmd.Dir = repoDir
@@ -143,7 +165,9 @@ func fetchGitHubPR(repoDir, branch string) *PRInfo {
 
 // githubReviewStatus returns the most significant review state from a list of
 // GitHub reviews. Priority: approved > changes_requested > commented.
-func githubReviewStatus(reviews []struct{ State string `json:"state"` }) string {
+func githubReviewStatus(reviews []struct {
+	State string `json:"state"`
+}) string {
 	hasApproved := false
 	hasChanges := false
 	hasComment := false

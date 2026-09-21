@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/mdelapenya/biomelab/internal/command"
 )
 
 // ansiEscape matches CSI/OSC escape sequences emitted by tools that color
@@ -35,7 +37,7 @@ func Log(wtPath string, limit int) (string, error) {
 	if limit > 0 {
 		args = append(args, "--limit", strconv.Itoa(limit))
 	}
-	cmd := exec.Command(bin, args...)
+	cmd := command.Background(bin, args...)
 	cmd.Dir = wtPath
 	cmd.Env = append(os.Environ(), "NO_COLOR=1")
 	out, err := cmd.CombinedOutput()

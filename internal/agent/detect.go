@@ -42,13 +42,20 @@ func (d *Detector) Detect(worktreePaths []string) DetectionResult {
 // and worktree paths. Use this when sharing a single process snapshot across
 // multiple detectors.
 func (d *Detector) DetectFromProcesses(procs []process.Info, worktreePaths []string) DetectionResult {
-	ctx := context.Background()
+	return d.DetectFromProcessesContext(context.Background(), procs, worktreePaths)
+}
+
+// DetectFromProcessesContext allows refresh cancellation during process enrichment.
+func (d *Detector) DetectFromProcessesContext(ctx context.Context, procs []process.Info, worktreePaths []string) DetectionResult {
 
 	// Filter to agent processes only.
 	// Match against both the process name and the command line, since some agents
 	// (e.g. gemini) run as Node.js scripts where the process name is "node".
 	var agents []process.Info
 	for _, p := range procs {
+		if ctx.Err() != nil {
+			return nil
+		}
 		name := strings.ToLower(filepath.Base(p.Name))
 		cmdline := strings.ToLower(p.Cmdline)
 		matched := false
@@ -73,6 +80,9 @@ func (d *Detector) DetectFromProcesses(procs []process.Info, worktreePaths []str
 
 	// Enrich with CWD, state, and start time (only if not already provided).
 	for i := range agents {
+		if ctx.Err() != nil {
+			return nil
+		}
 		if agents[i].Cwd == "" {
 			process.Enrich(ctx, &agents[i])
 		}

@@ -54,8 +54,6 @@ func QuickRefresh(repo *git.Repository) RefreshResult {
 	}
 	return RefreshResult{
 		Worktrees:  snap.Worktrees,
-		Agents:     agent.DetectionResult{},
-		PRs:        provider.PRResult{},
 		Generation: snap.Generation,
 	}
 }
@@ -64,6 +62,7 @@ func QuickRefresh(repo *git.Repository) RefreshResult {
 // sbxCandidates is the ordered list of sandbox names to check (first match
 // wins); pass nil or empty to skip the sandbox status check.
 func LocalRefresh(
+	ctx context.Context,
 	repo *git.Repository,
 	detector *agent.Detector,
 	ideDetector *ide.Detector,
@@ -71,8 +70,14 @@ func LocalRefresh(
 	procLister process.Lister,
 	sbxCandidates []string,
 ) RefreshResult {
+	if err := ctx.Err(); err != nil {
+		return RefreshResult{Err: err}
+	}
 	snap, err := repo.Snapshot()
 	if err != nil {
+		return RefreshResult{Err: err}
+	}
+	if err := ctx.Err(); err != nil {
 		return RefreshResult{Err: err}
 	}
 	wts := snap.Worktrees
@@ -83,27 +88,29 @@ func LocalRefresh(
 	}
 
 	// Fetch processes once and share across all detectors.
-	ctx := context.Background()
 	procs, procErr := procLister.Processes(ctx)
 	var agents agent.DetectionResult
 	var ides ide.DetectionResult
 	var terms terminal.DetectionResult
 	if procErr == nil {
-		agents = detector.DetectFromProcesses(procs, paths)
-		ides = ideDetector.DetectFromProcesses(procs, paths)
-		terms = termDetector.DetectFromProcesses(procs, paths)
+		agents = detector.DetectFromProcessesContext(ctx, procs, paths)
+		ides = ideDetector.DetectFromProcessesContext(ctx, procs, paths)
+		terms = termDetector.DetectFromProcessesContext(ctx, procs, paths)
 	}
 
 	// Check all sandbox statuses with one sbx ls call, then match against
 	// every candidate name so the GUI detects sandboxes created under either
 	// biomelab's naming ("<owner>-<repo>-<agent>") or sbx's default
 	// ("<repo-dir>-<agent>").
+	if err := ctx.Err(); err != nil {
+		return RefreshResult{Err: err}
+	}
 	var sbxStatus sandbox.Status
 	var sbxMatched string
 	var sbxVer sandbox.VersionInfo
 	var allStatuses map[string]sandbox.Status
 	if len(sbxCandidates) > 0 {
-		statusMap := sandbox.CheckAllStatuses()
+		statusMap := func() map[string]sandbox.Status { statuses, _ := sandbox.ListStatusesContext(ctx); return statuses }()
 		if statusMap != nil {
 			allStatuses = make(map[string]sandbox.Status, len(statusMap))
 			for k, v := range statusMap {
@@ -114,7 +121,7 @@ func LocalRefresh(
 				sbxMatched = name
 			}
 		}
-		sbxVer = sandbox.Version()
+		sbxVer = sandbox.VersionContext(ctx)
 	}
 
 	return RefreshResult{
@@ -136,6 +143,7 @@ func LocalRefresh(
 // sbxCandidates is the ordered list of sandbox names to check (first match
 // wins); pass nil or empty to skip the sandbox status check.
 func NetworkRefresh(
+	ctx context.Context,
 	repo *git.Repository,
 	detector *agent.Detector,
 	ideDetector *ide.Detector,
@@ -145,10 +153,16 @@ func NetworkRefresh(
 	cliAvail provider.CLIAvailability,
 	sbxCandidates []string,
 ) RefreshResult {
-	fetchErr := repo.Fetch()
+	if err := ctx.Err(); err != nil {
+		return RefreshResult{Err: err}
+	}
+	fetchErr := repo.Fetch(ctx)
 
 	snap, err := repo.Snapshot()
 	if err != nil {
+		return RefreshResult{Err: err}
+	}
+	if err := ctx.Err(); err != nil {
 		return RefreshResult{Err: err}
 	}
 	wts := snap.Worktrees
@@ -160,28 +174,33 @@ func NetworkRefresh(
 		branches[i] = wt.Branch
 	}
 
-	ctx := context.Background()
 	procs, procErr := procLister.Processes(ctx)
 	var agents agent.DetectionResult
 	var ides ide.DetectionResult
 	var terms terminal.DetectionResult
 	if procErr == nil {
-		agents = detector.DetectFromProcesses(procs, paths)
-		ides = ideDetector.DetectFromProcesses(procs, paths)
-		terms = termDetector.DetectFromProcesses(procs, paths)
+		agents = detector.DetectFromProcessesContext(ctx, procs, paths)
+		ides = ideDetector.DetectFromProcessesContext(ctx, procs, paths)
+		terms = termDetector.DetectFromProcessesContext(ctx, procs, paths)
 	}
 
+	if err := ctx.Err(); err != nil {
+		return RefreshResult{Err: err}
+	}
 	var prs provider.PRResult
-	if cliAvail == provider.CLIAvailable {
-		prs = prProv.FetchPRs(repo.Root(), branches)
+	if prProv != nil && cliAvail == provider.CLIAvailable {
+		prs = prProv.FetchPRsContext(ctx, repo.Root(), branches)
 	} else {
 		prs = make(provider.PRResult)
 	}
 
+	if err := ctx.Err(); err != nil {
+		return RefreshResult{Err: err}
+	}
 	var sbxStatus sandbox.Status
 	var sbxMatched string
 	if len(sbxCandidates) > 0 {
-		statusMap := sandbox.CheckAllStatuses()
+		statusMap := func() map[string]sandbox.Status { statuses, _ := sandbox.ListStatusesContext(ctx); return statuses }()
 		if statusMap != nil {
 			if name, s, ok := sandbox.MatchStatus(statusMap, sbxCandidates); ok {
 				sbxStatus = s
@@ -217,14 +236,14 @@ func CardRefresh(
 	cliAvail provider.CLIAvailability,
 	wtPath, branch string,
 ) RefreshResult {
-	fetchErr := repo.Fetch()
+	ctx := context.Background()
+	fetchErr := repo.Fetch(ctx)
 
 	snap, err := repo.Snapshot()
 	if err != nil {
 		return RefreshResult{Err: err}
 	}
 
-	ctx := context.Background()
 	procs, procErr := procLister.Processes(ctx)
 	var agents agent.DetectionResult
 	var ides ide.DetectionResult

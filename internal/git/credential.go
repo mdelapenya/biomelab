@@ -2,17 +2,23 @@ package git
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net/url"
-	"os/exec"
+	"os"
 	"strings"
+	"time"
 
 	githttp "github.com/go-git/go-git/v6/plumbing/transport/http"
+
+	"github.com/mdelapenya/biomelab/internal/command"
 )
 
-// credentialFill invokes `git credential fill` to obtain credentials
-// from the user's configured credential helpers (osxkeychain, gh auth, etc.).
-func credentialFill(remoteURL string) (*githttp.BasicAuth, error) {
+// credentialFill asks configured helpers for cached credentials.
+// Background GUI refreshes must not open a login dialog or terminal prompt.
+func credentialFill(ctx context.Context, remoteURL string) (*githttp.BasicAuth, error) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
 	u, err := url.Parse(remoteURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse remote URL: %w", err)
@@ -22,7 +28,8 @@ func credentialFill(remoteURL string) (*githttp.BasicAuth, error) {
 	input := fmt.Sprintf("protocol=%s\nhost=%s\npath=%s\n\n",
 		u.Scheme, u.Host, strings.TrimPrefix(u.Path, "/"))
 
-	cmd := exec.Command("git", "credential", "fill")
+	cmd := command.BackgroundContext(ctx, "git", "credential", "fill")
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=never")
 	cmd.Stdin = strings.NewReader(input)
 
 	out, err := cmd.Output()

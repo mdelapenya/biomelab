@@ -25,12 +25,14 @@ import (
 
 // repoEntry holds per-repo runtime state.
 type repoEntry struct {
-	group      *RepoGroup
-	repo       *git.Repository
-	prProv     provider.PRProvider
-	state      *RepoState
-	dashboard  *Dashboard
-	refreshMgr *RefreshManager
+	group               *RepoGroup
+	repo                *git.Repository
+	prProv              provider.PRProvider
+	state               *RepoState
+	dashboard           *Dashboard
+	refreshMgr          *RefreshManager
+	terminalErrorTarget terminalTarget
+	terminalError       string
 }
 
 // App is the top-level Fyne application.
@@ -88,6 +90,10 @@ type App struct {
 	// operations without process-wide mutable hooks.
 	issueDeps *issueDependencies
 	issueFlow *issueFlow
+
+	terminalDeps     *terminalDependencies
+	terminalActions  map[terminalTarget]bool
+	terminalSessions map[terminalTarget]*terminal.Session
 }
 
 // NewApp creates a new biomelab Fyne application.
@@ -267,8 +273,11 @@ func (a *App) buildRepoEntry(entry config.RepoEntry) *repoEntry {
 		go migrateRegentForRepo(repo)
 	}
 
-	rm.OnRefresh = func(result ops.RefreshResult) {
+	rm.OnRefresh = func(result ops.RefreshResult, generation uint64) {
 		fyne.Do(func() {
+			if !rm.IsCurrent(generation) {
+				return
+			}
 			// Reconcile the stored sandbox name FIRST so ApplyRefresh's
 			// dashboard rebuild renders the real name in the same tick.
 			// Triggered when refresh matched a sandbox under a name that

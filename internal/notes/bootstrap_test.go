@@ -150,6 +150,10 @@ func TestEnsureAgentBootstrapMigratesKnownLegacyBlocksInPlace(t *testing.T) {
 			if err := os.WriteFile(path, []byte(original), 0o640); err != nil {
 				t.Fatal(err)
 			}
+			originalInfo, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if err := EnsureAgentBootstrap(repo); err != nil {
 				t.Fatal(err)
 			}
@@ -178,8 +182,8 @@ func TestEnsureAgentBootstrapMigratesKnownLegacyBlocksInPlace(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := info.Mode().Perm(); got != 0o640 {
-				t.Errorf("mode = %o, want 640", got)
+			if got, want := info.Mode().Perm(), originalInfo.Mode().Perm(); got != want {
+				t.Errorf("mode = %o, want original mode %o", got, want)
 			}
 		})
 	}
@@ -191,6 +195,10 @@ func TestEnsureAgentBootstrapMigratesLegacyCRLFInPlace(t *testing.T) {
 	legacy := strings.ReplaceAll(legacyBootstrapFixture, "\n", "\r\n")
 	original := "before\r\n" + legacy + "after\r\n"
 	if err := os.WriteFile(path, []byte(original), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	originalInfo, err := os.Stat(path)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if err := EnsureAgentBootstrap(repo); err != nil {
@@ -218,8 +226,8 @@ func TestEnsureAgentBootstrapMigratesLegacyCRLFInPlace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := info.Mode().Perm(); got != 0o640 {
-		t.Errorf("mode = %o, want 640", got)
+	if got, want := info.Mode().Perm(), originalInfo.Mode().Perm(); got != want {
+		t.Errorf("mode = %o, want original mode %o", got, want)
 	}
 }
 

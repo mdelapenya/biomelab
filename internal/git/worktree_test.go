@@ -952,7 +952,7 @@ func TestFetch_MultipleRemotes(t *testing.T) {
 	originBefore := runGit(t, localDir, "rev-parse", "refs/remotes/origin/"+branchName)
 	upstreamBefore := runGit(t, localDir, "rev-parse", "refs/remotes/upstream/"+branchName)
 
-	if err := repo.Fetch(); err != nil {
+	if err := repo.Fetch(t.Context()); err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
 

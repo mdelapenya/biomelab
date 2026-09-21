@@ -10,6 +10,8 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/storage"
+
+	"github.com/mdelapenya/biomelab/internal/command"
 )
 
 // saveBytesNative prompts the user to pick a save location using the
@@ -114,7 +116,7 @@ func nativeSaveWindows(defaultName string) (string, error) {
 $dlg = New-Object System.Windows.Forms.SaveFileDialog;
 $dlg.FileName = '%s';
 if ($dlg.ShowDialog() -eq 'OK') { Write-Output $dlg.FileName }`, safe)
-	out, runErr := exec.Command(bin, "-NoProfile", "-Command", script).Output()
+	out, runErr := command.Background(bin, "-NoProfile", "-Command", script).Output()
 	if runErr != nil {
 		return "", nil
 	}

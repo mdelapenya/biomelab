@@ -12,7 +12,7 @@ func TestTitle(t *testing.T) {
 
 func TestTitleEscape(t *testing.T) {
 	got := titleEscape("feature-branch")
-	want := "printf '\\033]0;biomelab: feature-branch\\007'; "
+	want := "printf '\\033]0;%s\\007' 'biomelab: feature-branch'; "
 	if got != want {
 		t.Errorf("titleEscape() = %q, want %q", got, want)
 	}
@@ -23,7 +23,7 @@ func TestBuildShellCmdWithTitle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "printf '\\033]0;biomelab: my-branch\\007'; cd '/project'; exec $SHELL"
+	want := "printf '\\033]0;%s\\007' 'biomelab: my-branch'; cd '/project'; exec $SHELL"
 	if got != want {
 		t.Errorf("buildShellCmdWithTitle() = %q, want %q", got, want)
 	}
@@ -46,7 +46,7 @@ func TestBuildShellCmdWithTitle_WithCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "printf '\\033]0;biomelab: my-branch\\007'; sbx run mybox; exec $SHELL"
+	want := "printf '\\033]0;%s\\007' 'biomelab: my-branch'; sbx run mybox; exec $SHELL"
 	if got != want {
 		t.Errorf("buildShellCmdWithTitle() = %q, want %q", got, want)
 	}

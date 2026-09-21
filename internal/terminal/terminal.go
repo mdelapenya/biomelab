@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // OpenWithTitle opens a new terminal window with a biomelab-specific window
@@ -16,6 +17,9 @@ import (
 //
 // If identifier is empty, this behaves identically to Open.
 func OpenWithTitle(dir, command, identifier string) error {
+	if runtime.GOOS == "windows" {
+		return fmt.Errorf("terminal launch on Windows is not supported yet; open a terminal in the worktree manually")
+	}
 	if identifier == "" {
 		return Open(dir, command)
 	}
@@ -23,23 +27,16 @@ func OpenWithTitle(dir, command, identifier string) error {
 	if err != nil {
 		return err
 	}
-	if t := os.Getenv("BIOME_TERMINAL"); t != "" {
-		return openCustomRaw(t, shellCmd)
-	}
-	switch runtime.GOOS {
-	case "darwin":
-		return darwinOpenRaw(shellCmd)
-	case "linux":
-		return linuxOpenRaw(shellCmd)
-	default:
-		return fmt.Errorf("terminal: unsupported platform %s — set BIOME_TERMINAL", runtime.GOOS)
-	}
+	return openRaw(shellCmd)
 }
 
 // Open opens a new terminal window.
 // If command is non-empty, the terminal runs that command.
 // If dir is non-empty, the terminal starts a shell in that directory.
 func Open(dir, command string) error {
+	if runtime.GOOS == "windows" {
+		return fmt.Errorf("terminal launch on Windows is not supported yet; open a terminal in the worktree manually")
+	}
 	if t := os.Getenv("BIOME_TERMINAL"); t != "" {
 		return openCustom(t, dir, command)
 	}
@@ -61,7 +58,7 @@ func openCustom(terminal, dir, command string) error {
 	}
 	cmd := exec.Command(terminal, "-e", "sh", "-c", shellCmd)
 	cmd.Stderr = os.Stderr
-	return cmd.Start()
+	return startLauncher(cmd)
 }
 
 // darwinOpen writes a temporary .command file and opens it with `open`.
@@ -115,7 +112,7 @@ func linuxOpen(dir, command string) error {
 
 	cmd := exec.Command(term, "-e", "sh", "-c", shellCmd)
 	cmd.Stderr = os.Stderr
-	return cmd.Start()
+	return startLauncher(cmd)
 }
 
 // buildShellCmd constructs a shell command string from dir and/or command.
@@ -145,14 +142,14 @@ func buildShellCmdWithTitle(dir, command, identifier string) (string, error) {
 // titleEscape returns a printf command that sets the terminal window title
 // via the standard OSC (Operating System Command) escape sequence.
 func titleEscape(identifier string) string {
-	return fmt.Sprintf("printf '\\033]0;biomelab: %s\\007'; ", identifier)
+	return "printf '\\033]0;%s\\007' " + shellQuote(Title(identifier)) + "; "
 }
 
 // openCustomRaw launches a user-specified terminal with a pre-built shell command.
 func openCustomRaw(terminal, shellCmd string) error {
 	cmd := exec.Command(terminal, "-e", "sh", "-c", shellCmd)
 	cmd.Stderr = os.Stderr
-	return cmd.Start()
+	return startLauncher(cmd)
 }
 
 // darwinOpenRaw writes a pre-built shell command to a .command file and opens it.
@@ -193,10 +190,54 @@ func linuxOpenRaw(shellCmd string) error {
 
 	cmd := exec.Command(term, "-e", "sh", "-c", shellCmd)
 	cmd.Stderr = os.Stderr
-	return cmd.Start()
+	return startLauncher(cmd)
 }
 
 // shellQuote wraps a string in single quotes for safe shell use.
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
+// startLauncher reports immediate launcher failures, then reaps long-lived
+// launchers asynchronously without waiting for the interactive session.
+func startLauncher(cmd *exec.Cmd) error {
+	return startLauncherWithGrace(cmd, 250*time.Millisecond)
+}
+
+func startLauncherWithGrace(cmd *exec.Cmd, grace time.Duration) error {
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	timer := time.NewTimer(grace)
+	defer timer.Stop()
+	select {
+	case err := <-done:
+		if err != nil {
+			return fmt.Errorf("terminal launcher: %w", err)
+		}
+		return nil
+	case <-timer.C:
+		return nil
+	}
+}
+
+// openRaw launches the same script on supported POSIX platforms. Both ordinary
+// and tracked launches use this boundary, preserving BIOME_TERMINAL behavior.
+func openRaw(shellCmd string) error {
+	if runtime.GOOS == "windows" {
+		return fmt.Errorf("terminal launch on Windows is not supported yet; open a terminal in the worktree manually")
+	}
+	if t := os.Getenv("BIOME_TERMINAL"); t != "" {
+		return openCustomRaw(t, shellCmd)
+	}
+	switch runtime.GOOS {
+	case "darwin":
+		return darwinOpenRaw(shellCmd)
+	case "linux":
+		return linuxOpenRaw(shellCmd)
+	default:
+		return fmt.Errorf("terminal: unsupported platform %s", runtime.GOOS)
+	}
 }

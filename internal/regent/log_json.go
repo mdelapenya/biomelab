@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mdelapenya/biomelab/internal/command"
 )
 
 // Step is one re_gent step — a turn of agent activity, identified by a
@@ -76,7 +78,7 @@ func LogJSONRaw(wtPath string, limit int) ([]byte, error) {
 	if limit > 0 {
 		args = append(args, "--limit", strconv.Itoa(limit))
 	}
-	cmd := exec.Command(bin, args...)
+	cmd := command.Background(bin, args...)
 	cmd.Dir = wtPath
 	cmd.Env = append(os.Environ(), "NO_COLOR=1")
 	out, err := cmd.Output()
@@ -89,9 +91,9 @@ func LogJSONRaw(wtPath string, limit int) ([]byte, error) {
 // rawStep mirrors the on-the-wire JSON. Decoupled from Step so the public
 // type stays clean and a schema bump only touches this file.
 type rawStep struct {
-	Hash      string    `json:"hash"`
-	Timestamp time.Time `json:"timestamp"`
-	Origin    string    `json:"origin"`
+	Hash      string       `json:"hash"`
+	Timestamp time.Time    `json:"timestamp"`
+	Origin    string       `json:"origin"`
 	Causes    []rawCause   `json:"causes"`
 	Messages  []rawMessage `json:"messages"`
 }

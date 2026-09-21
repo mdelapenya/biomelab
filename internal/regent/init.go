@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/mdelapenya/biomelab/internal/git"
+
+	"github.com/mdelapenya/biomelab/internal/command"
 )
 
 // regentExcludeLine is the git info/exclude pattern that hides .regent/
@@ -55,7 +57,7 @@ func EnsureInit(wtPath string) error {
 		// from a GUI process, so we ask rgt to set up only the .regent/
 		// store and write the Claude Code hooks ourselves via
 		// EnsureClaudeHooks below.
-		cmd := exec.Command(bin, "init", "--skip-hook", "--skip-skills")
+		cmd := command.Background(bin, "init", "--skip-hook", "--skip-skills")
 		cmd.Dir = wtPath
 		cmd.Env = append(os.Environ(), "NO_COLOR=1")
 		out, err := cmd.CombinedOutput()

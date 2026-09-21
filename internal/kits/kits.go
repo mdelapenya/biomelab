@@ -15,6 +15,8 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
+
+	"github.com/mdelapenya/biomelab/internal/command"
 )
 
 // DefaultTag is the rolling Docker Hub tag published by the kit catalog.
@@ -118,7 +120,7 @@ func FilterMixinsForAgent(mixins []Kit, agent string) []Kit {
 // listKitDirs returns the candidate top-level directory names in the
 // kits-contrib repo (everything that's a dir and not in nonKitDirs).
 func listKitDirs(ctx context.Context) ([]string, error) {
-	cmd := exec.CommandContext(ctx, "gh", "api", "repos/docker/sbx-kits-contrib/contents")
+	cmd := command.BackgroundContext(ctx, "gh", "api", "repos/docker/sbx-kits-contrib/contents")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("list kits: %w (%s)", err, ghStderr(err))
@@ -146,7 +148,7 @@ func listKitDirs(ctx context.Context) ([]string, error) {
 // fetchKitSpec downloads and parses spec.yaml for a single kit directory.
 // Returns ok=false (without error) if the directory has no spec.yaml.
 func fetchKitSpec(ctx context.Context, dir string) (Kit, bool, error) {
-	cmd := exec.CommandContext(ctx, "gh", "api",
+	cmd := command.BackgroundContext(ctx, "gh", "api",
 		"repos/docker/sbx-kits-contrib/contents/"+dir+"/spec.yaml")
 	out, err := cmd.Output()
 	if err != nil {
