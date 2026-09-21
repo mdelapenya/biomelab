@@ -26,6 +26,11 @@ interactive Windows reproduction/acceptance remains pending.
 - Added a Windows foreground event observer and
   [desktop verification procedure](docs/windows-focus-validation.md).
 
+The separate #84 commit replaces the detection cooldown and CWD-based action
+check with per-card session identity tracking. See
+[terminal reuse validation](docs/terminal-reuse-validation.md) for its scope,
+macOS ARM acceptance steps, and restart limitation.
+
 The original staged plan and baseline findings follow. The Sol exploration found
 no source evidence that normal dashboard refresh calls Show/RequestFocus. The
 implemented subprocess/lifecycle fixes address confirmed defects; their causal

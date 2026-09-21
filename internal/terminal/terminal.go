@@ -27,17 +27,7 @@ func OpenWithTitle(dir, command, identifier string) error {
 	if err != nil {
 		return err
 	}
-	if t := os.Getenv("BIOME_TERMINAL"); t != "" {
-		return openCustomRaw(t, shellCmd)
-	}
-	switch runtime.GOOS {
-	case "darwin":
-		return darwinOpenRaw(shellCmd)
-	case "linux":
-		return linuxOpenRaw(shellCmd)
-	default:
-		return fmt.Errorf("terminal: unsupported platform %s — set BIOME_TERMINAL", runtime.GOOS)
-	}
+	return openRaw(shellCmd)
 }
 
 // Open opens a new terminal window.
@@ -230,5 +220,24 @@ func startLauncherWithGrace(cmd *exec.Cmd, grace time.Duration) error {
 		return nil
 	case <-timer.C:
 		return nil
+	}
+}
+
+// openRaw launches the same script on supported POSIX platforms. Both ordinary
+// and tracked launches use this boundary, preserving BIOME_TERMINAL behavior.
+func openRaw(shellCmd string) error {
+	if runtime.GOOS == "windows" {
+		return fmt.Errorf("terminal launch on Windows is not supported yet; open a terminal in the worktree manually")
+	}
+	if t := os.Getenv("BIOME_TERMINAL"); t != "" {
+		return openCustomRaw(t, shellCmd)
+	}
+	switch runtime.GOOS {
+	case "darwin":
+		return darwinOpenRaw(shellCmd)
+	case "linux":
+		return linuxOpenRaw(shellCmd)
+	default:
+		return fmt.Errorf("terminal: unsupported platform %s", runtime.GOOS)
 	}
 }

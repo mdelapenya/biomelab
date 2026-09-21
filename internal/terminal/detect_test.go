@@ -2,6 +2,8 @@ package terminal
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/mdelapenya/biomelab/internal/process"
@@ -254,8 +256,8 @@ func TestIsShell(t *testing.T) {
 		{"fish", true},
 		{"pwsh", true},
 		{"powershell", true},
-		{"-bash", true},  // login shell (macOS style)
-		{"-zsh", true},   // login shell (macOS style)
+		{"-bash", true}, // login shell (macOS style)
+		{"-zsh", true},  // login shell (macOS style)
 		{"node", false},
 		{"code", false},
 		{"claude", false},
@@ -408,5 +410,50 @@ func TestDetect_PathNormalization(t *testing.T) {
 
 	if len(result["/project/"]) != 1 {
 		t.Fatalf("expected 1 terminal with path normalization, got %d", len(result["/project/"]))
+	}
+}
+
+func TestDetectContainingWorktree(t *testing.T) {
+	paths := []string{"/repo", "/repo/.biomelab-worktrees/feature"}
+	for _, tt := range []struct{ cwd, want string }{
+		{"/repo/src/internal", "/repo"},
+		{"/repo/.biomelab-worktrees/feature/src", "/repo/.biomelab-worktrees/feature"},
+		{"/repo-other/src", ""},
+	} {
+		d := NewDetectorWithLister(&mockLister{procs: []process.Info{
+			{PID: 100, Name: "Terminal"}, {PID: 200, PPID: 100, Name: "zsh", Cwd: tt.cwd},
+		}})
+		got := d.Detect(paths)
+		if tt.want == "" {
+			if len(got) != 0 {
+				t.Fatalf("sibling prefix matched: %v", got)
+			}
+		} else if len(got) != 1 || len(got[tt.want]) != 1 {
+			t.Fatalf("%s: %v", tt.cwd, got)
+		}
+	}
+}
+
+func TestDetectSymlinkedWorktree(t *testing.T) {
+	root := t.TempDir()
+	real := filepath.Join(root, "real")
+	if err := os.MkdirAll(filepath.Join(real, "src"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(root, "alias")
+	if err := os.Symlink(real, alias); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	d := NewDetectorWithLister(&mockLister{procs: []process.Info{
+		{PID: 100, Name: "Terminal"}, {PID: 200, PPID: 100, Name: "zsh", Cwd: filepath.Join(real, "src")},
+	}})
+	if got := d.Detect([]string{alias}); len(got[alias]) != 1 {
+		t.Fatalf("alias not matched: %v", got)
+	}
+	for _, paths := range [][]string{{real, alias}, {alias, real}} {
+		got := d.Detect(paths)
+		if len(sessionsForWorktree(got, alias)) != 1 || len(sessionsForWorktree(got, real)) != 1 {
+			t.Fatalf("equivalent aliases lost association: %v", got)
+		}
 	}
 }

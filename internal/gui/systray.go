@@ -153,6 +153,9 @@ func (a *App) refreshSysdepsTray() {
 }
 
 func (a *App) stopAllRefresh() {
+	for _, session := range a.terminalSessions {
+		session.Cleanup()
+	}
 	for _, re := range a.repos {
 		if re.refreshMgr != nil {
 			re.refreshMgr.Stop()

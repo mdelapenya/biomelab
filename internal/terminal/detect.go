@@ -89,7 +89,7 @@ func (d *Detector) DetectFromProcessesContext(ctx context.Context, procs []proce
 	// Clean worktree paths once for comparison.
 	cleanPaths := make([]string, len(worktreePaths))
 	for i, p := range worktreePaths {
-		cleanPaths[i] = filepath.Clean(p)
+		cleanPaths[i] = canonicalPath(p)
 	}
 
 	// Match shell CWD to worktree paths, deduplicating by (wtPath, rootPID).
@@ -104,22 +104,21 @@ func (d *Detector) DetectFromProcessesContext(ctx context.Context, procs []proce
 		if sh.Cwd == "" {
 			continue
 		}
-		cwd := filepath.Clean(sh.Cwd)
-		for j, wtPath := range worktreePaths {
-			if cwd != cleanPaths[j] {
-				continue
-			}
-			tk := treeKey{wtPath: wtPath, rootPID: sh.emulatorPID}
-			if seen[tk] {
-				continue
-			}
-			seen[tk] = true
-			result[wtPath] = append(result[wtPath], Info{
-				Kind:     sh.emulatorKind,
-				ShellPID: sh.PID,
-				RootPID:  sh.emulatorPID,
-			})
+		// Prefer the deepest containing worktree. A shell in a linked
+		// worktree must not also be assigned to its parent repository.
+		best := containingWorktree(canonicalPath(sh.Cwd), cleanPaths)
+		if best < 0 {
+			continue
 		}
+		wtPath := worktreePaths[best]
+		tk := treeKey{wtPath: wtPath, rootPID: sh.emulatorPID}
+		if seen[tk] {
+			continue
+		}
+		seen[tk] = true
+		result[wtPath] = append(result[wtPath], Info{
+			Kind: sh.emulatorKind, ShellPID: sh.PID, RootPID: sh.emulatorPID,
+		})
 	}
 
 	return result
@@ -163,4 +162,27 @@ func walkToEmulator(startPPID int32, byPID map[int32]process.Info) (Kind, int32,
 		pid = p.PPID
 	}
 	return "", 0, false
+}
+
+// canonicalPath resolves aliases such as macOS /var -> /private/var when the
+// path is accessible, retaining lexical matching for synthetic/unreadable paths.
+func canonicalPath(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return filepath.Clean(resolved)
+	}
+	return filepath.Clean(path)
+}
+
+func containingWorktree(cwd string, paths []string) int {
+	best := -1
+	for i, path := range paths {
+		rel, err := filepath.Rel(path, cwd)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		if best < 0 || len(path) > len(paths[best]) {
+			best = i
+		}
+	}
+	return best
 }

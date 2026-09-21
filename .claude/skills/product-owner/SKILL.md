@@ -97,11 +97,13 @@ worktree if one is detected, or opens a new one if not. Supersedes the earlier
 **Why:** When managing many worktrees with agents, developers accumulate many
 terminal windows. Opening a new one on every Enter press increases cognitive
 load — the user must hunt for the right window among dozens. Activate-or-open
-reduces this by reusing the existing terminal. Detection is based on process
-scanning (shell CWD matching worktree path), so it finds terminals regardless
-of whether biomelab opened them. Activation uses TTY matching (PID → lsof →
-AppleScript tab tty), which is immune to shell prompts overwriting window titles.
-Sandbox mode always opens new (sandbox sessions are remote, not locally tracked).
+reduces this by reusing the existing terminal. Biomelab remembers host shell
+identity per card and mode during the app run, including sandbox attachments,
+so directory changes do not break reuse. Regular mode additionally scans for
+external shells inside the deepest containing worktree. macOS activation uses
+TTY matching in Terminal.app/iTerm2, which is immune to title changes. A focus
+failure retains the existing session; only a confirmed closed shell allows a
+replacement. Associations are not persisted across app restarts.
 
 ### DL-008: Main card is not deletable
 

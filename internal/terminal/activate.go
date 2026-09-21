@@ -85,6 +85,7 @@ func activateDarwinByTTY(tty string, kind Kind) (bool, error) {
 
 func activateTerminalAppByTTY(tty string) (bool, error) {
 	script := fmt.Sprintf(`
+if application "Terminal" is not running then return false
 tell application "Terminal"
 	repeat with w in windows
 		repeat with t in tabs of w
@@ -111,6 +112,7 @@ return false`, tty)
 
 func activateITerm2ByTTY(tty string) (bool, error) {
 	script := fmt.Sprintf(`
+if application "iTerm" is not running then return false
 tell application "iTerm"
 	repeat with w in windows
 		repeat with t in tabs of w

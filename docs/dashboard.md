@@ -36,12 +36,12 @@ an image to inspect the full-size layout:
 | IDEs | VS Code, Cursor, Zed, Windsurf, GoLand, IntelliJ, PyCharm, Neovim, Vim |
 | Terminals | Terminal.app, iTerm2, Alacritty, kitty, WezTerm, gnome-terminal, Konsole, Tilix, xfce4-terminal, Hyper, Windows Terminal |
 
-Detection matches local processes to worktree paths. Terminal detection follows shell ancestry to a recognized emulator; editor or background shells are not treated as terminal sessions. Recognition does not guarantee that an emulator supports window activation on every platform; see [terminal troubleshooting](configuration.md#troubleshooting). Sandbox terminal sessions are not tracked by local detection. Agent detection is separate from recording conversations in re_gent.
+Detection matches local processes to worktree paths. Terminal detection follows shell ancestry to a recognized emulator; editor or background shells are not treated as terminal sessions. Recognition does not guarantee that an emulator supports window activation on every platform; see [terminal troubleshooting](configuration.md#troubleshooting). Terminals opened by Biomelab are remembered per card and mode, including sandbox attachments, for the current app run. Enter reuses them even after changing directories. Regular mode can also discover external terminals within the worktree or its subdirectories. After restarting Biomelab, sandbox associations and sessions moved outside their worktree cannot be recovered. Agent detection is separate from recording conversations in re_gent.
 
 ## Everyday workflow
 
 1. Select the main card and press `c` to create a branch and linked worktree under `.biomelab-worktrees/`. Creation does not automatically launch a terminal.
-2. Select its card and press `Enter` to activate an existing host terminal or open one. In sandbox mode this opens an agent session. Press `e` to open your configured editor.
+2. Select its card and press `Enter` to activate an existing host terminal or open one. In sandbox mode this opens or reuses the card's agent session. Press `e` to open your configured editor.
 3. Use `m` or right-click to prepare task notes and a PR title. See [notes and activity](notes-and-activity.md).
 4. Commit your changes, then press `Shift+P` on the linked card. Review any dirty/stash warning, choose the remote, and confirm the push and PR/MR creation. If a request already exists, BiomeLab offers push-only behavior.
 5. When finished, press `d` on a linked card and confirm deletion. This removes its directory, branch, and metadata; open IDEs remain running. The main worktree cannot be deleted this way.

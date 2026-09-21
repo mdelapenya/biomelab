@@ -12,6 +12,13 @@ func TestWindowsLaunchRejectsPOSIXRecipeBeforeSpawn(t *testing.T) {
 			for _, open := range []func() error{
 				func() error { return Open(`C:\work tree`, "") },
 				func() error { return OpenWithTitle(`C:\work tree`, "", "branch") },
+				func() error {
+					s, err := OpenTracked(`C:\work tree`, "", "branch")
+					if s != nil {
+						t.Error("unsupported platform retained a launch")
+					}
+					return err
+				},
 			} {
 				if err := open(); err == nil || !strings.Contains(err.Error(), "not supported yet") {
 					t.Fatalf("want pre-launch unsupported error, got %v", err)

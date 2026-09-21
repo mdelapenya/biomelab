@@ -137,9 +137,15 @@ UI; cancellation kills the direct process, not an entire process tree.
 
 Terminal, editor and system-file launches have a separate visibility policy.
 The Windows save-dialog helper suppresses its PowerShell console while preserving
-the requested WinForms dialog. Terminal actions coalesce pending requests and
-allow a five-second detection interval after opening. Errors update the originating
-repo's status without raising a window or automatically relaunching. Windows
+the requested WinForms dialog. Terminal actions coalesce pending requests and keep per-card, per-mode session
+identities (host shell PID, creation time, and TTY/window ID). A private launch
+handshake runs before any sandbox command, so directory changes and remote
+attachments do not break reuse. Regular mode also discovers unmanaged terminals
+with a fresh scan, resolving path aliases and preferring the deepest containing
+worktree. Closed sessions can be replaced; inspection and activation failures
+retain the association. An unresolved handshake can be explicitly forgotten
+after 30 seconds; the next Enter retries. Associations last until app exit.
+Errors update the originating repo's status without automatic relaunch. Windows
 terminal launch remains unsupported and is rejected before a custom executable
 receives the POSIX argument recipe. The optional
 [foreground observer and Windows acceptance procedure](docs/windows-focus-validation.md)

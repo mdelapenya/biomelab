@@ -25,12 +25,14 @@ import (
 
 // repoEntry holds per-repo runtime state.
 type repoEntry struct {
-	group      *RepoGroup
-	repo       *git.Repository
-	prProv     provider.PRProvider
-	state      *RepoState
-	dashboard  *Dashboard
-	refreshMgr *RefreshManager
+	group               *RepoGroup
+	repo                *git.Repository
+	prProv              provider.PRProvider
+	state               *RepoState
+	dashboard           *Dashboard
+	refreshMgr          *RefreshManager
+	terminalErrorTarget terminalTarget
+	terminalError       string
 }
 
 // App is the top-level Fyne application.
@@ -89,8 +91,9 @@ type App struct {
 	issueDeps *issueDependencies
 	issueFlow *issueFlow
 
-	terminalDeps    *terminalDependencies
-	terminalActions map[terminalTarget]time.Time
+	terminalDeps     *terminalDependencies
+	terminalActions  map[terminalTarget]bool
+	terminalSessions map[terminalTarget]*terminal.Session
 }
 
 // NewApp creates a new biomelab Fyne application.
