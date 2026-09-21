@@ -111,7 +111,25 @@ jobs:
       - name: Test Windows background process behavior
         if: runner.os == 'Windows'
         run: |
-          go test -race ./internal/command ./internal/terminal
+          set -o pipefail
+          trace_root="$(cygpath -u "$RUNNER_TEMP")"
+          trace_dir="$trace_root/biomelab-windows-console"
+          mkdir -p "$trace_dir"
+          export BIOMELAB_CONSOLE_TRACE_DIR="$(cygpath -w "$trace_dir")"
+          go test -race -count=1 -v ./internal/command ./internal/terminal 2>&1 | tee "$trace_dir/test.log"
+
+      - name: Upload Windows process diagnostics
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-console-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/biomelab-windows-console
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Build Windows foreground observer
+        if: runner.os == 'Windows'
+        run: |
           go build -o bin/focus-trace.exe ./cmd/helpers/focus-trace
 
       - name: Package on ${{ matrix.os }}

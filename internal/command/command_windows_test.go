@@ -1,24 +1,31 @@
 package command
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 
-	"golang.org/x/sys/windows"
+	"github.com/mdelapenya/biomelab/internal/command/internal/consolediag"
 )
-
-type consoleState struct {
-	Window   uintptr
-	Codepage uint32
-}
 
 func TestWindowsConsoleHelper(t *testing.T) {
 	mode := os.Getenv("BIOMELAB_CONSOLE_HELPER")
 	if mode == "" {
 		return
+	}
+	role := "policy-child"
+	if mode == "parent" {
+		role = "policy-parent"
+	}
+	if err := consolediag.Snapshot(role, "ready").Emit(os.Stdout); err != nil {
+		fmt.Fprintln(os.Stderr, "helper could not write console diagnostics")
+		os.Exit(2)
 	}
 	if mode == "parent" {
 		// Each generation must apply the policy explicitly; creation flags
@@ -26,19 +33,18 @@ func TestWindowsConsoleHelper(t *testing.T) {
 		cmd := Background(os.Args[0], "-test.run=^TestWindowsConsoleHelper$")
 		cmd.Env = append(os.Environ(), "BIOMELAB_CONSOLE_HELPER=child")
 		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-		if err := cmd.Run(); err != nil {
+		if err := consolediag.Run(role, cmd); err != nil {
+			fmt.Fprintln(os.Stderr, "policy parent failed; inspect process trace stages and exit codes")
 			os.Exit(1)
 		}
-	} else {
-		proc := windows.NewLazySystemDLL("kernel32.dll").NewProc("GetConsoleWindow")
-		hwnd, _, _ := proc.Call()
-		codepage, _ := windows.GetConsoleCP()
-		_ = json.NewEncoder(os.Stdout).Encode(consoleState{hwnd, codepage})
 	}
 	os.Exit(0)
 }
 
 func TestWindowsGUIBackgroundHasNoConsoleWindow(t *testing.T) {
+	if os.Getenv(consolediag.DirectoryEnv) == "" {
+		t.Setenv(consolediag.DirectoryEnv, t.TempDir())
+	}
 	launcher := filepath.Join(t.TempDir(), "launcher.exe")
 	build := exec.Command("go", "build", "-ldflags=-H=windowsgui", "-o", launcher, "./testdata/launcher")
 	if out, err := build.CombinedOutput(); err != nil {
@@ -48,20 +54,53 @@ func TestWindowsGUIBackgroundHasNoConsoleWindow(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			cmd := exec.Command(launcher, os.Args[0], "-test.run=^TestWindowsConsoleHelper$")
 			cmd.Env = append(os.Environ(), "BIOMELAB_CONSOLE_HELPER="+mode)
+			var stderr bytes.Buffer
+			cmd.Stderr = &stderr
 			out, err := cmd.Output()
+			if stderr.Len() > 0 {
+				t.Logf("helper stderr: %s", stderr.Bytes()[:min(stderr.Len(), 8192)])
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
-			var state consoleState
-			if err := json.Unmarshal(out, &state); err != nil {
-				t.Fatalf("decode %q: %v", out, err)
+			decoder := json.NewDecoder(bytes.NewReader(out))
+			var states []consolediag.State
+			for {
+				var state consolediag.State
+				err := decoder.Decode(&state)
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				if err != nil {
+					t.Fatalf("decode diagnostic stream (%d bytes): %v", len(out), err)
+				}
+				t.Logf("console state: %+v", state)
+				states = append(states, state)
+				// CREATE_NO_WINDOW suppresses windows, not all console state. Code pages
+				// and attached-process counts are diagnostics and may be nonzero.
+				if state.Window != 0 {
+					t.Errorf("unexpected console window: %+v", state)
+				}
+				if state.PID <= 0 || state.PPID <= 0 || state.Phase != "ready" {
+					t.Errorf("incomplete process snapshot: %+v", state)
+				}
 			}
-			// CREATE_NO_WINDOW suppresses the console window, but a windowless
-			// console can still report a code page (437 on the Windows runner).
-			// Keep it as diagnostic data, not a console-window assertion.
-			if state.Window != 0 {
-				t.Fatalf("unexpected console window: %+v", state)
+			expected := []string{"policy-child"}
+			if mode == "parent" {
+				expected = []string{"policy-parent", "policy-child"}
 			}
+			if len(states) != len(expected) {
+				t.Fatalf("got %d snapshots, want %d", len(states), len(expected))
+			}
+			for i, role := range expected {
+				if states[i].Role != role {
+					t.Errorf("snapshot %d role=%q want %q", i, states[i].Role, role)
+				}
+			}
+			if mode == "parent" && states[1].PPID != states[0].PID {
+				t.Error("descendant is not attached to the expected process tree")
+			}
+
 		})
 	}
 }

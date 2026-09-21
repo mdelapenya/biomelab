@@ -76,3 +76,30 @@ kills its direct process and bounds waits for inherited pipes; it does not
 guarantee termination of every descendant. Check configured credential helpers
 and sandbox tools in the desktop trace. Automated/headless tests and the observer's
 cross-compilation do not constitute a completed desktop acceptance run.
+
+## Windows CI diagnostics
+
+The Windows console regression writes one `process-<pid>.jsonl` file per process
+when `BIOMELAB_CONSOLE_TRACE_DIR` is set. This instrumentation is confined to the
+test helper and GUI-subsystem launcher. It records the launcher, policy parent,
+and policy child independently: process/parent/child IDs, timestamps, launch
+flags, console HWND, input/output code pages, console-process count, Windows
+build, Go version, architecture, foreground HWND/PID, numeric API errors,
+elapsed time, and exit stage/code. A nonzero
+code page or attachment count is diagnostic; the assertion requires no console
+window. Test output includes both parent and child snapshots and helper stderr
+on failure.
+
+CI disables test-result caching and uploads the trace files plus `test.log` as
+`windows-console-<run-id>-<attempt>`, including when the test fails. Artifacts
+are retained for seven days. To inspect a run:
+
+```sh
+gh run view <run-id> --log-failed
+gh run download <run-id> --name windows-console-<run-id>-<attempt> --dir ./windows-console
+```
+
+Structured traces omit command arguments, command lines, working directories, environment
+values, window titles, and credential data. These process snapshots help diagnose
+CI behavior; `test.log` can additionally contain ordinary Go build/test
+diagnostics and temporary paths. They do not replace an interactive foreground trace on Windows.
