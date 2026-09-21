@@ -124,6 +124,42 @@ func TestCreateWorktree_WithSeparateGitDir(t *testing.T) {
 	}
 }
 
+func TestCreateWorktree_NoCommits(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := gogit.PlainInit(dir, false); err != nil {
+		t.Fatalf("PlainInit: %v", err)
+	}
+
+	repo, err := OpenRepository(dir)
+	if err != nil {
+		t.Fatalf("OpenRepository: %v", err)
+	}
+	if err := repo.CreateWorktree("first-task"); err != nil {
+		t.Fatalf("CreateWorktree: %v", err)
+	}
+
+	worktreePath := filepath.Join(dir, ".biomelab-worktrees", "first-task")
+	if _, err := os.Stat(worktreePath); err != nil {
+		t.Fatalf("created worktree: %v", err)
+	}
+	if _, err := repo.linkedWorktree("first-task"); err != nil {
+		t.Fatalf("linkedWorktree: %v", err)
+	}
+	wts, err := repo.ListWorktrees()
+	if err != nil {
+		t.Fatalf("ListWorktrees: %v", err)
+	}
+	if len(wts) != 2 {
+		t.Fatalf("expected main and linked worktrees, got %d", len(wts))
+	}
+	if got := wts[1].Branch; got != "first-task" {
+		t.Errorf("linked worktree branch = %q, want first-task", got)
+	}
+	if wts[1].Detached {
+		t.Error("linked worktree should be on an unborn branch, not detached")
+	}
+}
+
 // setupTestRepo creates a temporary git repository with an initial commit.
 func setupTestRepo(t *testing.T) (string, *gogit.Repository) {
 	t.Helper()
