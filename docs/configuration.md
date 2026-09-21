@@ -39,9 +39,10 @@ GUI launches from Finder/Spotlight need not inherit your shell's environment. Bi
 | GitLab MR checkout fails | `f` currently uses GitHub PR checkout. GitLab status and creation are separate supported operations. |
 | Sandbox setup fails | Run `sbx ls` in a terminal and complete setup. Kit discovery additionally needs working `gh` access. |
 | Existing terminal does not activate | macOS activation uses AppleScript/TTY matching (Terminal.app/iTerm2) and may require Automation permission. Linux requires X11 and `xdotool`, plus a launch-time window ID or a unique emulator window. Other macOS emulators and Wayland do not have targeted activation support; switch to the existing terminal manually. Activation failure does not open another window. |
+| Terminal startup command loses characters or fails | Interactive login-shell prompts (for example an Oh My Zsh update prompt) can consume the `.command` path queued by Terminal.app. Complete or disable that startup prompt, close the failed terminal, and use the retry flow below. |
 | Terminal remains “still starting” | Wait for startup and press Enter again. After 30 seconds, an unresolved launch offers **Forget session**. Check for and close the previous terminal before forgetting; the next Enter can then retry. |
 | Terminal opening on Windows | Launch and activation are unsupported. Requests show a status error; `BIOME_TERMINAL` overrides are rejected before launch. Open a terminal in the worktree manually. |
-| Windows repeatedly loses keyboard focus | Background helpers run without allocating a console. If interruptions persist, use the [Windows focus verification guide](windows-focus-validation.md) to identify which window takes focus. |
+| Windows repeatedly loses keyboard focus | Background helpers run without creating a console window. If interruptions persist, use the [Windows focus verification guide](windows-focus-validation.md) to identify which window takes focus. |
 | Editor does not open | Check `BIOME_EDITOR` and PATH; on macOS the app also attempts an application-name fallback. |
 | Activity log is empty or unavailable | Install host `rgt` and check that the worktree has recorded re_gent activity. See the sandbox distinction in the activity guide. |
 | Closing the app leaves it running | Closing hides the window. Use tray → Quit to exit. |

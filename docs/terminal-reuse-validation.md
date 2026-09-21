@@ -39,3 +39,41 @@ PID reuse, inspection/activation failure, delayed registration, path aliases,
 nested worktrees, regular/sandbox reuse, mode switches, pending key repeats,
 closed-session replacement, and late results after card removal. Windows launch
 rejection remains covered separately, before any POSIX launch recipe executes.
+
+## macOS AMD64 desktop run — 2026-09-21
+
+Tested the packaged `Biomelab.app` executable from commit `60d6d7b`
+(`v0.7.0-5-g60d6d7b`) on macOS 26.6.2 (25G83), x86_64, Terminal.app 2.15.
+The Intel executable was built with `task build-darwin-amd64`, packaged with
+Fyne using that executable, ad-hoc signed, and verified with `codesign` and
+`file`. The bundle was exercised both directly and through LaunchServices
+(`open -n`). Actual keyboard/mouse events drove the GUI; Terminal window IDs,
+TTYs, screenshots, typed input, and a 50 ms foreground-app trace supplied the
+observations. A temporary repository with a nested linked worktree was used.
+
+This was **not an unconditional default-startup pass**: the first two launches
+failed before the `.command` script ran. Oh My Zsh's update prompt consumed the
+leading slash of Terminal's queued command, producing a relative path that did
+not exist. Biomelab reported an unresolved launch, suppressed duplicates, and
+successfully offered its explicit forget/retry flow. To test the subsequent
+session behavior, Terminal was restarted with `DISABLE_AUTO_UPDATE=true` only
+in that test process's environment. No shell configuration was edited.
+
+| Desktop check | Observed result |
+| --- | --- |
+| Repeat Enter on the main card | Passed: four repeats activated window 5680 / `/dev/ttys004`, without another window. |
+| Change to a subdirectory, then outside the worktree; change terminal title | Passed: Enter still activated the same window and TTY. |
+| Open linked card | Passed: a distinct window 5704 / `/dev/ttys006` opened. |
+| Close linked shell and retry | Passed: exactly one replacement, window 5709, opened; the next Enter reused it. |
+| Return to main card | Passed: original main window 5680 activated. |
+| Relaunch the packaged app through LaunchServices | Passed after granting the requested macOS Automation permission: existing terminals were rediscovered, including a main shell in a subdirectory and the nested linked worktree. No extra terminal opened. |
+| Leave Finder foreground across refreshes | Passed: no Biomelab activation during 37 seconds, spanning local and network refresh. |
+| Type in Terminal across refreshes | Passed: all 105 test characters arrived intact over approximately 40 seconds, with no foreground-app transition during the interval. |
+| Cleanup | Completed: test app and terminals closed, foreground observer stopped, original saved-config state restored, and failed launch scripts removed. |
+
+This run does not validate Windows foreground behavior, macOS ARM, iTerm2,
+explicitly denied Automation permission, or a live sandbox attachment. iTerm2
+was not installed and `sbx ls` reported no sandboxes. The shell-startup prompt
+failure remains a launch limitation; complete or disable interactive startup
+prompts before opening terminals from Biomelab. The in-memory association and
+restart limits described above also remain.
