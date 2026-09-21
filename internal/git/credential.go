@@ -14,9 +14,9 @@ import (
 	"github.com/mdelapenya/biomelab/internal/command"
 )
 
-// credentialFillContext asks configured helpers for cached credentials.
+// credentialFill asks configured helpers for cached credentials.
 // Background GUI refreshes must not open a login dialog or terminal prompt.
-func credentialFillContext(ctx context.Context, remoteURL string) (*githttp.BasicAuth, error) {
+func credentialFill(ctx context.Context, remoteURL string) (*githttp.BasicAuth, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	u, err := url.Parse(remoteURL)

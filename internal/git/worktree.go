@@ -198,13 +198,9 @@ func parseRepoName(remoteURL string) string {
 // Fetch updates remote tracking refs so sync status is accurate.
 // It fetches from all configured remotes so that repos with multiple
 // remotes (e.g. origin, upstream) stay current.
-// Uses a 15-second context timeout per remote to cancel slow fetches cleanly.
-func (r *Repository) Fetch() error {
-	return r.FetchContext(context.Background())
-}
-
-// FetchContext stops remote fetches and credential lookups with the refresh run.
-func (r *Repository) FetchContext(ctx context.Context) error {
+// Uses a 15-second timeout per remote. The caller's context also cancels
+// remote fetches and credential lookups when the refresh run ends.
+func (r *Repository) Fetch(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -232,7 +228,7 @@ func (r *Repository) FetchContext(ctx context.Context) error {
 		err := r.repo.FetchContext(remoteCtx, opts)
 		if err != nil && err != gogit.NoErrAlreadyUpToDate {
 			if isAuthError(err) {
-				auth, credErr := r.resolveCredentialsForRemoteContext(remoteCtx, remote)
+				auth, credErr := r.resolveCredentialsForRemote(remoteCtx, remote)
 				if credErr == nil {
 					opts.Auth = auth
 					err = r.repo.FetchContext(remoteCtx, opts)
@@ -820,7 +816,7 @@ func (r *Repository) Pull() error {
 		fetchOpts := &gogit.FetchOptions{RemoteName: name}
 		ferr := r.repo.FetchContext(ctx, fetchOpts)
 		if ferr != nil && ferr != gogit.NoErrAlreadyUpToDate && isAuthError(ferr) {
-			auth, credErr := r.resolveCredentialsForRemote(remote)
+			auth, credErr := r.resolveCredentialsForRemote(ctx, remote)
 			if credErr == nil {
 				fetchOpts.Auth = auth
 				_ = r.repo.FetchContext(ctx, fetchOpts) // best-effort
@@ -850,7 +846,7 @@ func (r *Repository) Pull() error {
 
 	// If auth is required, resolve credentials from git credential helpers.
 	if isAuthError(err) {
-		auth, credErr := r.resolveCredentials()
+		auth, credErr := r.resolveCredentials(context.Background())
 		if credErr != nil {
 			return fmt.Errorf("authentication required but credential lookup failed: %w", credErr)
 		}
@@ -872,24 +868,20 @@ func isAuthError(err error) bool {
 		strings.Contains(msg, "403")
 }
 
-func (r *Repository) resolveCredentials() (*githttp.BasicAuth, error) {
+func (r *Repository) resolveCredentials(ctx context.Context) (*githttp.BasicAuth, error) {
 	remotes, err := r.repo.Remotes()
 	if err != nil || len(remotes) == 0 {
 		return nil, fmt.Errorf("no remotes configured")
 	}
-	return r.resolveCredentialsForRemote(remotes[0])
+	return r.resolveCredentialsForRemote(ctx, remotes[0])
 }
 
-func (r *Repository) resolveCredentialsForRemote(remote *gogit.Remote) (*githttp.BasicAuth, error) {
-	return r.resolveCredentialsForRemoteContext(context.Background(), remote)
-}
-
-func (r *Repository) resolveCredentialsForRemoteContext(ctx context.Context, remote *gogit.Remote) (*githttp.BasicAuth, error) {
+func (r *Repository) resolveCredentialsForRemote(ctx context.Context, remote *gogit.Remote) (*githttp.BasicAuth, error) {
 	urls := remote.Config().URLs
 	if len(urls) == 0 {
 		return nil, fmt.Errorf("remote %q has no URLs", remote.Config().Name)
 	}
-	return credentialFillContext(ctx, urls[0])
+	return credentialFill(ctx, urls[0])
 }
 
 // FetchPRRef fetches a pull request's head ref to a local branch without
@@ -917,7 +909,7 @@ func (r *Repository) FetchPRRef(prNumber int, branchName, remoteURL string) erro
 	err := r.repo.FetchContext(ctx, opts)
 	if err != nil && err != gogit.NoErrAlreadyUpToDate {
 		if isAuthError(err) {
-			auth, credErr := r.resolveCredentials()
+			auth, credErr := r.resolveCredentials(ctx)
 			if credErr != nil {
 				return fmt.Errorf("fetch PR auth: %w", credErr)
 			}
@@ -1109,7 +1101,7 @@ func (r *Repository) Push(remoteName, branchName string) error {
 	err = remote.PushContext(ctx, opts)
 	if err != nil && err != gogit.NoErrAlreadyUpToDate {
 		if isAuthError(err) {
-			auth, credErr := r.resolveCredentialsForRemote(remote)
+			auth, credErr := r.resolveCredentialsForRemote(ctx, remote)
 			if credErr != nil {
 				return fmt.Errorf("push auth: %w", credErr)
 			}

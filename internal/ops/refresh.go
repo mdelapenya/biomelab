@@ -156,7 +156,7 @@ func NetworkRefresh(
 	if err := ctx.Err(); err != nil {
 		return RefreshResult{Err: err}
 	}
-	fetchErr := repo.FetchContext(ctx)
+	fetchErr := repo.Fetch(ctx)
 
 	snap, err := repo.Snapshot()
 	if err != nil {
@@ -236,14 +236,14 @@ func CardRefresh(
 	cliAvail provider.CLIAvailability,
 	wtPath, branch string,
 ) RefreshResult {
-	fetchErr := repo.Fetch()
+	ctx := context.Background()
+	fetchErr := repo.Fetch(ctx)
 
 	snap, err := repo.Snapshot()
 	if err != nil {
 		return RefreshResult{Err: err}
 	}
 
-	ctx := context.Background()
 	procs, procErr := procLister.Processes(ctx)
 	var agents agent.DetectionResult
 	var ides ide.DetectionResult
