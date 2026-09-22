@@ -80,8 +80,22 @@ func TestWindowsPowerShellScriptPreservesArgumentDataAndHandshake(t *testing.T) 
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.EqualFold(filepath.Clean(got.CWD), filepath.Clean(workdir)) || !reflect.DeepEqual(got.Args, want) {
-		t.Fatalf("PowerShell changed data: cwd=%q args=%q", got.CWD, got.Args)
+	gotDir, err := os.Stat(got.CWD)
+	if err != nil {
+		t.Fatalf("PowerShell reported an invalid cwd %q: %v", got.CWD, err)
+	}
+	wantDir, err := os.Stat(workdir)
+	if err != nil {
+		t.Fatalf("stat expected cwd %q: %v", workdir, err)
+	}
+	// Windows may report the same directory through its long name after it was
+	// entered through an 8.3 path from TEMP (for example, runneradmin versus
+	// RUNNER~1). Compare the filesystem objects rather than their spellings.
+	if !os.SameFile(gotDir, wantDir) {
+		t.Fatalf("PowerShell changed cwd: got %q, want %q", got.CWD, workdir)
+	}
+	if !reflect.DeepEqual(got.Args, want) {
+		t.Fatalf("PowerShell changed arguments: got %q, want %q", got.Args, want)
 	}
 	record, err := os.ReadFile(filepath.Join(marker, "session"))
 	if err != nil {
