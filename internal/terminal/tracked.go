@@ -26,6 +26,7 @@ type Session struct {
 	info          Info
 	born          int64
 	tty, windowID string
+	windowTitle   string
 	markerDir     string // immutable; retained only while the handshake is pending
 	ready         bool
 	started       time.Time
@@ -39,7 +40,7 @@ var errSessionStarting = errors.New("terminal is still starting or did not regis
 // returned: the terminal may have opened, so retrying must not blindly open more.
 func OpenTracked(dir, command, identifier string) (*Session, error) {
 	if runtime.GOOS == "windows" {
-		return nil, fmt.Errorf("terminal launch on Windows is not supported yet; open a terminal in the worktree manually")
+		return openTrackedWindows(launchRequest{dir: dir, command: command, identifier: identifier})
 	}
 	base, err := buildShellCmdWithTitle(dir, command, identifier)
 	if err != nil {
@@ -48,13 +49,59 @@ func OpenTracked(dir, command, identifier string) (*Session, error) {
 	return openTracked(base, openRaw)
 }
 
+// OpenTrackedArgs is OpenTracked for a command already represented as an
+// executable and argument vector. No host shell parses the arguments.
+func OpenTrackedArgs(dir string, args []string, identifier string) (*Session, error) {
+	if len(args) == 0 {
+		return nil, fmt.Errorf("terminal: empty argument vector")
+	}
+	if runtime.GOOS == "windows" {
+		return openTrackedWindows(launchRequest{dir: dir, args: append([]string(nil), args...), identifier: identifier})
+	}
+	quoted := make([]string, len(args))
+	for i, arg := range args {
+		quoted[i] = shellQuote(arg)
+	}
+	base, err := buildShellCmdWithTitle(dir, strings.Join(quoted, " "), identifier)
+	if err != nil {
+		return nil, err
+	}
+	return openTracked(base, openRaw)
+}
+
+func openTrackedWindows(req launchRequest) (*Session, error) {
+	titleFor := func(markerDir string) string {
+		label := "biomelab: session"
+		if req.identifier != "" {
+			label = Title(req.identifier)
+		}
+		// A dedicated WT window still shares its owning process with other
+		// windows. A per-launch title token lets activation identify one HWND.
+		return label + " [" + filepath.Base(markerDir) + "]"
+	}
+	return startTracked(func(markerDir string) error {
+		req.markerDir = markerDir
+		req.windowTitle = titleFor(markerDir)
+		return windowsOpen(req)
+	}, func(session *Session) {
+		session.windowTitle = titleFor(session.markerDir)
+	})
+}
+
 func openTracked(base string, launch func(string) error) (*Session, error) {
+	return startTracked(func(dir string) error { return launch(sessionPrelude(dir) + base) }, nil)
+}
+
+func startTracked(launch func(string) error, initialize func(*Session)) (*Session, error) {
 	dir, err := os.MkdirTemp("", "biomelab-session-")
 	if err != nil {
 		return nil, err
 	}
 	session := &Session{markerDir: dir, started: time.Now()}
-	if err := launch(sessionPrelude(dir) + base); err != nil {
+	if initialize != nil {
+		initialize(session)
+	}
+	if err := launch(dir); err != nil {
 		session.Cleanup()
 		return nil, err
 	}
@@ -135,7 +182,8 @@ func parseSessionRecord(data []byte) (int32, string, string, Kind, error) {
 	if len(data) > 4096 {
 		return 0, "", "", "", fmt.Errorf("terminal session record is too large")
 	}
-	lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+	normalized := strings.ReplaceAll(string(data), "\r\n", "\n")
+	lines := strings.Split(strings.TrimSuffix(normalized, "\n"), "\n")
 	if len(lines) != 4 {
 		return 0, "", "", "", fmt.Errorf("invalid terminal session record")
 	}
@@ -162,6 +210,8 @@ func parseSessionRecord(data []byte) (int32, string, string, Kind, error) {
 		kind = TerminalApp
 	case "iTerm.app":
 		kind = ITerm2
+	case string(WindowsTerminal):
+		kind = WindowsTerminal
 	}
 	return int32(pid), tty, windowID, kind, nil
 }
@@ -302,6 +352,8 @@ func activateSession(ctx context.Context, s *Session) error {
 		return fmt.Errorf("could not activate the existing terminal tab; check macOS Automation permission and terminal support")
 	case "linux":
 		return activateSessionLinux(ctx, s)
+	case "windows":
+		return activateSessionWindows(ctx, s)
 	default:
 		return fmt.Errorf("terminal activation is unsupported on %s", runtime.GOOS)
 	}

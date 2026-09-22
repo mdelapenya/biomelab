@@ -146,8 +146,17 @@ worktree. Closed sessions can be replaced; inspection and activation failures
 retain the association. An unresolved handshake can be explicitly forgotten
 after 30 seconds; the next Enter retries. Associations last until app exit.
 Errors update the originating repo's status without automatic relaunch. Windows
-terminal launch remains unsupported and is rejected before a custom executable
-receives the POSIX argument recipe. The optional
+launch prefers `wt.exe`; its PowerShell fallback uses a hidden helper to start
+the final visible interactive `pwsh.exe`/`powershell.exe` console, avoiding the
+GUI parent's null standard handles. It strips inherited `WT_SESSION` and
+`WT_PROFILE_ID`, then records whether the final shell has a visible classic
+console or is Windows Terminal-hosted (for example through OS default-terminal
+delegation). Windows Terminal activation intentionally reports a manual-switch
+error: there is no unsafe title/HWND lookup or launcher fallback, and the live
+association prevents duplicate terminals on repeated Enter. Classic PowerShell
+activation requires an exact-title, visible recorded console HWND.
+`BIOME_TERMINAL` accepts only those executable families on Windows, so no POSIX
+terminal recipe is passed to an arbitrary executable. The optional
 [foreground observer and Windows acceptance procedure](docs/windows-focus-validation.md)
 verify actual focus behavior independently of console suppression.
 

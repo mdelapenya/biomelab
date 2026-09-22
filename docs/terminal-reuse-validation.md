@@ -38,7 +38,30 @@ Automated regression coverage includes real POSIX handshake/host-shell lifetime,
 PID reuse, inspection/activation failure, delayed registration, path aliases,
 nested worktrees, regular/sandbox reuse, mode switches, pending key repeats,
 closed-session replacement, and late results after card removal. Windows launch
-rejection remains covered separately, before any POSIX launch recipe executes.
+selection, PowerShell command encoding, tracked-session registration, and
+guarded activation are covered in the Windows terminal package. That coverage
+does not establish native Windows desktop behavior.
+
+## Windows native desktop acceptance — pending
+
+Windows now prefers `wt.exe`. Otherwise, a hidden PowerShell helper starts the
+selected `pwsh.exe` or `powershell.exe` as the final visible interactive
+console, rather than directly inheriting unusable null standard handles from a
+GUI process. It scrubs inherited `WT_SESSION`/`WT_PROFILE_ID` values, then the
+long-lived shell identifies its actual visible host; the OS may still delegate a
+PowerShell launch to Windows Terminal. A sandbox command remains an argument
+vector through the tracked host-terminal launch; it is not converted to a shell
+string. The implementation records the host shell before `sbx run` or `sbx
+exec` begins. Windows Terminal activation deliberately returns a visible
+manual-switch error—there is no title/HWND guessing or `wt.exe` fallback that
+could create a new window. The session remains associated, so repeated Enter
+does not duplicate it. Classic PowerShell activation is available only for a
+visible recorded console HWND with an exact tracked title. Any failed inspection
+or focus request retains the association rather than opening another terminal.
+
+No native Windows desktop run has been recorded yet. Use the Windows checklist
+in [Windows focus regression verification](windows-focus-validation.md) before
+claiming Windows launch, reuse, or foreground acceptance.
 
 ## macOS AMD64 desktop run — 2026-09-21
 

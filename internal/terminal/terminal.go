@@ -18,7 +18,7 @@ import (
 // If identifier is empty, this behaves identically to Open.
 func OpenWithTitle(dir, command, identifier string) error {
 	if runtime.GOOS == "windows" {
-		return fmt.Errorf("terminal launch on Windows is not supported yet; open a terminal in the worktree manually")
+		return windowsOpen(launchRequest{dir: dir, command: command, identifier: identifier})
 	}
 	if identifier == "" {
 		return Open(dir, command)
@@ -35,7 +35,7 @@ func OpenWithTitle(dir, command, identifier string) error {
 // If dir is non-empty, the terminal starts a shell in that directory.
 func Open(dir, command string) error {
 	if runtime.GOOS == "windows" {
-		return fmt.Errorf("terminal launch on Windows is not supported yet; open a terminal in the worktree manually")
+		return windowsOpen(launchRequest{dir: dir, command: command})
 	}
 	if t := os.Getenv("BIOME_TERMINAL"); t != "" {
 		return openCustom(t, dir, command)
@@ -226,9 +226,6 @@ func startLauncherWithGrace(cmd *exec.Cmd, grace time.Duration) error {
 // openRaw launches the same script on supported POSIX platforms. Both ordinary
 // and tracked launches use this boundary, preserving BIOME_TERMINAL behavior.
 func openRaw(shellCmd string) error {
-	if runtime.GOOS == "windows" {
-		return fmt.Errorf("terminal launch on Windows is not supported yet; open a terminal in the worktree manually")
-	}
 	if t := os.Getenv("BIOME_TERMINAL"); t != "" {
 		return openCustomRaw(t, shellCmd)
 	}
@@ -240,4 +237,13 @@ func openRaw(shellCmd string) error {
 	default:
 		return fmt.Errorf("terminal: unsupported platform %s", runtime.GOOS)
 	}
+}
+
+// launchRequest keeps executable arguments separate from shell source. This is
+// important on Windows, where a POSIX-quoted command line is not valid
+// PowerShell syntax. command and args are mutually exclusive.
+type launchRequest struct {
+	dir, command, identifier string
+	args                     []string
+	markerDir, windowTitle   string
 }
