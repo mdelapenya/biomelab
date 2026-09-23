@@ -1,6 +1,6 @@
 # Sandbox workflows
 
-BiomeLab supports host mode and recommends Docker Sandboxes for agent execution. One sandbox is associated with each agent per repository; that repository's worktrees share it. Worktrees and notes remain on the host and are visible inside the sandbox at the same paths. Agent edits to those shared files affect the host workspace; sandboxing isolates the execution environment, not the shared source files.
+BiomeLab supports host mode and recommends Docker Sandboxes for agent execution. One sandbox is associated with each agent per repository; that repository's worktrees share it. Worktrees and notes remain on the host and are visible inside the sandbox at the same paths; on Windows the sandbox sees the POSIX form of the host path, so `C:\work\repo` is `/c/work/repo` inside it. Agent edits to those shared files affect the host workspace; sandboxing isolates the execution environment, not the shared source files.
 
 ## Create or register a sandbox
 

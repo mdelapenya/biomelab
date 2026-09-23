@@ -71,17 +71,19 @@ rather than run an arbitrary recipe.
    visible terminal in the host worktree, including the spaced/quoted/Unicode
    path case. Press Enter repeatedly while launch is pending and after it is
    ready: there must be one terminal/session, not one per keypress. For a
-   Windows Terminal-hosted session, the later Enter is expected to report that
-   it cannot focus Windows Terminal safely; manually switch to the existing
-   window and verify no duplicate was launched.
-2. In the opened shell, `cd` into a subdirectory and then outside the worktree;
-   change the prompt/title if convenient. Return to Biomelab and press Enter.
-   For a classic visible PowerShell console with the recorded exact title and
-   HWND, it should focus the original tracked session. If it is Windows
-   Terminal-hosted (including OS delegation of the PowerShell fallback), expect
-   the manual-switch error and no duplicate instead. Exit the shell, press
-   Enter, and verify one replacement can be opened; repeat Enter to confirm
-   the applicable focus/manual-switch behavior for that replacement.
+   Windows Terminal window Biomelab launched (default, or `BIOME_TERMINAL=wt.exe`),
+   the later Enter must raise that window. For a session the OS *delegated* a
+   PowerShell fallback into Windows Terminal (see below), the later Enter reports
+   a manual-switch message instead; switch to it yourself and verify no duplicate
+   was launched.
+2. In the opened shell, `cd` into a subdirectory and then outside the worktree,
+   and overwrite the tab title (for example by starting an agent). Return to
+   Biomelab and press Enter. A Biomelab-launched Windows Terminal window is still
+   raised by its window name despite the changed title; a classic visible
+   PowerShell console with the recorded exact title and HWND is focused; an
+   OS-delegated PowerShell-fallback session reports the manual-switch message.
+   Exit the shell, press Enter, and verify one replacement can be opened; repeat
+   Enter to confirm the applicable focus/manual-switch behavior for it.
 3. In sandbox mode, repeat on both the main card (`sbx run`) and a linked card
    (`sbx exec` with the configured agent). Confirm each card/mode owns its own
    host terminal, and that returning to either card reuses its session after
@@ -89,17 +91,18 @@ rather than run an arbitrary recipe.
 4. Exercise the editor and allow multiple background refresh cycles while the
    terminal is active. Verify typing remains uninterrupted and no unsolicited
    focus transition occurs. If Windows refuses a classic-console focus request,
-   or the session is Windows Terminal-hosted, Biomelab should show the failure
-   and must not open a duplicate terminal; switch to the existing terminal
-   manually, then retry as appropriate.
+   or the session is an OS-delegated PowerShell fallback, Biomelab should show
+   the failure and must not open a duplicate terminal; switch to the existing
+   terminal manually, then retry as appropriate.
 
 Record whether Windows Terminal and the helper-created PowerShell fallback each
 passed, the actual final host (classic console or Windows Terminal), which
 PowerShell executable was used, any `BIOME_TERMINAL` value, and screenshots or
-focus-trace timestamps for failures. Treat Windows Terminal manual switching
-with no duplicate as the expected reuse result, not as full focus support. A
-launcher start, a CI result, or an absence of a console flash alone is not an
-acceptance pass.
+focus-trace timestamps for failures. A Biomelab-launched Windows Terminal window
+being raised is a focus pass; for an OS-delegated fallback, manual switching with
+no duplicate is the expected result rather than full focus support. A launcher
+start, a CI result, or an absence of a console flash alone is not an acceptance
+pass.
 
 Repeat the observer with `-out after-focus.csv`. Pass only if typing remains
 uninterrupted and there are no unsolicited foreground transitions to Biomelab
