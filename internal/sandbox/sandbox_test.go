@@ -50,6 +50,41 @@ func TestExecAgentArgs(t *testing.T) {
 	}
 }
 
+func TestExecAgentArgsTranslatesWindowsWorktreePath(t *testing.T) {
+	got := ExecAgentArgs("my-sandbox", `C:\Users\me\repo\.biomelab-worktrees\feat`, "claude")
+	// sbx mounts the host workspace at its POSIX equivalent, so the host
+	// spelling would make `sbx exec -w` fail inside the Linux container.
+	if got[4] != "/c/Users/me/repo/.biomelab-worktrees/feat" {
+		t.Errorf("ExecAgentArgs() workdir = %q, want the container path", got[4])
+	}
+}
+
+func TestContainerPath(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"posix path unchanged", "/Users/me/repo/wt", "/Users/me/repo/wt"},
+		{"drive letter", `C:\Users\me\repo`, "/c/Users/me/repo"},
+		{"lowercase drive", `d:\work`, "/d/work"},
+		{"drive root", `C:\`, "/c/"},
+		{"forward slashes", "C:/Users/me", "/c/Users/me"},
+		{"non-ascii and spaces preserved", `C:\Users\Peña\a b\c`, "/c/Users/Peña/a b/c"},
+		// A UNC share has no mirrored mount point; rewriting it would invent a
+		// path that does not exist instead of failing where the user can see it.
+		{"unc path unchanged", `\\server\share\repo`, `\\server\share\repo`},
+		{"empty", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ContainerPath(tt.in); got != tt.want {
+				t.Errorf("ContainerPath(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestShellQuote(t *testing.T) {
 	tests := []struct {
 		in   string
