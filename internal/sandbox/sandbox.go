@@ -47,14 +47,32 @@ func RunAttachArgs(sandboxName string) []string {
 }
 
 // ExecAgentArgs returns the arguments for an interactive agent session that
-// starts inside workdir (a worktree path, identical on host and in-container
-// because sbx mirrors the workspace mount path). It runs the daemon's
-// start-agent script when present and falls back to the bare agent binary.
-// sbx exec starts a stopped sandbox automatically.
+// starts inside workdir, a host worktree path translated with ContainerPath.
+// It runs the daemon's start-agent script when present and falls back to the
+// bare agent binary. sbx exec starts a stopped sandbox automatically.
 func ExecAgentArgs(sandboxName, workdir, agent string) []string {
 	script := "if [ -f " + StartAgentScript + " ]; then exec /bin/bash " +
 		StartAgentScript + "; else exec " + ShellQuote(agent) + "; fi"
-	return []string{"sbx", "exec", "-it", "-w", workdir, sandboxName, "bash", "-c", script}
+	return []string{"sbx", "exec", "-it", "-w", ContainerPath(workdir), sandboxName, "bash", "-c", script}
+}
+
+// ContainerPath maps a host path to the path the sandbox sees for it. sbx
+// mirrors the host workspace inside the container, so on macOS and Linux the
+// two spellings are identical and the path is returned unchanged. A Windows
+// drive-letter path is not: sbx mounts C:\a\b at /c/a/b, and passing the host
+// spelling to `sbx exec -w` fails with "chdir ...: No such file or directory".
+// Anything that is not a drive-letter path (including UNC paths, which have no
+// mirrored mount point) is left alone for the caller to fail on visibly.
+func ContainerPath(hostPath string) string {
+	if len(hostPath) < 2 || hostPath[1] != ':' || !isDriveLetter(hostPath[0]) {
+		return hostPath
+	}
+	rest := strings.TrimPrefix(strings.ReplaceAll(hostPath[2:], `\`, "/"), "/")
+	return "/" + strings.ToLower(hostPath[:1]) + "/" + rest
+}
+
+func isDriveLetter(c byte) bool {
+	return c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z'
 }
 
 // ShellQuote returns s safe for interpolation into a POSIX shell command
