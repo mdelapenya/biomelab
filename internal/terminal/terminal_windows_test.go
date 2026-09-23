@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -18,6 +19,46 @@ import (
 
 	"github.com/mdelapenya/biomelab/internal/process"
 )
+
+var (
+	procEnumWindows       = user32.NewProc("EnumWindows")
+	procGetForegroundWin  = user32.NewProc("GetForegroundWindow")
+	procIsIconic          = user32.NewProc("IsIconic")
+	enumMu                sync.Mutex
+	enumResult            []windows.Handle
+	enumCollectorCallback = syscall.NewCallback(func(h windows.Handle, _ uintptr) uintptr {
+		enumResult = append(enumResult, h)
+		return 1
+	})
+)
+
+// cascadiaWindows returns the visible top-level Windows Terminal windows,
+// keyed by HWND. Diffing this across a launch identifies our window without
+// relying on the tab title, which the shell may overwrite.
+func cascadiaWindows() map[windows.Handle]struct{} {
+	enumMu.Lock()
+	defer enumMu.Unlock()
+	enumResult = enumResult[:0]
+	procEnumWindows.Call(enumCollectorCallback, 0)
+	out := make(map[windows.Handle]struct{})
+	for _, h := range enumResult {
+		v, _, _ := procIsWindowVisible.Call(uintptr(h))
+		if v != 0 && consoleWindowClass(h) == "CASCADIA_HOSTING_WINDOW_CLASS" {
+			out[h] = struct{}{}
+		}
+	}
+	return out
+}
+
+func foregroundWindow() windows.Handle {
+	h, _, _ := procGetForegroundWin.Call()
+	return windows.Handle(h)
+}
+
+func isIconic(h windows.Handle) bool {
+	v, _, _ := procIsIconic.Call(uintptr(h))
+	return v != 0
+}
 
 func TestWindowsPowerShellHelper(t *testing.T) {
 	if os.Getenv("BIOMELAB_WINDOWS_TERMINAL_HELPER") == "" {
@@ -306,7 +347,9 @@ func TestWindowsFallbackScriptDetectsDelegatedWindowsTerminalHost(t *testing.T) 
 	}
 	marker := t.TempDir()
 	script := windowsPowerShellScript(launchRequest{markerDir: marker}, false)
-	args := windowsTerminalArgs(shellPath, []string{"-NoLogo", "-NoProfile", "-EncodedCommand", encodePowerShell(script)})
+	// No window name: reproduce the OS-delegated shape, where Biomelab never
+	// assigned one.
+	args := windowsTerminalArgs("", shellPath, []string{"-NoLogo", "-NoProfile", "-EncodedCommand", encodePowerShell(script)})
 	if err := exec.Command(wtPath, args...).Start(); err != nil {
 		t.Fatalf("could not host the fallback script in Windows Terminal: %v", err)
 	}
@@ -378,6 +421,103 @@ func TestWindowsFallbackScriptRecordsClassicConsoleForActivation(t *testing.T) {
 		!strings.Contains(err.Error(), "Windows refused to focus") {
 		t.Errorf("recorded classic console was rejected as the wrong window: %v", err)
 	}
+}
+
+func TestWindowsTerminalArgsNamesTheWindow(t *testing.T) {
+	named := windowsTerminalArgs("biomelab-session-42", "pwsh.exe", []string{"-NoExit"})
+	if len(named) < 4 || named[0] != "-w" || named[1] != "biomelab-session-42" || named[2] != "new-tab" || named[3] != "pwsh.exe" {
+		t.Fatalf("named launch did not target its window: %q", named)
+	}
+	unnamed := windowsTerminalArgs("", "pwsh.exe", []string{"-NoExit"})
+	if unnamed[0] != "-w" || unnamed[1] != "new" {
+		t.Fatalf("unnamed launch should use the new keyword: %q", unnamed)
+	}
+}
+
+// A Windows Terminal session with no window name is one the OS default-terminal
+// setting delegated a PowerShell fallback into: Biomelab never invoked wt.exe,
+// so there is no window to target. It must refuse focus with guidance rather
+// than guess.
+func TestActivateDelegatedWindowsTerminalRefusesFocus(t *testing.T) {
+	s := &Session{windowTitle: "biomelab: session [x]"}
+	s.info.Kind = WindowsTerminal
+	err := activateSessionWindows(context.Background(), s)
+	if err == nil || !strings.Contains(err.Error(), "OS default-terminal") {
+		t.Fatalf("delegated WT session should refuse focus with guidance, got %v", err)
+	}
+}
+
+// A Windows Terminal session Biomelab launched is raised by its window name,
+// even after the shell overwrites the tab title. This drives the real
+// production path: openTrackedWindows assigns the name, and activateSessionWindows
+// focuses via `wt -w <name> focus-tab` through command.Background.
+func TestWindowsLaunchedWindowsTerminalSessionIsFocusable(t *testing.T) {
+	if _, err := exec.LookPath("wt.exe"); err != nil {
+		t.Skip("wt.exe is not installed")
+	}
+	t.Setenv("BIOME_TERMINAL", "wt.exe")
+	before := cascadiaWindows()
+	session, err := openTrackedWindows(launchRequest{
+		identifier: "focus-test",
+		command:    "$Host.UI.RawUI.WindowTitle = 'OVERWRITTEN-BY-AGENT'; Start-Sleep -Seconds 60",
+	})
+	if err != nil {
+		t.Fatalf("tracked WT terminal failed: %v", err)
+	}
+	t.Cleanup(func() {
+		if p, e := os.FindProcess(int(session.info.ShellPID)); e == nil {
+			_ = p.Kill()
+		}
+		session.Cleanup()
+	})
+	if session.info.Kind != WindowsTerminal {
+		t.Skipf("launch was not hosted in Windows Terminal (kind=%q); focus path not exercised", session.info.Kind)
+	}
+	if session.wtWindow == "" {
+		t.Fatal("launched WT session has no window name to focus by")
+	}
+
+	// Locate our window title-independently by diffing the CASCADIA windows.
+	var hwnd windows.Handle
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) && hwnd == 0 {
+		for h := range cascadiaWindows() {
+			if _, existed := before[h]; !existed {
+				hwnd = h
+			}
+		}
+		if hwnd == 0 {
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
+	if hwnd == 0 {
+		t.Fatal("could not locate the launched Windows Terminal window")
+	}
+
+	// Minimize it so a successful focus is observable.
+	procShowWindowAsync.Call(uintptr(hwnd), 6 /* SW_MINIMIZE */)
+	time.Sleep(700 * time.Millisecond)
+
+	if err := activateSessionWindows(context.Background(), session); err != nil {
+		t.Fatalf("focusing the launched Windows Terminal window failed: %v", err)
+	}
+
+	// wt relays asynchronously. Foreground grant depends on the desktop's
+	// foreground lock (headless CI may withhold it), but wt should at least
+	// restore our window from the taskbar. Prefer the strong signal, accept the
+	// weaker one, fail only if wt did not act on our window at all.
+	deadline = time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if foregroundWindow() == hwnd {
+			return // raised to foreground
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+	if !isIconic(hwnd) {
+		t.Logf("wt focus-tab restored our window but the desktop withheld foreground (fg=%d ours=%d)", foregroundWindow(), hwnd)
+		return
+	}
+	t.Fatalf("wt focus-tab did not act on our window (still minimized; fg=%d ours=%d)", foregroundWindow(), hwnd)
 }
 
 // Removing a worktree must not be blocked by the terminal Biomelab opened in
@@ -458,11 +598,14 @@ func TestWindowsTerminalRecipeKeepsUserDataOutOfWTGrammar(t *testing.T) {
 	}
 	script := windowsPowerShellScript(req, true)
 	encoded := encodePowerShell(script)
-	args := windowsTerminalArgs(`C:\Program Files\PowerShell\pwsh.exe`, []string{"-NoExit", "-EncodedCommand", encoded})
+	args := windowsTerminalArgs("biomelab-session-0", `C:\Program Files\PowerShell\pwsh.exe`, []string{"-NoExit", "-EncodedCommand", encoded})
 	for _, arg := range args {
 		if arg == "--startingDirectory" || arg == "--title" || strings.Contains(arg, req.dir) || strings.Contains(arg, req.windowTitle) || strings.Contains(arg, ";") {
 			t.Fatalf("user data reached wt.exe grammar: %q", args)
 		}
+	}
+	if args[0] != "-w" || args[1] != "biomelab-session-0" {
+		t.Fatalf("window name not passed to wt.exe: %q", args)
 	}
 	if !strings.Contains(script, powerShellLiteral(filepath.Clean(req.dir))) || !strings.Contains(script, powerShellLiteral(req.windowTitle)) {
 		t.Fatalf("encoded script lost data: %s", script)

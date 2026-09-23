@@ -246,4 +246,8 @@ type launchRequest struct {
 	dir, command, identifier string
 	args                     []string
 	markerDir, windowTitle   string
+	// wtWindow names the Windows Terminal window for a tracked launch through
+	// wt.exe, so activation can raise exactly that window by name later. Empty
+	// for untracked launches and on non-Windows platforms.
+	wtWindow string
 }

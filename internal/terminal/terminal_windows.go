@@ -54,7 +54,7 @@ func windowsOpen(req launchRequest) error {
 
 	var cmd *exec.Cmd
 	if terminal.kind == windowsTerminalWT {
-		cmd = exec.Command(terminal.path, windowsTerminalArgs(shell.path, shellArgs)...)
+		cmd = exec.Command(terminal.path, windowsTerminalArgs(req.wtWindow, shell.path, shellArgs)...)
 	} else {
 		return startWindowsConsole(terminal.path, terminal.path, shellArgs)
 	}
@@ -67,8 +67,17 @@ func windowsOpen(req launchRequest) error {
 // passed to wt.exe: its CLI applies a second command grammar in which semicolon
 // is meaningful even after the Windows argv split. The encoded script carries
 // all user-controlled data instead.
-func windowsTerminalArgs(shell string, shellArgs []string) []string {
-	args := []string{"-w", "new", "new-tab", shell}
+//
+// window names the new Windows Terminal window so activation can raise it later
+// with `wt -w <window> focus-tab`, independent of the tab title the shell may
+// overwrite. It is a Biomelab-generated marker-dir base (biomelab-session-<n>),
+// never user data, so it is safe against WT's grammar. An empty window keeps
+// the "new" keyword for untracked launches, which have no session to focus.
+func windowsTerminalArgs(window, shell string, shellArgs []string) []string {
+	if window == "" {
+		window = "new"
+	}
+	args := []string{"-w", window, "new-tab", shell}
 	return append(args, shellArgs...)
 }
 

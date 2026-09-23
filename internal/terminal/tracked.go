@@ -27,6 +27,7 @@ type Session struct {
 	born          int64
 	tty, windowID string
 	windowTitle   string
+	wtWindow      string // Windows Terminal window name to focus by, when we launched it
 	markerDir     string // immutable; retained only while the handshake is pending
 	ready         bool
 	started       time.Time
@@ -79,12 +80,16 @@ func openTrackedWindows(req launchRequest) (*Session, error) {
 		// windows. A per-launch title token lets activation identify one HWND.
 		return label + " [" + filepath.Base(markerDir) + "]"
 	}
+	// The marker directory base is unique per launch and ASCII-safe, so it
+	// doubles as the Windows Terminal window name we assign and later focus by.
 	return startTracked(func(markerDir string) error {
 		req.markerDir = markerDir
 		req.windowTitle = titleFor(markerDir)
+		req.wtWindow = filepath.Base(markerDir)
 		return windowsOpen(req)
 	}, func(session *Session) {
 		session.windowTitle = titleFor(session.markerDir)
+		session.wtWindow = filepath.Base(session.markerDir)
 	})
 }
 
