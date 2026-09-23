@@ -24,6 +24,16 @@ type windowsTerminalExecutable struct {
 	kind windowsTerminalKind
 }
 
+// Window class names of the two console hosts a launched shell can end up in.
+// A classic conhost window is the visible window the user clicks and the only
+// one worth recording for activation; a ConPTY pseudoconsole belongs to a
+// terminal (Windows Terminal, including OS default-terminal delegation) that
+// draws the session somewhere else entirely.
+const (
+	windowsClassicConsoleClass = "ConsoleWindowClass"
+	windowsPseudoConsoleClass  = "PseudoConsoleWindow"
+)
+
 func windowsOpen(req launchRequest) error {
 	if req.windowTitle == "" && req.identifier != "" {
 		req.windowTitle = Title(req.identifier)
@@ -168,6 +178,13 @@ func findWindowsPowerShell(terminal windowsTerminalExecutable, lookPath func(str
 func windowsPowerShellScript(req launchRequest, windowsTerminal bool) string {
 	var statements []string
 	if req.dir != "" {
+		// Only the PowerShell provider location is moved, deliberately. Setting
+		// [Environment]::CurrentDirectory too would let terminal discovery match
+		// this shell to its worktree, but Windows keeps an open handle on a
+		// process's working directory: removing a worktree while its terminal is
+		// open would then delete the contents and fail on the directory itself,
+		// leaving the worktree half-removed until the user closes the terminal.
+		// Discovery is not worth breaking worktree removal for.
 		statements = append(statements, "Set-Location -LiteralPath "+powerShellLiteral(filepath.Clean(req.dir)))
 	}
 	if req.windowTitle != "" {
@@ -179,19 +196,24 @@ func windowsPowerShellScript(req launchRequest, windowsTerminal bool) string {
 		if windowsTerminal {
 			kind = powerShellLiteral(string(WindowsTerminal))
 		} else {
-			// GetConsoleWindow is valid for the classic console fallback. It is
-			// deliberately not used for Windows Terminal's pseudoconsole, where it
-			// identifies a hidden message-only window rather than the visible tab.
-			statements = append(statements, "Add-Type -Namespace BiomeLab -Name ConsoleWindow -MemberDefinition '[DllImport(\"kernel32.dll\")] public static extern IntPtr GetConsoleWindow(); [DllImport(\"user32.dll\")] public static extern bool IsWindowVisible(IntPtr hWnd);'")
 			// A native PowerShell launch can still be redirected into Windows
-			// Terminal when it is the user's default terminal. Detect the actual
-			// host inside the long-lived shell, and never retain that pseudoconsole's
-			// hidden GetConsoleWindow message handle.
+			// Terminal when it is the user's default terminal, so the actual host
+			// has to be detected inside the long-lived shell.
+			//
+			// The console window class is the discriminator. Visibility is not:
+			// a delegated ConPTY host owns a PseudoConsoleWindow that reports
+			// itself visible while being a surface the user never sees and that
+			// SetForegroundWindow cannot usefully target. WT_SESSION does not
+			// cover it either, because delegation does not set it. Only a
+			// classic conhost window may be recorded for later activation.
+			statements = append(statements, "Add-Type -Namespace BiomeLab -Name ConsoleWindow -MemberDefinition '[DllImport(\"kernel32.dll\")] public static extern IntPtr GetConsoleWindow(); [DllImport(\"user32.dll\")] public static extern bool IsWindowVisible(IntPtr hWnd); [DllImport(\"user32.dll\", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder name, int count);'")
 			statements = append(statements,
 				"$biomeConsoleWindow = [BiomeLab.ConsoleWindow]::GetConsoleWindow()",
-				"$biomeHasVisibleConsole = ($biomeConsoleWindow -ne [IntPtr]::Zero) -and [BiomeLab.ConsoleWindow]::IsWindowVisible($biomeConsoleWindow)",
-				"$biomeTerminalKind = if ($biomeHasVisibleConsole) { '' } elseif ($env:WT_SESSION) { "+powerShellLiteral(string(WindowsTerminal))+" } else { '' }",
-				"$biomeWindow = if ($biomeHasVisibleConsole) { [string]$biomeConsoleWindow.ToInt64() } else { '' }")
+				"$biomeConsoleClass = ''",
+				"if ($biomeConsoleWindow -ne [IntPtr]::Zero) { $biomeClassBuffer = New-Object System.Text.StringBuilder 256; [void][BiomeLab.ConsoleWindow]::GetClassName($biomeConsoleWindow, $biomeClassBuffer, $biomeClassBuffer.Capacity); $biomeConsoleClass = $biomeClassBuffer.ToString() }",
+				"$biomeHasClassicConsole = ($biomeConsoleClass -eq "+powerShellLiteral(windowsClassicConsoleClass)+") -and [BiomeLab.ConsoleWindow]::IsWindowVisible($biomeConsoleWindow)",
+				"$biomeTerminalKind = if ($biomeHasClassicConsole) { '' } elseif (($biomeConsoleClass -eq "+powerShellLiteral(windowsPseudoConsoleClass)+") -or $env:WT_SESSION) { "+powerShellLiteral(string(WindowsTerminal))+" } else { '' }",
+				"$biomeWindow = if ($biomeHasClassicConsole) { [string]$biomeConsoleWindow.ToInt64() } else { '' }")
 			kind = "$biomeTerminalKind"
 			window = "$biomeWindow"
 		}

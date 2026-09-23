@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -14,6 +15,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/mdelapenya/biomelab/internal/process"
 )
 
 func TestWindowsPowerShellHelper(t *testing.T) {
@@ -112,8 +115,17 @@ func TestWindowsPowerShellScriptPreservesArgumentDataAndHandshake(t *testing.T) 
 
 type windowsConsoleReport struct {
 	Window, Input, Output, Visible uintptr
+	ClassName                      string
 	WindowsTerminal                bool
 	WTSession                      string
+}
+
+// conPTY reports whether the shell that produced this record was hosted by a
+// pseudoconsole rather than a classic console window. WT_SESSION is not a
+// substitute: the OS default-terminal setting can delegate a plain
+// powershell.exe launch to Windows Terminal without setting it.
+func (r windowsConsoleReport) conPTY() bool {
+	return r.ClassName == windowsPseudoConsoleClass
 }
 
 func TestWindowsVisibleConsoleHelper(t *testing.T) {
@@ -129,9 +141,15 @@ func TestWindowsVisibleConsoleHelper(t *testing.T) {
 	var mode uint32
 	stdinOK, _, _ := getConsoleMode.Call(stdin, uintptr(unsafe.Pointer(&mode)))
 	stdoutOK, _, _ := getConsoleMode.Call(stdout, uintptr(unsafe.Pointer(&mode)))
-	visible, _, _ := windows.NewLazySystemDLL("user32.dll").NewProc("IsWindowVisible").Call(hwnd)
+	visible, _, _ := user32.NewProc("IsWindowVisible").Call(hwnd)
+	className := ""
+	if hwnd != 0 {
+		buf := make([]uint16, 256)
+		n, _, _ := user32.NewProc("GetClassNameW").Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+		className = windows.UTF16ToString(buf[:n])
+	}
 	record := windowsConsoleReport{
-		Window: hwnd, Input: stdinOK, Output: stdoutOK, Visible: visible,
+		Window: hwnd, Input: stdinOK, Output: stdoutOK, Visible: visible, ClassName: className,
 		WindowsTerminal: os.Getenv("WT_SESSION") != "", WTSession: os.Getenv("WT_SESSION"),
 	}
 	data, err := json.Marshal(record)
@@ -204,18 +222,31 @@ func TestWindowsIntentionalLaunchCreatesInteractiveLongLivedConsole(t *testing.T
 	if record.Input == 0 || record.Output == 0 {
 		t.Fatalf("new terminal has unusable console handles: %+v", record)
 	}
-	if !record.WindowsTerminal && (record.Window == 0 || record.Visible == 0) {
+	if !record.conPTY() && (record.Window == 0 || record.Visible == 0) {
 		t.Fatalf("classic console is not visible: %+v", record)
 	}
 	if record.WTSession == "stale-parent-session" {
 		t.Fatalf("fallback inherited the parent terminal identity: %+v", record)
 	}
 	if session.info.Kind == WindowsTerminal {
-		if !record.WindowsTerminal || session.windowID != "" {
-			t.Fatalf("delegated WT host was misclassified: session=%+v report=%+v", session.info, record)
+		if !record.conPTY() && !record.WindowsTerminal {
+			t.Fatalf("host reported as Windows Terminal but owns a classic console: session=%+v report=%+v", session.info, record)
 		}
-	} else if record.WindowsTerminal || session.windowID == "" {
+		if session.windowID != "" {
+			t.Fatalf("pseudoconsole handle was recorded for activation: session=%+v window=%q report=%+v", session.info, session.windowID, record)
+		}
+	} else if record.conPTY() || record.WindowsTerminal || session.windowID == "" {
 		t.Fatalf("classic console was misclassified: session=%+v window=%q report=%+v", session.info, session.windowID, record)
+	}
+	// The shell must not adopt the worktree as its process working directory:
+	// Windows would hold an open handle on it. See
+	// TestWindowsTrackedShellDoesNotLockItsWorktree.
+	shell := process.Info{PID: session.info.ShellPID}
+	process.Enrich(context.Background(), &shell)
+	if shellDir, statErr := os.Stat(shell.Cwd); statErr == nil {
+		if rootDir, rootErr := os.Stat(root); rootErr == nil && os.SameFile(shellDir, rootDir) {
+			t.Fatalf("tracked shell holds the worktree %q as its working directory", root)
+		}
 	}
 	// The foreground helper has exited (it produced the report), but -NoExit
 	// must leave the exact registered PowerShell process alive and interactive.
@@ -233,6 +264,155 @@ func TestWindowsIntentionalLaunchCreatesInteractiveLongLivedConsole(t *testing.T
 		time.Sleep(25 * time.Millisecond)
 	}
 	t.Fatal("test-owned PowerShell shell survived cleanup")
+}
+
+// awaitSessionRecord waits for a launched shell to complete its handshake.
+func awaitSessionRecord(t *testing.T, marker string) []byte {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		if data, err := os.ReadFile(filepath.Join(marker, "session")); err == nil && len(data) != 0 {
+			return data
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf("shell never registered a session in %s", marker)
+	return nil
+}
+
+func consoleWindowClass(hwnd windows.Handle) string {
+	buf := make([]uint16, 256)
+	n, _, _ := user32.NewProc("GetClassNameW").Call(uintptr(hwnd), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	return windows.UTF16ToString(buf[:n])
+}
+
+// The two tests below pin each host branch of the fallback script regardless of
+// this machine's default-terminal setting, which decides which one the
+// end-to-end launch test happens to exercise.
+
+// A PowerShell fallback launch can be delegated into Windows Terminal by the OS
+// default-terminal setting. Hosting the classic-launch script in wt.exe
+// reproduces that shape exactly. The pseudoconsole reports itself visible and
+// carries no WT_SESSION, so a visibility check alone records it as a focusable
+// classic console and activation then aims at the wrong window.
+func TestWindowsFallbackScriptDetectsDelegatedWindowsTerminalHost(t *testing.T) {
+	wtPath, err := exec.LookPath("wt.exe")
+	if err != nil {
+		t.Skip("wt.exe is not installed")
+	}
+	shellPath, err := exec.LookPath("powershell.exe")
+	if err != nil {
+		t.Fatalf("windows-latest contract requires powershell.exe: %v", err)
+	}
+	marker := t.TempDir()
+	script := windowsPowerShellScript(launchRequest{markerDir: marker}, false)
+	args := windowsTerminalArgs(shellPath, []string{"-NoLogo", "-NoProfile", "-EncodedCommand", encodePowerShell(script)})
+	if err := exec.Command(wtPath, args...).Start(); err != nil {
+		t.Fatalf("could not host the fallback script in Windows Terminal: %v", err)
+	}
+
+	pid, _, window, kind, err := parseSessionRecord(awaitSessionRecord(t, marker))
+	if err != nil || pid <= 1 {
+		t.Fatalf("invalid handshake: pid=%d err=%v", pid, err)
+	}
+	if kind != WindowsTerminal {
+		t.Errorf("delegated Windows Terminal host recorded as %q, want %q", kind, WindowsTerminal)
+	}
+	if window != "" {
+		t.Errorf("recorded pseudoconsole window %q for activation; no handle may be kept", window)
+	}
+}
+
+// The classic console is the one host Biomelab may focus, so it must still be
+// recognised and its window handle retained. conhost.exe hosts the shell
+// directly, which bypasses default-terminal delegation without changing any
+// machine-wide setting.
+func TestWindowsFallbackScriptRecordsClassicConsoleForActivation(t *testing.T) {
+	shellPath, err := exec.LookPath("powershell.exe")
+	if err != nil {
+		t.Fatalf("windows-latest contract requires powershell.exe: %v", err)
+	}
+	if _, err := exec.LookPath("conhost.exe"); err != nil {
+		t.Skip("conhost.exe is not available")
+	}
+	marker := t.TempDir()
+	title := "biomelab: classic console probe"
+	script := windowsPowerShellScript(launchRequest{
+		markerDir: marker, windowTitle: title, command: "Start-Sleep -Seconds 30",
+	}, false)
+	err = startWindowsConsole(shellPath, "conhost.exe",
+		[]string{shellPath, "-NoLogo", "-NoProfile", "-EncodedCommand", encodePowerShell(script)})
+	if err != nil {
+		t.Fatalf("could not host the fallback script in a classic console: %v", err)
+	}
+
+	pid, _, window, kind, err := parseSessionRecord(awaitSessionRecord(t, marker))
+	if err != nil || pid <= 1 {
+		t.Fatalf("invalid handshake: pid=%d err=%v", pid, err)
+	}
+	t.Cleanup(func() {
+		if p, findErr := os.FindProcess(int(pid)); findErr == nil {
+			_ = p.Kill()
+		}
+	})
+	if kind != "" {
+		t.Errorf("classic console recorded as %q, want an unlabelled host", kind)
+	}
+	handle, err := strconv.ParseUint(window, 10, 64)
+	if err != nil || handle == 0 {
+		t.Fatalf("classic console recorded no activation handle (%q): %v", window, err)
+	}
+	if class := consoleWindowClass(windows.Handle(handle)); class != windowsClassicConsoleClass {
+		t.Errorf("recorded window class is %q, want %q", class, windowsClassicConsoleClass)
+	}
+	// Activation refuses any handle whose live window text no longer matches the
+	// recorded title, so a handle that cannot satisfy that check is useless.
+	if text := windowText(windows.Handle(handle)); text != title {
+		t.Errorf("recorded window text is %q, want %q", text, title)
+	}
+	// Whether Windows then grants the focus change depends on the foreground
+	// lock, which a test process usually does not hold. Only a refusal that
+	// means "this is not the window you recorded" is a defect here.
+	session := &Session{windowTitle: title, windowID: window}
+	if err := activateSessionWindows(context.Background(), session); err != nil &&
+		!strings.Contains(err.Error(), "Windows refused to focus") {
+		t.Errorf("recorded classic console was rejected as the wrong window: %v", err)
+	}
+}
+
+// Removing a worktree must not be blocked by the terminal Biomelab opened in
+// it. Windows holds an open handle on a process's working directory, so a
+// shell that adopted the worktree would make RemoveWorktree delete the
+// contents and then fail on the directory itself, leaving the worktree
+// half-removed and unrecreatable until the user closes the terminal.
+func TestWindowsTrackedShellDoesNotLockItsWorktree(t *testing.T) {
+	wtPath, err := exec.LookPath("wt.exe")
+	if err != nil {
+		t.Skip("wt.exe is not installed")
+	}
+	root := t.TempDir()
+	worktree := filepath.Join(root, "worktree")
+	if err := os.MkdirAll(filepath.Join(worktree, "nested"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BIOME_TERMINAL", wtPath)
+	session, err := openTrackedWindows(launchRequest{dir: worktree, command: "Start-Sleep -Seconds 30"})
+	if err != nil {
+		t.Fatalf("tracked terminal failed: %v", err)
+	}
+	t.Cleanup(func() {
+		if p, findErr := os.FindProcess(int(session.info.ShellPID)); findErr == nil {
+			_ = p.Kill()
+		}
+		session.Cleanup()
+	})
+
+	if err := os.RemoveAll(worktree); err != nil {
+		t.Fatalf("worktree could not be removed while its terminal is open: %v", err)
+	}
+	if _, err := os.Stat(worktree); !os.IsNotExist(err) {
+		t.Fatalf("worktree directory survived removal: %v", err)
+	}
 }
 
 func TestWindowsTerminalSelectionAndRecipes(t *testing.T) {
