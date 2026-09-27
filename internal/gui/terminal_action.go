@@ -16,6 +16,7 @@ type terminalTarget struct {
 
 type terminalDependencies struct {
 	open     func(string, string, string) (*terminal.Session, error)
+	openArgs func(string, []string, string) (*terminal.Session, error)
 	find     func([]string, string, []*terminal.Session) (*terminal.Session, error)
 	activate func(*terminal.Session) (bool, error)
 	dispatch func(func())
@@ -35,6 +36,7 @@ func (a *App) openOrActivateTerminal(re *repoEntry, wt git.Worktree) {
 	if a.terminalDeps == nil {
 		a.terminalDeps = &terminalDependencies{
 			open: terminal.OpenTracked, find: terminal.FindSession,
+			openArgs: terminal.OpenTrackedArgs,
 			activate: func(s *terminal.Session) (bool, error) { return s.Activate() }, dispatch: fyne.Do,
 		}
 	}
@@ -73,15 +75,16 @@ func (a *App) openOrActivateTerminal(re *repoEntry, wt git.Worktree) {
 	}
 	isSandbox := target.mode == "sandbox" && target.sandbox != ""
 	dir, command, identifier := wt.Path, "", wt.Branch
+	var commandArgs []string
 	if isSandbox {
-		args := sandbox.RunAttachArgs(target.sandbox)
+		commandArgs = sandbox.RunAttachArgs(target.sandbox)
 		if !wt.IsMain {
-			args = sandbox.ExecAgentArgs(target.sandbox, wt.Path, target.agent)
+			commandArgs = sandbox.ExecAgentArgs(target.sandbox, wt.Path, target.agent)
 		}
-		dir, command, identifier = "", sandbox.CommandString(args), ""
+		dir, command, identifier = "", "", ""
 	}
 	go func() {
-		session, err := reuseOrOpenTerminal(deps, existing, claimed, paths, wt.Path, isSandbox, dir, command, identifier)
+		session, err := reuseOrOpenTerminal(deps, existing, claimed, paths, wt.Path, isSandbox, dir, command, commandArgs, identifier)
 		deps.dispatch(func() {
 			delete(a.terminalActions, target)
 			if !a.hasTerminalTarget(target) {
@@ -137,7 +140,7 @@ func (a *App) offerTerminalRecovery(target terminalTarget, session *terminal.Ses
 	dlg.Show()
 }
 
-func reuseOrOpenTerminal(deps terminalDependencies, existing *terminal.Session, claimed []*terminal.Session, paths []string, path string, sandboxMode bool, dir, command, identifier string) (*terminal.Session, error) {
+func reuseOrOpenTerminal(deps terminalDependencies, existing *terminal.Session, claimed []*terminal.Session, paths []string, path string, sandboxMode bool, dir, command string, commandArgs []string, identifier string) (*terminal.Session, error) {
 	if existing != nil {
 		alive, err := deps.activate(existing)
 		if alive || err != nil {
@@ -157,6 +160,9 @@ func reuseOrOpenTerminal(deps terminalDependencies, existing *terminal.Session, 
 			}
 			found.Cleanup()
 		}
+	}
+	if commandArgs != nil {
+		return deps.openArgs(dir, commandArgs, identifier)
 	}
 	return deps.open(dir, command, identifier)
 }

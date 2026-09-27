@@ -43,6 +43,10 @@ func TestSessionRecordParsing(t *testing.T) {
 	if err != nil || pid != 123 || tty != "/dev/ttys007" || window != "18" || kind != TerminalApp {
 		t.Fatalf("bad record: %d %s %s %s %v", pid, tty, window, kind, err)
 	}
+	pid, _, _, kind, err = parseSessionRecord([]byte("456\r\n\r\n\r\nWindows Terminal\r\n"))
+	if err != nil || pid != 456 || kind != WindowsTerminal {
+		t.Fatalf("bad Windows record: %d %s %v", pid, kind, err)
+	}
 	_, tty, window, kind, err = parseSessionRecord([]byte("123\nnot a tty\ninvalid\niTerm.app\n"))
 	if err != nil || tty != "" || window != "" || kind != ITerm2 {
 		t.Fatal("invalid optional metadata not discarded")

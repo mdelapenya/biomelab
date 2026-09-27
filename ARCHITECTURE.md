@@ -146,8 +146,32 @@ worktree. Closed sessions can be replaced; inspection and activation failures
 retain the association. An unresolved handshake can be explicitly forgotten
 after 30 seconds; the next Enter retries. Associations last until app exit.
 Errors update the originating repo's status without automatic relaunch. Windows
-terminal launch remains unsupported and is rejected before a custom executable
-receives the POSIX argument recipe. The optional
+launch prefers `wt.exe`; its PowerShell fallback uses a hidden helper to start
+the final visible interactive `pwsh.exe`/`powershell.exe` console, avoiding the
+GUI parent's null standard handles. It strips inherited `WT_SESSION` and
+`WT_PROFILE_ID`, then records whether the final shell has a visible classic
+console or is Windows Terminal-hosted (for example through OS default-terminal
+delegation). That verdict comes from the console window's class: a classic
+conhost window is a `ConsoleWindowClass`, while a ConPTY host owns a
+`PseudoConsoleWindow`. Visibility does not distinguish them — a pseudoconsole
+reports itself visible — and `WT_SESSION` is absent on a delegated shell, so
+only the class identifies a handle worth keeping for activation. The shell
+moves only its PowerShell provider location, never its process working
+directory: discovery matches shells to worktrees by process working directory,
+but Windows keeps an open handle on that directory, and a shell holding the
+worktree would make removing it delete the contents and then fail on the
+directory itself. Windows sessions are therefore tracked in memory only.
+A Windows Terminal window Biomelab launched is activated by the per-session
+name it was given at launch (`wt -w <name> focus-tab`), which raises exactly
+that window regardless of the tab title the shell may overwrite and without
+mapping a pseudoconsole to an HWND; the prior-confirmed liveness check means
+the named window still exists. A Windows Terminal session the OS default-terminal
+setting *delegated* a PowerShell fallback into has no name Biomelab assigned, so
+it still reports a manual-switch error rather than guessing. Classic PowerShell
+activation requires an exact-title, visible recorded console HWND. The live
+association prevents duplicate terminals on repeated Enter in every case.
+`BIOME_TERMINAL` accepts only those executable families on Windows, so no POSIX
+terminal recipe is passed to an arbitrary executable. The optional
 [foreground observer and Windows acceptance procedure](docs/windows-focus-validation.md)
 verify actual focus behavior independently of console suppression.
 

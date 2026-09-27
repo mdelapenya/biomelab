@@ -37,7 +37,12 @@ before sharing it.
 
 ## Scenarios
 
-For at least five minutes each in representative regular and sandbox modes:
+For at least five minutes each in representative regular and sandbox modes,
+perform the background/focus scenarios below and the terminal acceptance
+checklist. This is a laptop-desktop procedure: use a host worktree with spaces
+and non-ASCII characters in its path, and exercise it through quoted
+PowerShell arguments (Windows file names themselves cannot contain `"`). Record
+the exact paths and terminal versions used.
 
 1. Keep typing in another application's editor while Biomelab is visible in the
    background. Observe startup and multiple 5-second local / 30-second default
@@ -48,12 +53,56 @@ For at least five minutes each in representative regular and sandbox modes:
 4. Include unavailable or unauthenticated CLIs and an unavailable sandbox daemon.
    Authentication should be completed separately in a terminal; unattended Git
    credential lookup disables Git terminal and Git Credential Manager prompts.
-5. Press Enter repeatedly on a card. On Windows, the current terminal launcher
-   is unsupported and should display an error without launching a console,
-   including when `BIOME_TERMINAL` is set. Open terminals manually. On supported
-   macOS/Linux setups, verify that one launch stays usable and reuse still works.
-6. Verify intentional editor, system-file and native save-dialog actions remain
+5. Verify intentional editor, system-file and native save-dialog actions remain
    visible and functional, without an extra PowerShell console for Save.
+
+### Windows terminal acceptance checklist
+
+Perform each item first with Windows Terminal available, then force the
+PowerShell fallback by setting `BIOME_TERMINAL` to `pwsh.exe` or
+`powershell.exe` (or an executable path). That fallback uses a hidden helper
+which starts the final visible interactive console; inspect the final console,
+not the helper. The helper removes inherited Windows Terminal identity, but an
+OS default-terminal setting can still host that PowerShell session in Windows
+Terminal. An unknown `BIOME_TERMINAL` value is expected to report an error
+rather than run an arbitrary recipe.
+
+1. In regular mode, press Enter for the main worktree. Verify that it opens a
+   visible terminal in the host worktree, including the spaced/quoted/Unicode
+   path case. Press Enter repeatedly while launch is pending and after it is
+   ready: there must be one terminal/session, not one per keypress. For a
+   Windows Terminal window Biomelab launched (default, or `BIOME_TERMINAL=wt.exe`),
+   the later Enter must raise that window. For a session the OS *delegated* a
+   PowerShell fallback into Windows Terminal (see below), the later Enter reports
+   a manual-switch message instead; switch to it yourself and verify no duplicate
+   was launched.
+2. In the opened shell, `cd` into a subdirectory and then outside the worktree,
+   and overwrite the tab title (for example by starting an agent). Return to
+   Biomelab and press Enter. A Biomelab-launched Windows Terminal window is still
+   raised by its window name despite the changed title; a classic visible
+   PowerShell console with the recorded exact title and HWND is focused; an
+   OS-delegated PowerShell-fallback session reports the manual-switch message.
+   Exit the shell, press Enter, and verify one replacement can be opened; repeat
+   Enter to confirm the applicable focus/manual-switch behavior for it.
+3. In sandbox mode, repeat on both the main card (`sbx run`) and a linked card
+   (`sbx exec` with the configured agent). Confirm each card/mode owns its own
+   host terminal, and that returning to either card reuses its session after
+   the sandbox command attaches or changes directory.
+4. Exercise the editor and allow multiple background refresh cycles while the
+   terminal is active. Verify typing remains uninterrupted and no unsolicited
+   focus transition occurs. If Windows refuses a classic-console focus request,
+   or the session is an OS-delegated PowerShell fallback, Biomelab should show
+   the failure and must not open a duplicate terminal; switch to the existing
+   terminal manually, then retry as appropriate.
+
+Record whether Windows Terminal and the helper-created PowerShell fallback each
+passed, the actual final host (classic console or Windows Terminal), which
+PowerShell executable was used, any `BIOME_TERMINAL` value, and screenshots or
+focus-trace timestamps for failures. A Biomelab-launched Windows Terminal window
+being raised is a focus pass; for an OS-delegated fallback, manual switching with
+no duplicate is the expected result rather than full focus support. A launcher
+start, a CI result, or an absence of a console flash alone is not an acceptance
+pass.
 
 Repeat the observer with `-out after-focus.csv`. Pass only if typing remains
 uninterrupted and there are no unsolicited foreground transitions to Biomelab
@@ -64,11 +113,14 @@ defect needs investigation even if command suppression works.
 ## Automated coverage and limits
 
 The CI test matrix runs the full suite with the race detector on Linux, macOS,
-and Windows. Windows executes the command runtime tests through a GUI-subsystem launcher,
-checks that background children have no console window, and tests Windows
-terminal rejection before launch. Cross-platform tests cover command I/O,
-errors, cancellation, inherited output-pipe waits, refresh coalescing and stale
-results, and terminal request/error handling.
+and Windows. Windows executes command runtime tests through a GUI-subsystem
+launcher, checks that background children have no console window, and also runs
+`go test -race -count=1 -v ./internal/terminal` as an explicit native-terminal
+integration check. Its `windows-terminal-<run-id>-<attempt>` artifact contains
+that package's `test.log`. Cross-platform tests cover command I/O, errors,
+cancellation, inherited output-pipe waits, refresh coalescing and stale results,
+and terminal request/error handling. These are CI checks, not a claim that the
+Windows desktop acceptance checklist has passed.
 
 `CREATE_NO_WINDOW` applies to each configured command; arbitrary third-party
 descendants can still create consoles or dialogs. The integration descendant
@@ -94,11 +146,13 @@ on failure.
 The Windows test job disables test-result caching and uploads the trace files
 plus the full suite output in `test.log` as
 `windows-console-<run-id>-<attempt>`, including when the test fails. Artifacts
-are retained for seven days. To inspect a run:
+are retained for seven days. The separate terminal package check is uploaded as
+`windows-terminal-<run-id>-<attempt>`. To inspect a run:
 
 ```sh
 gh run view <run-id> --log-failed
 gh run download <run-id> --name windows-console-<run-id>-<attempt> --dir ./windows-console
+gh run download <run-id> --name windows-terminal-<run-id>-<attempt> --dir ./windows-terminal
 ```
 
 Structured traces omit command arguments, command lines, working directories, environment

@@ -84,6 +84,25 @@ jobs:
             go test -race -count=1 -v ./...
           fi
 
+      - name: Validate native Windows terminal integration
+        if: always() && runner.os == 'Windows'
+        run: |
+          set -o pipefail
+          trace_root="$(cygpath -u "$RUNNER_TEMP")"
+          trace_dir="$trace_root/biomelab-windows-terminal"
+          mkdir -p "$trace_dir"
+          export BIOMELAB_CONSOLE_TRACE_DIR="$(cygpath -w "$trace_dir")"
+          go test -race -count=1 -v ./internal/terminal 2>&1 | tee "$trace_dir/test.log"
+
+      - name: Upload Windows terminal validation logs
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-terminal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/biomelab-windows-terminal
+          retention-days: 7
+          if-no-files-found: warn
+
       - name: Upload Windows process diagnostics
         if: always() && runner.os == 'Windows'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

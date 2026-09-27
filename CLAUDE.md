@@ -103,7 +103,9 @@ Always run `go test -race ./...`.
   itself via `regent.EnsureClaudeHooks` (ported from rgt upstream, Apache-2.0).
 - **sbx has no `--branch` any more** — sandbox-mode worktrees are plain host
   worktrees under `.biomelab-worktrees/` (sbx mirrors the mount path, so they
-  exist in-container at the same path). Linked cards attach with
+  exist in-container at the same path on macOS/Linux; on Windows `C:\a\b` is
+  mounted at `/c/a/b`, so host paths must go through `sandbox.ContainerPath`
+  before reaching sbx). Linked cards attach with
   `sbx exec -it -w <path> <sbx> bash -c '…start-agent…'`; the main card uses
   `sbx run --name <sbx>`. See `sandbox.ExecAgentArgs`.
 - **`widget.Accordion` misbehaves inside `VScroll`** — clicks don't toggle.

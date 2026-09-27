@@ -5,12 +5,14 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/mdelapenya/biomelab/internal/config"
 	"github.com/mdelapenya/biomelab/internal/git"
+	"github.com/mdelapenya/biomelab/internal/sandbox"
 	"github.com/mdelapenya/biomelab/internal/terminal"
 )
 
@@ -94,11 +96,19 @@ func TestTerminalActionReusesRegularAndSandboxSessions(t *testing.T) {
 					if mode == "regular" && (dir != wt.Path || command != "" || title != wt.Branch) {
 						t.Error("wrong regular launch")
 					}
-					if mode == "sandbox-main" && command != "sbx run --name box" {
-						t.Errorf("wrong main attach: %s", command)
+					return first, nil
+				},
+				openArgs: func(dir string, args []string, title string) (*terminal.Session, error) {
+					opens++
+					command := strings.Join(args, "\x00")
+					if dir != "" || title != "" {
+						t.Error("sandbox launch leaked directory or title")
+					}
+					if mode == "sandbox-main" && command != "sbx\x00run\x00--name\x00box" {
+						t.Errorf("wrong main attach: %q", args)
 					}
 					if mode == "sandbox-linked" && (!strings.Contains(command, "exec") || !strings.Contains(command, "claude") || !strings.Contains(command, wt.Path)) {
-						t.Errorf("wrong linked attach: %s", command)
+						t.Errorf("wrong linked attach: %q", args)
 					}
 					return first, nil
 				},
@@ -140,6 +150,27 @@ func TestTerminalActionReusesRegularAndSandboxSessions(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTerminalActionPreservesSandboxArgumentBoundaries(t *testing.T) {
+	wt := git.Worktree{Path: `/repo/work & 'quoted`, IsMain: false}
+	re := &repoEntry{state: &RepoState{
+		Worktrees:  []git.Worktree{wt},
+		ActiveMode: &config.ModeEntry{Type: "sandbox", SandboxName: `box & 'quoted`, Agent: `agent; echo injected`},
+	}}
+	dispatch := make(chan func(), 1)
+	a := &App{repos: []*repoEntry{re}, terminalDeps: &terminalDependencies{
+		openArgs: func(dir string, got []string, identifier string) (*terminal.Session, error) {
+			want := sandbox.ExecAgentArgs(`box & 'quoted`, wt.Path, `agent; echo injected`)
+			if dir != "" || identifier != "" || !reflect.DeepEqual(got, want) {
+				t.Fatalf("argument boundaries changed: %q", got)
+			}
+			return &terminal.Session{}, nil
+		},
+		dispatch: func(f func()) { dispatch <- f },
+	}}
+	a.handleEnter()
+	receiveRefresh(t, dispatch)()
 }
 
 func TestTerminalActionFreshDiscoveryAndInspectionErrors(t *testing.T) {
@@ -215,6 +246,10 @@ func TestTerminalActionKeepsSeparateModeSessions(t *testing.T) {
 				return box, errors.New("old sandbox failure")
 			}
 			return regular, nil
+		},
+		openArgs: func(_ string, _ []string, _ string) (*terminal.Session, error) {
+			opens++
+			return box, errors.New("old sandbox failure")
 		},
 		activate: func(s *terminal.Session) (bool, error) { activated = s; return true, nil },
 		dispatch: func(f func()) { dispatch <- f },
@@ -332,7 +367,8 @@ func TestTerminalDiscoveryExcludesOtherMode(t *testing.T) {
 	box := &terminal.Session{}
 	opens := 0
 	a := &App{repos: []*repoEntry{re}, terminalDeps: &terminalDependencies{
-		open: func(string, string, string) (*terminal.Session, error) { opens++; return box, nil },
+		open:     func(string, string, string) (*terminal.Session, error) { opens++; return &terminal.Session{}, nil },
+		openArgs: func(string, []string, string) (*terminal.Session, error) { opens++; return box, nil },
 		find: func(_ []string, _ string, claimed []*terminal.Session) (*terminal.Session, error) {
 			if len(claimed) != 1 || claimed[0] != box {
 				t.Error("sandbox association not excluded")
