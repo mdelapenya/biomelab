@@ -6,14 +6,16 @@ BiomeLab supports host mode and recommends Docker Sandboxes for agent execution.
 
 1. Install and initialize `sbx`; run `sbx ls` in a terminal before using the GUI.
 2. Select a repository in the projects panel and press `n`, or choose sandbox mode when adding a repository with `a`.
-3. Choose the agent, then answer **Do you want to add kits?** **No** skips catalog discovery. **Yes** uses `gh` to discover compatible kits and opens a picker.
+3. Choose a built-in agent if you want to skip kits, then answer **Do you want to add kits?** **No** creates with that agent. **Yes** loads the Docker Hub `sbx` kit catalog. Choose exactly one sandbox kit and any compatible mixins from the paginated cards; your selections remain checked as you move between pages.
 4. Review and confirm creation. The sandbox is created or discovered before its mode is registered; no second `n` action is needed. Canceling or failing setup leaves the previous mode unchanged.
 
 An existing sandbox can be registered without changing its kits. Adding a sandbox to a regular-only repository replaces its regular entry. Multiple agents can have separate sandbox modes for the same repository.
 
 ## Kits
 
-Catalog metadata comes from `docker/sbx-kits-contrib` via `gh api`. Kits are installed as Docker Hub OCI artifacts, such as `docker.io/sbx/code-server-kit:latest`. Saved metadata records the exact reference and rolling `latest` tag, not an immutable installed digest. Compatibility is filtered for the selected agent.
+Catalog discovery lists published kit artifacts in Docker Hub's `sbx` organization. Ordinary container images are excluded. A sandbox kit supplies the base agent and is passed as the positional workload to `sbx create`; mixin kits add tools or configuration through `--kit`. The picker marks each kind and requires one sandbox base. It keeps incompatible mixins visible and explains why Continue is unavailable until the selection is valid.
+
+Cards show the kit name and its Docker Hub logo when available. If a kit has no usable logo, a local kit mark appears. BiomeLab refreshes the catalog and logos in the background when the app starts. It keeps a complete catalog snapshot and downloaded resources under `~/.biomelab/cache/kits` for one hour. Opening the picker while that snapshot is fresh reads it locally without new HTTP requests; a failed refresh leaves the last complete snapshot available. Saved metadata records each selected kit's kind, exact OCI reference, and rolling `latest` tag, not an immutable installed digest.
 
 Kits are selectable only at creation. Adding kits later would recreate the agent container; BiomeLab does not offer that workflow or automatically recreate a sandbox.
 

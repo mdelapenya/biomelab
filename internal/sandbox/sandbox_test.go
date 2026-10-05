@@ -30,6 +30,19 @@ func TestCreateArgs(t *testing.T) {
 	})
 }
 
+func TestCreateWithKitArgsPlacesSandboxBasePositionally(t *testing.T) {
+	got := CreateWithKitArgs("my-sandbox", "docker.io/sbx/claude-kit:latest", "/tmp/repo", []string{
+		"docker.io/sbx/playwright-kit:latest", "docker.io/sbx/task-kit:latest",
+	})
+	want := []string{"sbx", "create", "--name", "my-sandbox",
+		"--kit", "docker.io/sbx/playwright-kit:latest",
+		"--kit", "docker.io/sbx/task-kit:latest",
+		"docker.io/sbx/claude-kit:latest", "/tmp/repo"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("CreateWithKitArgs = %v, want %v", got, want)
+	}
+}
+
 func TestRunAttachArgs(t *testing.T) {
 	got := RunAttachArgs("my-sandbox")
 	want := []string{"sbx", "run", "--name", "my-sandbox"}

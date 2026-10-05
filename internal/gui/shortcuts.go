@@ -848,7 +848,7 @@ func (a *App) handleStopSandbox() {
 	}()
 }
 
-// kitURLs maps a selected kit slice to the --kit argument values.
+// kitURLs maps a selected kit slice to its OCI references.
 func kitURLs(selected []kits.Kit) []string {
 	urls := make([]string, len(selected))
 	for i, k := range selected {
@@ -857,11 +857,43 @@ func kitURLs(selected []kits.Kit) []string {
 	return urls
 }
 
+// kitSelectionRefs separates the one sandbox workload from optional mixins.
+func kitSelectionRefs(selected []kits.Kit) (sandboxRef string, mixinRefs []string) {
+	for _, k := range selected {
+		if k.Kind == kits.KindSandbox {
+			sandboxRef = k.OCIReference()
+		} else if k.Kind == kits.KindMixin {
+			mixinRefs = append(mixinRefs, k.OCIReference())
+		}
+	}
+	return sandboxRef, mixinRefs
+}
+
 // buildKitInstalls converts the picker selection into the persistence shape.
 func buildKitInstalls(selected []kits.Kit) []config.KitInstall {
 	out := make([]config.KitInstall, len(selected))
 	for i, k := range selected {
-		out[i] = config.KitInstall{Name: k.Name, Ref: kits.DefaultTag, Reference: k.OCIReference()}
+		out[i] = config.KitInstall{Name: k.Name, Kind: k.Kind, Ref: kits.DefaultTag, Reference: k.OCIReference()}
+	}
+	return out
+}
+
+// recordedKits recovers the exact published references when recreating a
+// missing sandbox. Legacy records without a reference cannot be replayed.
+func recordedKits(installs []config.KitInstall) []kits.Kit {
+	if len(installs) == 0 {
+		return nil
+	}
+	out := make([]kits.Kit, 0, len(installs))
+	for _, install := range installs {
+		if install.Reference == "" {
+			return nil
+		}
+		kind := install.Kind
+		if kind == "" {
+			kind = kits.KindMixin
+		}
+		out = append(out, kits.Kit{Name: install.Name, Kind: kind, Reference: install.Reference})
 	}
 	return out
 }
@@ -878,9 +910,11 @@ func (a *App) handleCreateOrEnrollSandbox() {
 		if re.state.SandboxStatus != sandbox.StatusNotFound {
 			return
 		}
+		selected := recordedKits(mode.Kits)
+		baseRef, mixinRefs := kitSelectionRefs(selected)
 		done := a.openDialog()
-		a.activeDialog = showConfirmCreateSandbox(a.window, mode.SandboxName, mode.Agent, re.group.Path, nil, done, func() {
-			a.createProjectSandbox(re.group.Path, re.group.Name, *mode, nil)
+		a.activeDialog = showConfirmCreateSandboxWithKit(a.window, mode.SandboxName, mode.Agent, baseRef, re.group.Path, mixinRefs, done, func() {
+			a.createProjectSandbox(re.group.Path, re.group.Name, *mode, selected)
 		})
 		return
 	}

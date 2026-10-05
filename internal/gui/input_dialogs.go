@@ -146,7 +146,7 @@ func showAgentInput(parent fyne.Window, onDone func(), onSubmit func(agent strin
 	addKits.SetSelected("No")
 
 	content := container.NewVBox(
-		widget.NewLabel("Agent for sandbox:"),
+		widget.NewLabel("Built-in agent (used when kits are skipped):"),
 		sel,
 		widget.NewLabel("Do you want to add kits?"),
 		addKits,
@@ -154,7 +154,7 @@ func showAgentInput(parent fyne.Window, onDone func(), onSubmit func(agent strin
 
 	d = dialog.NewCustomConfirm("New Sandbox", "Continue", "Cancel", content, func(ok bool) {
 		onDone()
-		if ok && sel.Selected != "" {
+		if ok && (sel.Selected != "" || addKits.Selected == "Yes") {
 			onSubmit(sel.Selected, addKits.Selected == "Yes")
 		}
 	}, parent)

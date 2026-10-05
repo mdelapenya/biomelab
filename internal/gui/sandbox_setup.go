@@ -23,29 +23,35 @@ func (a *App) beginSandboxSetup(repoPath, repoName string) {
 	}
 	done := a.openDialog()
 	a.activeDialog = showAgentInput(a.window, done, func(agent string, addKits bool) {
-		mode := config.ModeEntry{
-			Type: "sandbox", Agent: agent,
-			SandboxName: sandbox.SanitizeName(repoName, agent),
-		}
-		// Use a previously reconciled name when retrying an enrolled mode.
-		for _, re := range a.repos {
-			if re.group.Path == repoPath {
-				for _, existing := range re.group.Modes {
-					if existing.Type == "sandbox" && existing.Agent == agent {
-						mode = existing
-						break
+		confirm := func(selected []kits.Kit) {
+			chosenAgent := agent
+			for _, k := range selected {
+				if k.Kind == kits.KindSandbox {
+					chosenAgent = k.Name
+					break
+				}
+			}
+			mode := config.ModeEntry{Type: "sandbox", Agent: chosenAgent,
+				SandboxName: sandbox.SanitizeName(repoName, chosenAgent)}
+			// Preserve a reconciled name when registering an existing mode.
+			for _, re := range a.repos {
+				if re.group.Path == repoPath {
+					for _, existing := range re.group.Modes {
+						if existing.Type == "sandbox" && existing.Agent == chosenAgent {
+							mode = existing
+							break
+						}
 					}
 				}
 			}
-		}
-		confirm := func(selected []kits.Kit) {
+			baseRef, mixinRefs := kitSelectionRefs(selected)
 			confirmDone := a.openDialog()
-			a.activeDialog = showConfirmCreateSandbox(a.window, mode.SandboxName, agent, repoPath, kitURLs(selected), confirmDone, func() {
+			a.activeDialog = showConfirmCreateSandboxWithKit(a.window, mode.SandboxName, chosenAgent, baseRef, repoPath, mixinRefs, confirmDone, func() {
 				a.createProjectSandbox(repoPath, repoName, mode, selected)
 			})
 		}
 		if addKits {
-			a.loadSetupKits(mode, confirm)
+			a.loadSetupKits(repoName, confirm)
 		} else {
 			confirm(nil)
 		}
@@ -55,7 +61,7 @@ func (a *App) beginSandboxSetup(repoPath, repoName string) {
 // loadSetupKits is reached only after an explicit Yes. The loading dialog
 // keeps callbacks from opening a picker over another workflow; cancellation
 // cancels the catalog requests and suppresses their eventual completion.
-func (a *App) loadSetupKits(mode config.ModeEntry, onSubmit func([]kits.Kit)) {
+func (a *App) loadSetupKits(repoName string, onSubmit func([]kits.Kit)) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	done := a.openDialog()
 	loading := dialog.NewCustom("Loading Kits", "Cancel", widget.NewLabel("Loading available kits…"), a.window)
@@ -66,8 +72,7 @@ func (a *App) loadSetupKits(mode config.ModeEntry, onSubmit func([]kits.Kit)) {
 	a.activeDialog = loading
 	loading.Show()
 	go func() {
-		// The agent was chosen already; only mixins can be layered onto it.
-		_, mixins, err := kits.FetchAvailable(ctx)
+		sandboxKits, mixins, err := kits.FetchAvailable(ctx)
 		fyne.Do(func() {
 			if ctx.Err() == context.Canceled {
 				return
@@ -78,8 +83,7 @@ func (a *App) loadSetupKits(mode config.ModeEntry, onSubmit func([]kits.Kit)) {
 				return
 			}
 			pickerDone := a.openDialog()
-			a.activeDialog = showKitsDialog(a.window, mode.SandboxName, mode.Agent, nil,
-				kits.FilterMixinsForAgent(mixins, mode.Agent), pickerDone, onSubmit)
+			a.activeDialog = showKitsDialog(a.window, repoName, sandboxKits, mixins, pickerDone, onSubmit)
 		})
 	}()
 }
@@ -95,7 +99,8 @@ func (a *App) createProjectSandbox(repoPath, repoName string, mode config.ModeEn
 	a.creatingSandboxes[mode.SandboxName] = true
 	a.setProjectStatus(repoPath, "Creating "+mode.SandboxName+"…", false)
 	go func() {
-		name, created, err := ops.EnsureSandbox(repoName, repoPath, mode.SandboxName, mode.Agent, kitURLs(selected))
+		baseRef, mixinRefs := kitSelectionRefs(selected)
+		name, created, err := ops.EnsureSandboxWithKit(repoName, repoPath, mode.SandboxName, mode.Agent, baseRef, mixinRefs)
 		fyne.Do(func() {
 			delete(a.creatingSandboxes, mode.SandboxName)
 			if err != nil {

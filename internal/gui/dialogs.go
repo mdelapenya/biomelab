@@ -9,13 +9,12 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/mdelapenya/biomelab/internal/git"
-	"github.com/mdelapenya/biomelab/internal/kits"
 	"github.com/mdelapenya/biomelab/internal/provider"
 	"github.com/mdelapenya/biomelab/internal/sandbox"
 )
 
 var dialogMinSize = fyne.NewSize(450, 200)
-var kitsDialogSize = fyne.NewSize(600, 480)
+var kitsDialogSize = fyne.NewSize(780, 640)
 
 // All dialog functions return the dialog so the caller can store it for Escape dismissal.
 
@@ -42,8 +41,16 @@ func showConfirmDelete(parent fyne.Window, branch string, onDone func(), onConfi
 }
 
 func showConfirmCreateSandbox(parent fyne.Window, sbxName, sbxAgent, repoPath string, kitURLs []string, onDone func(), onConfirm func()) dialog.Dialog {
+	return showConfirmCreateSandboxWithKit(parent, sbxName, sbxAgent, "", repoPath, kitURLs, onDone, onConfirm)
+}
+
+func showConfirmCreateSandboxWithKit(parent fyne.Window, sbxName, sbxAgent, sandboxRef, repoPath string, mixinURLs []string, onDone func(), onConfirm func()) dialog.Dialog {
 	var d *dialog.ConfirmDialog
-	args := sandbox.CreateArgs(sbxName, sbxAgent, repoPath, kitURLs)
+	workload := sbxAgent
+	if sandboxRef != "" {
+		workload = sandboxRef
+	}
+	args := sandbox.CreateWithKitArgs(sbxName, workload, repoPath, mixinURLs)
 	cmd := sandbox.CommandString(args)
 
 	keyCap := newDialogKeyCapture(
@@ -198,105 +205,6 @@ func showSendPRRemoteSelection(parent fyne.Window, remotes []git.RemoteInfo, onD
 		focusInDialog(parent, firstBtn)
 	}
 	return d
-}
-
-// showKitsDialog renders a multi-select picker for sandbox kits, split into
-// Agents and Mixins. Mixins are pre-filtered for the sandbox's agent by the
-// caller — this function only renders.
-//
-// onSubmit fires with the selected kits in the order they were rendered.
-func showKitsDialog(
-	parent fyne.Window,
-	sandboxName, agent string,
-	agents, mixins []kits.Kit,
-	onDone func(),
-	onSubmit func(selected []kits.Kit),
-) dialog.Dialog {
-	var d *dialog.ConfirmDialog
-	checks := make([]*dialogCheck, 0, len(agents)+len(mixins))
-	all := make([]kits.Kit, 0, len(agents)+len(mixins))
-
-	body := container.NewVBox(
-		monoText(
-			fmt.Sprintf("Install kits into %s (agent: %s)", sandboxName, agent),
-			colorBranch, true,
-		),
-		widget.NewSeparator(),
-	)
-
-	addSection := func(title string, list []kits.Kit, emptyHint string) {
-		header := monoText(title, colorBlue, true)
-		body.Add(header)
-		if len(list) == 0 {
-			hint := monoText(emptyHint, colorDimGray, false)
-			hint.TextSize = scaledSize(11)
-			body.Add(hint)
-			body.Add(widget.NewSeparator())
-			return
-		}
-		for _, k := range list {
-			checks = append(checks, newDialogCheck(displayLabel(k), nil, func() { d.Hide() }))
-			all = append(all, k)
-			body.Add(checks[len(checks)-1])
-			if k.Description != "" {
-				desc := monoText("    "+k.Description, colorGray, false)
-				desc.TextSize = scaledSize(10)
-				body.Add(desc)
-			}
-		}
-		body.Add(widget.NewSeparator())
-	}
-
-	if len(agents) > 0 {
-		addSection("Agents", agents, "(none available)")
-	}
-	addSection(fmt.Sprintf("Mixins for %s", agent), mixins, "(no mixins compatible with this agent)")
-
-	// keyCap captures Escape (cancel) globally inside the dialog. Enter is
-	// NOT bound to confirm because Space toggles the focused checkbox and
-	// users may want to toggle several before submitting — Enter would
-	// race with that. They click "Install" or Tab to it and press Space.
-	keyCap := newDialogKeyCapture(
-		func() {}, // no-op on Enter — see comment above
-		func() { d.Hide() },
-	)
-	scroll := container.NewVScroll(body)
-	scroll.SetMinSize(kitsDialogSize)
-	content := container.NewStack(keyCap, scroll)
-
-	d = dialog.NewCustomConfirm("Choose Kits", "Continue", "Cancel", content, func(ok bool) {
-		onDone()
-		if !ok {
-			return
-		}
-		var selected []kits.Kit
-		for i, c := range checks {
-			if c.Checked {
-				selected = append(selected, all[i])
-			}
-		}
-		onSubmit(selected)
-	}, parent)
-	d.Resize(kitsDialogSize)
-	d.Show()
-	// Focus the first checkbox if any exist, so the user can Space-toggle
-	// immediately. Fall back to the key-capture overlay so Escape still
-	// dismisses even with no checkboxes.
-	if len(checks) > 0 {
-		focusInDialog(parent, checks[0])
-	} else {
-		focusInDialog(parent, keyCap)
-	}
-	return d
-}
-
-// displayLabel returns the user-visible label for a kit row.
-func displayLabel(k kits.Kit) string {
-	name := k.DisplayName
-	if name == "" {
-		name = k.Name
-	}
-	return fmt.Sprintf("%s  (%s)", name, k.Name)
 }
 
 // showSendPRConfirm renders the final confirmation step of the PR send flow.
