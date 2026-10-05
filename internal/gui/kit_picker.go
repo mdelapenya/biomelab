@@ -16,6 +16,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/mdelapenya/biomelab/internal/kits"
@@ -23,6 +24,19 @@ import (
 )
 
 const kitPageSize = 8
+
+// kitStatusLayout reserves the same footer height for both validation text
+// and an empty status, without introducing a scrollbar into the dialog.
+type kitStatusLayout struct{}
+
+func (kitStatusLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	for _, object := range objects {
+		object.Move(fyne.NewPos(0, 0))
+		object.Resize(size)
+	}
+}
+
+func (kitStatusLayout) MinSize([]fyne.CanvasObject) fyne.Size { return fyne.NewSize(200, 42) }
 
 // kitPicker keeps selection independent of the currently rendered page.
 type kitPicker struct {
@@ -192,15 +206,19 @@ func kitLogo(ctx context.Context, k kits.Kit) fyne.CanvasObject {
 }
 
 func kitCard(ctx context.Context, k kits.Kit, checked bool, onChanged func(bool), onEscape func()) (fyne.CanvasObject, *dialogCheck) {
-	check := newDialogCheck(kitTitle(k), onChanged, onEscape)
+	check := newDialogCheck("Select", onChanged, onEscape)
 	check.Checked = checked
+	title := widget.NewLabel(kitTitle(k))
+	title.Wrapping = fyne.TextWrapWord
+	title.Truncation = fyne.TextTruncateEllipsis
 	badge := widget.NewLabel(strings.ToUpper(k.Kind))
 	badge.TextStyle = fyne.TextStyle{Bold: true}
 	desc := widget.NewLabel(k.Description)
 	desc.Wrapping = fyne.TextWrapWord
 	desc.Truncation = fyne.TextTruncateEllipsis
 	card := widget.NewCard("", "", container.NewVBox(
-		container.NewBorder(nil, nil, kitLogo(ctx, k), nil, container.NewVBox(check, badge)),
+		container.NewBorder(nil, nil, kitLogo(ctx, k), nil,
+			container.NewVBox(container.NewBorder(nil, nil, check, nil, title), badge)),
 		desc,
 	))
 	return card, check
@@ -217,6 +235,7 @@ func showKitsDialog(parent fyne.Window, repoName string, sandboxKits, mixins []k
 	selectedLabel := widget.NewLabel("")
 	validation := widget.NewLabel("")
 	validation.Wrapping = fyne.TextWrapWord
+	validation.Truncation = fyne.TextTruncateEllipsis
 	previous := newDialogButton("Previous", nil, func() { d.Hide() })
 	next := newDialogButton("Next", nil, func() { d.Hide() })
 	continueButton := newDialogButton("Continue", nil, func() { d.Hide() })
@@ -227,6 +246,10 @@ func showKitsDialog(parent fyne.Window, repoName string, sandboxKits, mixins []k
 		columns = 1
 	}
 	grid := container.NewGridWithColumns(columns)
+	// Card labels truncate within their assigned width, keeping the grid's
+	// minimum width stable while retaining vertical-only scrolling.
+	cardsViewport := container.NewVScroll(grid)
+	validationViewport := container.New(kitStatusLayout{}, validation)
 	currentChecks := make(map[string]*dialogCheck)
 	updateStatus := func() {
 		selectedLabel.SetText(fmt.Sprintf("%d selected", len(picker.selected)))
@@ -240,7 +263,7 @@ func showKitsDialog(parent fyne.Window, repoName string, sandboxKits, mixins []k
 	}
 	var render func()
 	render = func() {
-		grid.Objects = nil
+		objects := make([]fyne.CanvasObject, 0, kitPageSize)
 		currentChecks = make(map[string]*dialogCheck)
 		var first *dialogCheck
 		for _, k := range picker.visible() {
@@ -259,11 +282,17 @@ func showKitsDialog(parent fyne.Window, repoName string, sandboxKits, mixins []k
 			if first == nil {
 				first = check
 			}
-			grid.Add(card)
+			objects = append(objects, card)
 		}
 		if len(picker.all) == 0 {
-			grid.Add(widget.NewLabel("No Docker Sandbox kits are available."))
+			objects = append(objects, widget.NewLabel("No Docker Sandbox kits are available."))
 		}
+		// Keep four rows (or eight on a narrow window) on the final page.
+		// Otherwise GridLayout stretches the last card to fill the viewport.
+		for len(objects) < kitPageSize {
+			objects = append(objects, layout.NewSpacer())
+		}
+		grid.Objects = objects
 		pageLabel.SetText(fmt.Sprintf("Page %d of %d", picker.page+1, picker.pages()))
 		updateStatus()
 		if picker.page == 0 {
@@ -303,9 +332,9 @@ func showKitsDialog(parent fyne.Window, repoName string, sandboxKits, mixins []k
 	}
 	header := widget.NewLabel("Choose one sandbox kit, then optional mixins for " + repoName + ". Selections remain checked across pages.")
 	header.Wrapping = fyne.TextWrapWord
-	bottom := container.NewVBox(validation, container.NewHBox(previous, pageLabel, next, selectedLabel),
+	bottom := container.NewVBox(validationViewport, container.NewHBox(previous, pageLabel, next, selectedLabel),
 		container.NewHBox(cancelButton, continueButton))
-	content := container.NewBorder(header, bottom, nil, nil, container.NewVScroll(grid))
+	content := container.NewBorder(header, bottom, nil, nil, cardsViewport)
 	d = dialog.NewCustomWithoutButtons("Choose Kits", content, parent)
 	d.SetOnClosed(func() { cancel(); onDone() })
 	dialogSize := kitsDialogSize

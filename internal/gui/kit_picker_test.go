@@ -4,6 +4,7 @@ import (
 	"image/png"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -201,6 +202,102 @@ func TestKitDialogPagesAndContinuesWithFullSelection(t *testing.T) {
 	buttons["Continue"].Tapped(nil)
 	if done != 1 || submitted != 1 || len(got) != 3 || got[0].Name != "alpha" || got[1].Name != mixins[0].Name || got[2].Name != mixins[7].Name {
 		t.Fatalf("done=%d submitted=%d selected=%v", done, submitted, got)
+	}
+}
+
+func TestKitDialogBoundsStayStableAcrossUnevenPages(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	win := app.NewWindow("stable kits")
+	defer win.Close()
+	win.Resize(fyne.NewSize(900, 720))
+	base := kitForPicker("base", kits.KindSandbox)
+	mixins := make([]kits.Kit, 8)
+	for i := range mixins {
+		mixins[i] = kitForPicker(string(rune('a'+i))+"-mixin", kits.KindMixin)
+	}
+	mixins[7].DisplayName = strings.Repeat("A long but readable kit title ", 6)
+	mixins[7].Description = strings.Repeat("A detailed description that wraps in the card. ", 12)
+	d := showKitsDialog(win, "repo", []kits.Kit{base}, mixins, func() {}, func([]kits.Kit) {})
+	defer d.Hide()
+
+	type bounds struct {
+		popupSize, contentSize, viewportSize fyne.Size
+		popupPos, viewportPos, footerPos     fyne.Position
+	}
+	snapshot := func() bounds {
+		win.Canvas().Capture() // force test driver to lay out the rendered popup
+		popup := win.Canvas().Overlays().Top().(*widget.PopUp)
+		var viewport *container.Scroll
+		var footer *dialogButton
+		walkKitDialog(popup.Content, func(obj fyne.CanvasObject) {
+			if scroll, ok := obj.(*container.Scroll); ok {
+				if grid, ok := scroll.Content.(*fyne.Container); ok && len(grid.Objects) == kitPageSize {
+					viewport = scroll
+				}
+			}
+			if button, ok := obj.(*dialogButton); ok && button.Text == "Continue" {
+				footer = button
+			}
+		})
+		if viewport == nil || footer == nil {
+			t.Fatal("missing card viewport or footer")
+		}
+		if viewport.Direction != container.ScrollVerticalOnly {
+			t.Fatalf("card viewport direction = %v, want vertical only", viewport.Direction)
+		}
+		if viewport.Content.MinSize().Width > viewport.Size().Width {
+			t.Fatalf("cards overflow viewport horizontally: content=%v viewport=%v", viewport.Content.MinSize(), viewport.Size())
+		}
+		return bounds{
+			popup.Size(), popup.Content.Size(), viewport.Size(),
+			popup.Position(), app.Driver().AbsolutePositionForObject(viewport), app.Driver().AbsolutePositionForObject(footer),
+		}
+	}
+	initial := snapshot()
+	_, checks, buttons, _ := kitDialogControls(win)
+	checks[0].SetChecked(true) // validation text disappears, but footer stays put
+	if got := snapshot(); got != initial {
+		t.Fatalf("bounds changed after selection: got %+v, want %+v", got, initial)
+	}
+	buttons["Next"].Tapped(nil)
+	if got := snapshot(); got != initial {
+		t.Fatalf("bounds changed on sparse long-content page: got %+v, want %+v", got, initial)
+	}
+	if path := os.Getenv("BIOMELAB_KIT_PICKER_STABLE_SCREENSHOT"); path != "" {
+		file, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := png.Encode(file, win.Canvas().Capture()); err != nil {
+			file.Close()
+			t.Fatal(err)
+		}
+		if err := file.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A late, wide logo must not increase the card's minimum width or move the footer.
+	popup := win.Canvas().Overlays().Top().(*widget.PopUp)
+	var logoBox *fyne.Container
+	walkKitDialog(popup.Content, func(obj fyne.CanvasObject) {
+		if box, ok := obj.(*fyne.Container); ok && len(box.Objects) == 1 {
+			if img, ok := box.Objects[0].(*canvas.Image); ok && img.Resource != nil && img.Resource.Name() == "kit-fallback.svg" {
+				logoBox = box
+			}
+		}
+	})
+	if logoBox == nil {
+		t.Fatal("missing logo box")
+	}
+	logoBox.Objects = []fyne.CanvasObject{canvas.NewImageFromResource(fyne.NewStaticResource("wide.svg", []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="500" height="30"><rect width="500" height="30"/></svg>`)))}
+	logoBox.Refresh()
+	if got := snapshot(); got != initial {
+		t.Fatalf("bounds changed after logo arrived: got %+v, want %+v", got, initial)
+	}
+	buttons["Previous"].Tapped(nil)
+	if got := snapshot(); got != initial {
+		t.Fatalf("bounds changed after returning to full page: got %+v, want %+v", got, initial)
 	}
 }
 
