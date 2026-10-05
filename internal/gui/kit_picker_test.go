@@ -1,7 +1,15 @@
 package gui
 
 import (
+	"bytes"
+	"context"
+	"image"
+	"image/color"
+	"image/jpeg"
 	"image/png"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"reflect"
 	"strings"
@@ -19,6 +27,117 @@ import (
 
 func kitForPicker(name, kind string) kits.Kit {
 	return kits.Kit{Name: name, Kind: kind, DisplayName: name}
+}
+
+func TestDecodedKitLogoRejectsUnsupportedAssets(t *testing.T) {
+	validSVG := []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" fill="#2563b8"/></svg>`)
+	claudeSVG := []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="hsl(14.8, 63.1%, 59.6%)"><path d="M0 0h100v100H0z"/></svg>`)
+	eccSVG := []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><rect width="76" height="76" fill="rgba(255,255,255,0.03)"/></svg>`)
+	pixels := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	pixels.Set(0, 0, color.RGBA{R: 255, A: 255})
+	var pngBody bytes.Buffer
+	if err := png.Encode(&pngBody, pixels); err != nil {
+		t.Fatal(err)
+	}
+	var jpegBody bytes.Buffer
+	if err := jpeg.Encode(&jpegBody, pixels, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, extension, contentType, wantSuffix string
+		body                                     []byte
+		valid                                    bool
+	}{
+		{"supported SVG", ".svg", "image/svg+xml", ".svg", validSVG, true},
+		{"Claude fractional HSL", ".svg", "image/svg+xml", "", claudeSVG, false},
+		{"ECC rgba", ".svg", "image/svg+xml", "", eccSVG, false},
+		{"supported PNG", ".png", "image/png", ".png", pngBody.Bytes(), true},
+		{"PNG from media content type", "", "image/png", ".png", pngBody.Bytes(), true},
+		{"supported JPEG", ".jpeg", "image/jpeg", ".jpg", jpegBody.Bytes(), true},
+		{"truncated PNG", ".png", "image/png", "", []byte("\x89PNG\r\n\x1a\n"), false},
+		{"unsupported raster", ".webp", "image/webp", "", []byte("not a webp"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			img := decodedKitLogo("test", tc.body, tc.extension, tc.contentType)
+			if (img != nil) != tc.valid {
+				t.Fatalf("decoded = %t, want %t", img != nil, tc.valid)
+			}
+			if img != nil && (!strings.HasSuffix(img.Resource.Name(), tc.wantSuffix) || img.FillMode != canvas.ImageFillContain) {
+				t.Fatalf("unexpected image resource %q or fill mode %d", img.Resource.Name(), img.FillMode)
+			}
+		})
+	}
+}
+
+type kitLogoRoundTripper func(*http.Request) (*http.Response, error)
+
+func (f kitLogoRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+type kitLogoClosingBody struct {
+	io.ReadCloser
+	done chan struct{}
+}
+
+func (b *kitLogoClosingBody) Close() error {
+	defer close(b.done)
+	return b.ReadCloser.Close()
+}
+
+func TestKitLogoKeepsFallbackAndBoundsAfterRedirectedAsset(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	win := app.NewWindow("kit logo")
+	defer win.Close()
+	validSVG := []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="500" height="30" viewBox="0 0 500 30"><rect width="500" height="30" fill="#2563b8"/></svg>`)
+	badSVG := []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="hsl(14.8, 63.1%, 59.6%)"><path d="M0 0h100v100H0z"/></svg>`)
+	var pngBody bytes.Buffer
+	if err := png.Encode(&pngBody, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, extension, contentType string
+		body                         []byte
+		wantFallback                 bool
+	}{
+		{"unsupported SVG", ".svg", "image/svg+xml", badSVG, true},
+		{"supported redirected SVG", ".svg", "image/svg+xml", validSVG, false},
+		{"unsupported PNG", ".png", "image/png", []byte("\x89PNG\r\n\x1a\n"), true},
+		{"supported redirected PNG", ".png", "image/png", pngBody.Bytes(), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			done := make(chan struct{})
+			release := make(chan struct{})
+			asset, _ := url.Parse("https://djeqr6to3dedg.cloudfront.net/repo-logos/sbx/test-kit/live/logo-1" + tc.extension)
+			client := &http.Client{Transport: kitLogoRoundTripper(func(req *http.Request) (*http.Response, error) {
+				<-release
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {tc.contentType}}, Body: &kitLogoClosingBody{ReadCloser: io.NopCloser(bytes.NewReader(tc.body)), done: done}, Request: &http.Request{URL: asset}}, nil
+			})}
+			kit := kitForPicker("test", kits.KindSandbox)
+			kit.LogoURL = "https://hub.docker.com/api/media/repos_logo/v1/sbx%2Ftest-kit?type=logo"
+			box := kitLogoWithClient(context.Background(), kit, client).(*fyne.Container)
+			win.SetContent(box)
+			box.Resize(fyne.NewSize(54, 48))
+			before := box.MinSize()
+			close(release)
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+				t.Fatal("logo request did not finish")
+			}
+			fyne.DoAndWait(func() {})
+			img := box.Objects[0].(*canvas.Image)
+			fallback := img.Resource.Name() == kitFallbackLogo.Name()
+			if fallback != tc.wantFallback {
+				t.Fatalf("fallback = %t, want %t; resource=%q", fallback, tc.wantFallback, img.Resource.Name())
+			}
+			if !fallback && !strings.HasSuffix(img.Resource.Name(), tc.extension) {
+				t.Fatalf("redirected image resource %q lost suffix %q", img.Resource.Name(), tc.extension)
+			}
+			if got := box.MinSize(); got != before {
+				t.Fatalf("logo changed box geometry: before=%v after=%v", before, got)
+			}
+		})
+	}
 }
 
 func TestKitPickerSelectionAcrossPagesAndReplacement(t *testing.T) {

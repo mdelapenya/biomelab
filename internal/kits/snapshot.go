@@ -44,11 +44,17 @@ func fetchAvailableWithSnapshot(ctx context.Context, client *http.Client, hub, r
 	}
 	sandboxes, mixins, err := fetchAvailableWithClient(ctx, client, hub, registry, auth)
 	if err != nil {
-		if ctx.Err() != nil {
-			return nil, nil, ctx.Err()
+		// A caller's explicit cancellation must stop the operation. A network
+		// deadline, including our own bounded fetch timeout, still permits the
+		// last validated snapshot to serve an offline picker.
+		if ctx.Err() == context.Canceled {
+			return nil, nil, context.Canceled
 		}
 		if savedErr == nil {
 			return saved.Sandboxes, saved.Mixins, nil
+		}
+		if ctx.Err() != nil {
+			return nil, nil, ctx.Err()
 		}
 		return nil, nil, err
 	}

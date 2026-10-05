@@ -9,8 +9,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseSpec_Agent(t *testing.T) {
@@ -86,7 +88,7 @@ func TestFetchAvailable_PagesKindsMetadataAndLogo(t *testing.T) {
 	if len(sandboxes) != 1 || len(mixins) != 1 {
 		t.Fatalf("sandboxes=%+v, mixins=%+v", sandboxes, mixins)
 	}
-	if k := sandboxes[0]; k.Kind != KindSandbox || k.Name != "kiro" || k.DisplayName != "Kiro" || k.Description != "Kiro sandbox" || k.OCIReference() != "docker.io/sbx/kiro-kit:latest" || k.LogoURL != "https://cdn.example.test/kiro-kit.svg" {
+	if k := sandboxes[0]; k.Kind != KindSandbox || k.Name != "kiro" || k.DisplayName != "Kiro" || k.Description != "Kiro sandbox" || k.OCIReference() != "docker.io/sbx/kiro-kit:latest" || k.LogoURL != server.URL+"/api/media/repos_logo/v1/sbx%2Fkiro-kit?type=logo" {
 		t.Errorf("sandbox = %+v", k)
 	}
 	if k := mixins[0]; k.Kind != KindMixin || k.Requires.Agent != "claude" || k.DisplayName != "Code Server" || k.Description != "Manifest fallback" || k.OCIReference() != "docker.io/sbx/code-server-kit:latest" {
@@ -212,7 +214,7 @@ func TestFetchAvailable_Cancellation(t *testing.T) {
 	}
 }
 
-func TestFetchAvailable_LogoUnavailable(t *testing.T) {
+func TestFetchAvailable_StalledOptionalLogoDoesNotBlockMetadata(t *testing.T) {
 	specs := map[string]string{
 		"kiro-kit":        "kind: sandbox\nname: kiro\n",
 		"code-server-kit": "kind: mixin\nname: code-server\n",
@@ -220,18 +222,68 @@ func TestFetchAvailable_LogoUnavailable(t *testing.T) {
 	}
 	server := kitFixtureServer(t, specs, func(w http.ResponseWriter, r *http.Request) bool {
 		if strings.HasPrefix(r.URL.Path, "/api/media/repos_logo/") {
-			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+			<-r.Context().Done()
 			return true
 		}
 		return false
 	})
 	defer server.Close()
-	sandboxes, mixins, err := fetchAvailableWithClient(context.Background(), server.Client(), server.URL, server.URL, server.URL)
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	sandboxes, mixins, err := fetchAvailableWithClient(ctx, server.Client(), server.URL, server.URL, server.URL)
 	if err != nil || len(sandboxes) != 1 || len(mixins) != 1 {
 		t.Fatalf("sandboxes=%v mixins=%v err=%v", sandboxes, mixins, err)
 	}
-	if sandboxes[0].LogoURL != "" || mixins[0].LogoURL != "" {
-		t.Fatalf("unavailable logos should be empty: %+v %+v", sandboxes[0], mixins[0])
+	if sandboxes[0].LogoURL != server.URL+"/api/media/repos_logo/v1/sbx%2Fkiro-kit?type=logo" ||
+		mixins[0].LogoURL != server.URL+"/api/media/repos_logo/v1/sbx%2Fcode-server-kit?type=logo" {
+		t.Fatalf("stable media URLs missing: %+v %+v", sandboxes[0], mixins[0])
+	}
+}
+
+func TestRefreshCachePublishesBeforeStalledLogoDownload(t *testing.T) {
+	specs := map[string]string{
+		"kiro-kit":        "kind: sandbox\nname: kiro\n",
+		"code-server-kit": "kind: mixin\nname: code-server\n",
+		"future-kit":      "kind: future\nname: future\n",
+	}
+	started := make(chan struct{}, 1)
+	var server *httptest.Server
+	server = kitFixtureServer(t, specs, func(w http.ResponseWriter, r *http.Request) bool {
+		if strings.HasPrefix(r.URL.Path, "/api/media/repos_logo/") {
+			w.Header().Set("Location", server.URL+"/slow-logo.svg")
+			w.WriteHeader(http.StatusFound)
+			return true
+		}
+		if r.URL.Path == "/slow-logo.svg" {
+			select {
+			case started <- struct{}{}:
+			default:
+			}
+			<-r.Context().Done()
+			return true
+		}
+		return false
+	})
+	defer server.Close()
+	path := filepath.Join(t.TempDir(), "catalog-snapshot.json")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- refreshCacheWithClient(ctx, server.Client(), server.URL, server.URL, server.URL, path)
+	}()
+	select {
+	case <-started:
+	case <-ctx.Done():
+		t.Fatal("logo prefetch did not start")
+	}
+	saved, err := readSnapshot(path)
+	if err != nil || len(saved.Sandboxes) != 1 || len(saved.Mixins) != 1 {
+		t.Fatalf("snapshot not published before stalled logo: %+v, %v", saved, err)
+	}
+	cancel()
+	if err := <-done; err != context.Canceled {
+		t.Fatalf("canceled logo preload = %v", err)
 	}
 }
 

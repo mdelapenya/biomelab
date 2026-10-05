@@ -5,7 +5,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"image"
 	"io"
+	"math"
+	"mime"
 	"net/http"
 	"net/url"
 	"path"
@@ -18,6 +21,7 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
+	"github.com/fyne-io/oksvg"
 
 	"github.com/mdelapenya/biomelab/internal/kits"
 	"github.com/mdelapenya/biomelab/internal/resourcecache"
@@ -161,6 +165,11 @@ var kitFallbackLogo = fyne.NewStaticResource("kit-fallback.svg", []byte(`<svg xm
 // kitLogo always displays a local fallback immediately. Available HTTPS logos
 // replace it after a bounded background request; network work never blocks UI.
 func kitLogo(ctx context.Context, k kits.Kit) fyne.CanvasObject {
+	return kitLogoWithClient(ctx, k, resourcecache.NewClient(5*time.Second))
+}
+
+// kitLogoWithClient allows the image request to be exercised without live Hub traffic.
+func kitLogoWithClient(ctx context.Context, k kits.Kit, client *http.Client) fyne.CanvasObject {
 	fallback := canvas.NewImageFromResource(kitFallbackLogo)
 	fallback.FillMode = canvas.ImageFillContain
 	box := container.NewGridWrap(fyne.NewSize(54, 48), fallback)
@@ -173,7 +182,6 @@ func kitLogo(ctx context.Context, k kits.Kit) fyne.CanvasObject {
 		if err != nil {
 			return
 		}
-		client := resourcecache.NewClient(5 * time.Second)
 		response, err := client.Do(request)
 		if err != nil {
 			return
@@ -186,15 +194,16 @@ func kitLogo(ctx context.Context, k kits.Kit) fyne.CanvasObject {
 		if err != nil || len(data) == 0 || len(data) > 1<<20 {
 			return
 		}
-		// Fyne uses the resource suffix to recognize SVG data.
-		ext := strings.ToLower(path.Ext(parsed.Path))
-		if ext == ".svg" && !bytes.Contains(data, []byte("<svg")) {
+		// Hub media URLs redirect to the asset. The original URL has no image
+		// suffix, so use the final response URL and its content type.
+		assetURL := parsed
+		if response.Request != nil && response.Request.URL != nil {
+			assetURL = response.Request.URL
+		}
+		img := decodedKitLogo(k.Name, data, path.Ext(assetURL.Path), response.Header.Get("Content-Type"))
+		if img == nil {
 			return
 		}
-		sum := sha256.Sum256(data)
-		resourceName := fmt.Sprintf("%s-logo-%x%s", k.Name, sum[:8], ext)
-		img := canvas.NewImageFromResource(fyne.NewStaticResource(resourceName, data))
-		img.FillMode = canvas.ImageFillContain
 		fyne.Do(func() {
 			if ctx.Err() == nil {
 				box.Objects = []fyne.CanvasObject{img}
@@ -203,6 +212,40 @@ func kitLogo(ctx context.Context, k kits.Kit) fyne.CanvasObject {
 		})
 	}()
 	return box
+}
+
+// decodedKitLogo checks with the same SVG parser and raster decoders that
+// Fyne's canvas.Image uses. A rejected asset never replaces the local mark.
+func decodedKitLogo(name string, data []byte, extension, contentType string) *canvas.Image {
+	ext := strings.ToLower(extension)
+	mediaType, _, _ := mime.ParseMediaType(contentType)
+	if ext == ".svg" || (ext == "" && mediaType == "image/svg+xml") {
+		icon, err := oksvg.ReadReplacingCurrentColor(bytes.NewReader(data), "#000000")
+		if err != nil || icon.ViewBox.W <= 0 || icon.ViewBox.H <= 0 ||
+			math.IsNaN(icon.ViewBox.W) || math.IsNaN(icon.ViewBox.H) ||
+			math.IsInf(icon.ViewBox.W, 0) || math.IsInf(icon.ViewBox.H, 0) {
+			return nil
+		}
+		ext = ".svg"
+	} else {
+		decoded, format, err := image.Decode(bytes.NewReader(data))
+		if err != nil || decoded.Bounds().Empty() {
+			return nil
+		}
+		switch format {
+		case "png":
+			ext = ".png"
+		case "jpeg":
+			ext = ".jpg"
+		default:
+			return nil
+		}
+	}
+	sum := sha256.Sum256(data)
+	resourceName := fmt.Sprintf("%s-logo-%x%s", name, sum[:8], ext)
+	img := canvas.NewImageFromResource(fyne.NewStaticResource(resourceName, data))
+	img.FillMode = canvas.ImageFillContain
+	return img
 }
 
 func kitCard(ctx context.Context, k kits.Kit, checked bool, onChanged func(bool), onEscape func()) (fyne.CanvasObject, *dialogCheck) {

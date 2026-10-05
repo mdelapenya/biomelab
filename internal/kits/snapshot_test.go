@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -114,5 +115,67 @@ func TestCatalogSnapshotHonorsCancellation(t *testing.T) {
 	cancel()
 	if _, _, err := fetchAvailableWithSnapshot(ctx, nil, "", "", "", path, time.Now()); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled warm read returned %v", err)
+	}
+}
+
+func TestCatalogSnapshotDeadlineUsesValidatedStaleView(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "catalog-snapshot.json")
+	if err := writeSnapshot(path, []Kit{{Name: "kiro", Kind: KindSandbox, Reference: "docker.io/sbx/kiro-kit:latest"}}, nil, time.Now().Add(-2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	server := kitFixtureServer(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path == "/v2/repositories/sbx/" {
+			<-r.Context().Done()
+			return true
+		}
+		return false
+	})
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	bases, mixins, err := fetchAvailableWithSnapshot(ctx, server.Client(), server.URL, server.URL, server.URL, path, time.Now())
+	if err != nil || len(bases) != 1 || len(mixins) != 0 || bases[0].Name != "kiro" {
+		t.Fatalf("stale deadline fallback: bases=%v mixins=%v err=%v", bases, mixins, err)
+	}
+}
+
+func TestCatalogSnapshotCancellationAndMissingSnapshotTimeout(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "catalog-snapshot.json")
+	if err := writeSnapshot(path, []Kit{{Name: "kiro", Kind: KindSandbox, Reference: "docker.io/sbx/kiro-kit:latest"}}, nil, time.Now().Add(-2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{}, 1)
+	var server *httptest.Server
+	server = kitFixtureServer(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path == "/v2/repositories/sbx/" {
+			select {
+			case started <- struct{}{}:
+			default:
+			}
+			<-r.Context().Done()
+			return true
+		}
+		return false
+	})
+	defer server.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := fetchAvailableWithSnapshot(ctx, server.Client(), server.URL, server.URL, server.URL, path, time.Now())
+		done <- err
+	}()
+	<-started
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("explicit cancellation returned %v", err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	deadlineCtx, deadlineCancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer deadlineCancel()
+	bases, mixins, err := fetchAvailableWithSnapshot(deadlineCtx, server.Client(), server.URL, server.URL, server.URL, path, time.Now())
+	if !errors.Is(err, context.DeadlineExceeded) || len(bases) != 0 || len(mixins) != 0 {
+		t.Fatalf("missing snapshot timeout: bases=%v mixins=%v err=%v", bases, mixins, err)
 	}
 }

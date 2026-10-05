@@ -103,6 +103,12 @@ func refreshCacheWithClient(ctx context.Context, client *http.Client, hub, regis
 	if err != nil {
 		return err
 	}
+	// Catalog metadata is complete at this point. Publish it before optional
+	// image downloads so a slow logo CDN cannot leave first-run users without
+	// a usable kit picker.
+	if err := writeSnapshot(path, sandboxes, mixins, time.Now()); err != nil {
+		return err
+	}
 	all := append(sandboxes, mixins...)
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(8)
@@ -113,19 +119,17 @@ func refreshCacheWithClient(ctx context.Context, client *http.Client, hub, regis
 		logoURL := kit.LogoURL
 		g.Go(func() error {
 			if _, err := getBytes(gctx, client, logoURL, "", "image/svg+xml,image/png,image/webp,image/*"); err != nil {
-				if gctx.Err() != nil {
-					return gctx.Err()
-				}
 				// Logos are optional, so a stale or missing logo cannot prevent catalog refresh.
 				return nil
 			}
 			return nil
 		})
 	}
-	if err := g.Wait(); err != nil {
-		return err
+	_ = g.Wait()
+	if ctx.Err() == context.Canceled {
+		return context.Canceled
 	}
-	return writeSnapshot(path, sandboxes, mixins, time.Now())
+	return nil
 }
 
 // fetchAvailableWithClient allows fixtures to supply a local HTTP server.
@@ -291,36 +295,15 @@ func resolveKit(ctx context.Context, client *http.Client, hub, registry, auth st
 	k.Reference = "docker.io/sbx/" + r.Name + ":" + DefaultTag
 	k.LogoURL = r.Logo
 	if k.LogoURL == "" && (k.Kind == KindSandbox || k.Kind == KindMixin) {
-		k.LogoURL = lookupLogo(ctx, client, hub, r.Name)
+		// Hub's stable media URL redirects to the current published logo when
+		// one exists. Resolving it here would make optional image latency part
+		// of required catalog discovery.
+		k.LogoURL = strings.TrimRight(hub, "/") + "/api/media/repos_logo/v1/" + url.PathEscape("sbx/"+r.Name) + "?type=logo"
 	}
 	if err := ctx.Err(); err != nil {
 		return Kit{}, err
 	}
 	return k, nil
-}
-
-// Hub's media endpoint redirects to the actual CDN asset; logo failure is optional.
-func lookupLogo(ctx context.Context, client *http.Client, hub, name string) string {
-	target := strings.TrimRight(hub, "/") + "/api/media/repos_logo/v1/" + url.PathEscape("sbx/"+name) + "?type=logo"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
-	if err != nil {
-		return ""
-	}
-	noRedirect := *client
-	noRedirect.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	resp, err := noRedirect.Do(req)
-	if err != nil {
-		return ""
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 300 || resp.StatusCode >= 400 {
-		return ""
-	}
-	u, err := url.Parse(resp.Header.Get("Location"))
-	if err != nil || u.Scheme != "https" || u.Host == "" {
-		return ""
-	}
-	return u.String()
 }
 
 func getBytes(ctx context.Context, client *http.Client, target, bearer, accept string) ([]byte, error) {
