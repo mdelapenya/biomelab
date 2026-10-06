@@ -70,6 +70,26 @@ func TestTitlePath(t *testing.T) {
 	}
 }
 
+func TestDraftWriteDoesNotCreateUnexcludedFile(t *testing.T) {
+	for _, tc := range []struct {
+		name, file string
+		write      func(string) error
+	}{
+		{"note", noteFile, func(dir string) error { return Write(dir, "draft") }},
+		{"title", prTitleFile, func(dir string) error { return WriteTitle(dir, "draft") }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir() // No .git: exclusion must fail.
+			if err := tc.write(root); err == nil {
+				t.Fatal("write succeeded without an exclusion")
+			}
+			if _, err := os.Lstat(filepath.Join(root, noteDir, tc.file)); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("unexcluded draft exists: %v", err)
+			}
+		})
+	}
+}
+
 func TestReadTitle(t *testing.T) {
 	cases := []struct {
 		name    string

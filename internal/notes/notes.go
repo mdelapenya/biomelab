@@ -18,12 +18,12 @@ import (
 )
 
 const (
-	noteDir      = ".biomelab"
-	noteFile     = "note.md"
-	prTitleFile  = "pr-title.md"
-	excludeLine  = "/.biomelab/"
-	dirPerm      = 0o755
-	filePerm     = 0o644
+	noteDir     = ".biomelab"
+	noteFile    = "note.md"
+	prTitleFile = "pr-title.md"
+	excludeLine = "/.biomelab/"
+	dirPerm     = 0o755
+	filePerm    = 0o644
 )
 
 // Path returns the absolute path to the note file for a worktree directory.
@@ -55,11 +55,11 @@ func WriteTitle(worktreeDir, title string) error {
 	if err := os.MkdirAll(dir, dirPerm); err != nil {
 		return fmt.Errorf("create note dir: %w", err)
 	}
-	if err := os.WriteFile(TitlePath(worktreeDir), []byte(title+"\n"), filePerm); err != nil {
-		return fmt.Errorf("write title: %w", err)
-	}
 	if err := ensureExcluded(worktreeDir); err != nil {
 		return fmt.Errorf("ensure excluded: %w", err)
+	}
+	if err := os.WriteFile(TitlePath(worktreeDir), []byte(title+"\n"), filePerm); err != nil {
+		return fmt.Errorf("write title: %w", err)
 	}
 	return nil
 }
@@ -149,11 +149,11 @@ func Write(worktreeDir, content string) error {
 	if err := os.MkdirAll(dir, dirPerm); err != nil {
 		return fmt.Errorf("create note dir: %w", err)
 	}
-	if err := os.WriteFile(Path(worktreeDir), []byte(content), filePerm); err != nil {
-		return fmt.Errorf("write note: %w", err)
-	}
 	if err := ensureExcluded(worktreeDir); err != nil {
 		return fmt.Errorf("ensure excluded: %w", err)
+	}
+	if err := os.WriteFile(Path(worktreeDir), []byte(content), filePerm); err != nil {
+		return fmt.Errorf("write note: %w", err)
 	}
 	return nil
 }
