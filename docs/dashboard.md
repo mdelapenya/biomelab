@@ -6,9 +6,9 @@ Launch BiomeLab from your desktop, or run `biomelab` inside a repository to auto
 
 The prominent **Main checkout** card spans the full workspace above the linked worktrees and inspector in Board, List, and Grid. It stays pinned while you scroll the worktree browser, and shows the main branch, path, checkout state, and detected activity. **Terminal**, **Editor**, and **Notes** act on the main checkout, even when a linked worktree is selected. **Details** expands extra metadata; **Hide details** collapses it. Details has no dedicated keyboard shortcut. The workspace and main-card **More** menus offer **Create from GitHub issue** and **Fetch GitHub PR**, available for GitHub repositories; the existing main-card `i` and `f` shortcuts still work.
 
-The workspace header shows the active repository and mode, with **Board**, **List**, **Grid**, **Refresh**, **New Worktree**, and **Inspector** controls. New Worktree selects the main card and opens the same creation flow as `c` on that card. Refresh refreshes the selected card, like `r`. Board is the default view; List shows compact rows for linked worktrees beneath the shared Main checkout card. Grid remains available for fuller cards. The `g` shortcut switches Board and Grid; from List it returns to Board. View and disclosure state are kept in memory, not saved across restarts.
+The workspace header shows the active repository and mode, with **Board**, **List**, **Grid**, **Refresh**, **New Worktree**, and **Inspector** controls. New Worktree selects the main card and opens the same creation flow as `c` on that card. Refresh refreshes the selected card, like `r`. Board is the default view; List shows compact rows for linked worktrees beneath the shared Main checkout card. Grid remains available for fuller cards. Press `v` to cycle Board → List → Grid → Board. The `g` shortcut switches Board and Grid; from List it returns to Board. View and disclosure state are kept in memory, not saved across restarts.
 
-Click **Inspector** to show or hide details for the selected worktree. List initially opens the inspector; each view remembers its visibility for the current app run. The inspector shows checkout path and branch, changes and remote state, PR/MR information, detected activity, available task notes, and sandbox details when applicable. **Open Terminal**, **Editor**, **Notes**, and **Activity** invoke the same workflows as `Enter`, `e`, `m`, and `l`. **More** offers pull, send PR/MR, deletion, and sandbox actions where applicable. At narrow widths the inspector moves below the worktree browser; its contents scroll. Full technical values live in the inspector rather than appearing in hover popups.
+Press `Ctrl/Cmd+I` while the worktree panel is focused, or click **Inspector**, to show or hide details for the selected worktree. Plain `i` still creates a worktree from a GitHub issue when the main card is selected. List initially opens the inspector; each view remembers its visibility for the current app run. The inspector shows checkout path and branch, changes and remote state, PR/MR information, detected activity, available task notes, and sandbox details when applicable. **Open Terminal**, **Editor**, **Notes**, and **Activity** invoke the same workflows as `Enter`, `e`, `m`, and `l`. **More** offers pull, send PR/MR, deletion, and sandbox actions where applicable. At narrow widths the inspector moves below the worktree browser; its contents scroll. Full technical values live in the inspector rather than appearing in hover popups.
 
 | Kanban column | Meaning |
 |---|---|
@@ -60,6 +60,8 @@ Creation uses the main checkout's current local HEAD. It does not pull, fetch an
 
 ## Keyboard shortcuts
 
+The shortcut strip spans the full workspace below the browser and inspector. It shows navigation and available actions for the focused panel, selected main or linked worktree, provider, and sandbox state, and wraps at narrow widths or larger zoom. Relevant controls also show inline key hints. These hints stay in the interface without opening hover popups; buttons invoke the same existing workflows as the keyboard.
+
 ### Left panel (repo tree)
 
 | Key | Action |
@@ -76,8 +78,8 @@ Creation uses the main checkout's current local HEAD. It does not pull, fetch an
 
 | Key | Action | Context |
 |-----|--------|---------|
-| `↑` | Navigate up within column / grid row | Any card |
-| `↓` | Navigate down within column / grid row | Any card |
+| `↑` | Navigate up within column / grid row / List | Any card |
+| `↓` | Navigate down within column / grid row / List | Any card |
 | `←` | Navigate left | Linked cards |
 | `→` | Navigate right | Linked cards |
 | `Enter` | Activate existing terminal or open new | Any card |
@@ -95,12 +97,14 @@ Creation uses the main checkout's current local HEAD. It does not pull, fetch an
 | `s` | Start stopped sandbox | Main card |
 | `Shift+S` | Stop running sandbox | Main card |
 | `g` | Toggle Board / Grid; List returns to Board | Global |
+| `v` | Cycle Board → List → Grid → Board | Global |
+| `Ctrl/Cmd+I` | Toggle selected-worktree inspector | Worktree panel |
 | `Tab` | Toggle focus between panels | Global |
 | `Ctrl/Cmd+T` | Toggle dark / light theme | Global |
 | `Ctrl/Cmd+=` | Zoom in | Global |
 | `Ctrl/Cmd+-` | Zoom out | Global |
 | `Ctrl/Cmd+0` | Reset zoom | Global |
-| `Esc` | Dismiss dialog / switch panel | Global |
+| `Esc` | Dismiss dialog or status; Projects focus returns to Worktrees | Global |
 
 
 ## Dialogs, appearance, and tray

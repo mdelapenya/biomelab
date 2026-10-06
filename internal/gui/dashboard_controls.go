@@ -19,6 +19,7 @@ import (
 type actionControl struct {
 	widget.BaseWidget
 	label                                         string
+	keyHint                                       string
 	icon                                          fyne.Resource
 	onTap                                         func()
 	primary, selected, disabled, hovered, pressed bool
@@ -65,7 +66,11 @@ func (c *actionControl) CreateRenderer() fyne.WidgetRenderer {
 		i := widget.NewIcon(resource)
 		parts = append(parts, shellIcon(i, 14))
 	}
-	label := uiText(c.label, colorForeground, c.primary)
+	text := c.label
+	if c.keyHint != "" {
+		text += "  " + c.keyHint
+	}
+	label := uiText(text, colorForeground, c.primary)
 	label.TextSize = scaledSize(12)
 	parts = append(parts, label)
 	c.content = container.NewHBox(parts...)

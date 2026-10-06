@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -413,11 +414,11 @@ func (d *Dashboard) build() fyne.CanvasObject {
 		d.scroll.Offset = d.gridOffset
 		body = d.scroll
 	}
-	browser := inset(container.NewBorder(top, d.helpBar(), nil, nil, body), spaceMD, spaceSM)
+	browser := inset(container.NewBorder(top, nil, nil, nil, body), spaceMD, spaceSM)
 	if d.inspectorOpen {
-		return container.New(&workspaceRootLayout{}, header, mainPanel, container.New(&workspacePaneLayout{list: d.state.ViewMode == ViewList}, browser, d.buildInspector()))
+		return container.New(&workspaceRootLayout{footer: true}, header, mainPanel, container.New(&workspacePaneLayout{list: d.state.ViewMode == ViewList}, browser, d.buildInspector()), d.helpBar())
 	}
-	return container.New(&workspaceRootLayout{}, header, mainPanel, browser)
+	return container.New(&workspaceRootLayout{footer: true}, header, mainPanel, browser, d.helpBar())
 }
 
 func (d *Dashboard) selectCard(idx int) {
@@ -457,10 +458,24 @@ func (d *Dashboard) header() fyne.CanvasObject {
 	context := newMeasuredText(mode+" · Local "+local+" · Network "+network, colorDimGray, false, false, false)
 	context.txt.TextSize = scaledSize(textSecondarySize)
 	board := newActionControl("Board", nil, false, func() { d.setView(ViewKanban) })
+	if d.state.ViewMode != ViewKanban {
+		board.keyHint = "g"
+	}
 	board.selected = d.state.ViewMode == ViewKanban
 	list := newActionControl("List", nil, false, func() { d.setView(ViewList) })
+	if d.state.ViewMode == ViewKanban {
+		list.keyHint = "v"
+	}
 	list.selected = d.state.ViewMode == ViewList
 	grid := newActionControl("Grid", nil, false, func() { d.setView(ViewGrid) })
+	switch d.state.ViewMode {
+	case ViewKanban:
+		grid.keyHint = "g"
+	case ViewList:
+		grid.keyHint = "v"
+	default:
+		board.keyHint = "g/v"
+	}
 	grid.selected = d.state.ViewMode == ViewGrid
 	refresh := newActionControl("Refresh", theme.ViewRefreshIcon(), false, func() {
 		if d.OnRefresh != nil {
@@ -474,6 +489,10 @@ func (d *Dashboard) header() fyne.CanvasObject {
 	})
 	create.disabled = d.state.MainWorktree() == nil
 	inspector := newActionControl("Inspector", theme.InfoIcon(), false, func() { d.inspectorOpen = !d.inspectorOpen; d.Rebuild() })
+	inspector.keyHint = "Ctrl+I"
+	if runtime.GOOS == "darwin" {
+		inspector.keyHint = "⌘I"
+	}
 	inspector.selected = d.inspectorOpen
 	more := newActionControl("More", theme.MoreHorizontalIcon(), false, nil)
 	more.onTap = func() { d.showCreateMenu(more) }
@@ -533,6 +552,9 @@ func (d *Dashboard) mainSummary(wt git.Worktree) fyne.CanvasObject {
 	terminal := inspectorAction("Terminal", theme.ComputerIcon(), false, d.OnMainTerminal)
 	editor := inspectorAction("Editor", theme.DocumentCreateIcon(), false, d.OnMainEditor)
 	note := inspectorAction("Notes", theme.DocumentIcon(), false, d.OnMainNotes)
+	if d.state.SelectedCard == 0 && d.keyboardActive {
+		terminal.keyHint, editor.keyHint, note.keyHint = "Enter", "e", "m"
+	}
 	summary := container.New(&prominentMainLayout{}, heading, summaryBranch, summaryPath, summaryStatus, terminal, editor, note, disclosure, more)
 	items := []fyne.CanvasObject{summary}
 	if d.mainExpanded {
@@ -560,13 +582,46 @@ func (d *Dashboard) mainSummary(wt git.Worktree) fyne.CanvasObject {
 }
 
 func (d *Dashboard) helpBar() fyne.CanvasObject {
-	panel := "Projects"
+	viewKeys := "g Board/Grid · v Board/List/Grid"
+	text := "Projects · ↑ ↓ select mode · a Add repository · n Add sandbox mode · x Remove mode · Enter/Tab Worktrees\n" + viewKeys
 	if d.keyboardActive {
-		panel = "Worktrees"
+		arrows := "↑ ↓ ← →"
+		if d.state.ViewMode == ViewList {
+			arrows = "↑ ↓"
+		}
+		text = "Worktrees · " + arrows + " navigate · Tab Projects · Esc Clear status · " + viewKeys + " · Ctrl/Cmd+I Inspector\n"
+		actions := "Enter Terminal · e Editor · m Notes · l Activity · r Refresh · p Pull"
+		if d.state.SelectedCard == 0 {
+			actions += " · c New worktree"
+			if d.state.Provider == provider.ProviderGitHub {
+				actions += " · i From issue · f Fetch PR"
+			}
+			if mode := d.state.ActiveMode; mode != nil && mode.Type == "sandbox" {
+				if d.state.SandboxStatus == sandbox.StatusNotFound {
+					actions += " · n Create sandbox"
+				} else {
+					actions += " · d Remove sandbox"
+					switch d.state.SandboxStatus {
+					case sandbox.StatusStopped:
+						actions += " · s Start sandbox"
+					case sandbox.StatusRunning:
+						actions += " · Shift+S Stop sandbox"
+					}
+				}
+			} else {
+				actions += " · n Create/enroll sandbox"
+			}
+		} else {
+			actions += " · d Delete worktree"
+			if d.state.Provider != provider.ProviderUnknown {
+				actions += " · Shift+P Send PR"
+			}
+		}
+		text += actions
 	}
-	help := newMeasuredText(panel+" · ↑ ↓ ← → navigate · Tab switch panel · Enter terminal · e editor · m notes · l activity · r refresh", colorDimGray, false, false, false)
-	help.txt.TextSize = scaledSize(textSecondarySize)
-	return inset(help, 0, spaceSM)
+	help := newWrappedValue(text, false)
+	help.muted = true
+	return inset(help, spaceMD, spaceXS)
 }
 
 func (d *Dashboard) agentsFor(wtPath string) []agent.Info {

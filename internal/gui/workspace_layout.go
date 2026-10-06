@@ -35,18 +35,18 @@ func NewShellLayout(sidebar, workspace, banner fyne.CanvasObject) fyne.CanvasObj
 	return newShellLayout(sidebar, workspace, banner)
 }
 
-type workspaceRootLayout struct{}
+type workspaceRootLayout struct{ footer bool }
 
 func (*workspaceRootLayout) MinSize([]fyne.CanvasObject) fyne.Size {
 	return fyne.NewSize(scaledSize(300), scaledSize(260))
 }
-func (*workspaceRootLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+func (l *workspaceRootLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	header := objects[0].(*fyne.Container)
 	h := header.Layout.(*workspaceToolbarLayout).height(header.Objects, size.Width)
 	header.Move(fyne.Position{})
 	header.Resize(fyne.NewSize(size.Width, h))
 	bodyIndex := 1
-	if len(objects) == 3 {
+	if len(objects) == 3 && !l.footer || len(objects) == 4 {
 		main := objects[1]
 		main.Move(fyne.NewPos(0, h))
 		main.Resize(fyne.NewSize(size.Width, main.MinSize().Height))
@@ -56,8 +56,17 @@ func (*workspaceRootLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) 
 		h += mainHeight
 		bodyIndex = 2
 	}
+	footerHeight := float32(0)
+	if l.footer {
+		footer := objects[len(objects)-1]
+		footer.Resize(fyne.NewSize(size.Width, footer.MinSize().Height))
+		footer.Refresh()
+		footerHeight = footer.MinSize().Height
+		footer.Move(fyne.NewPos(0, size.Height-footerHeight))
+		footer.Resize(fyne.NewSize(size.Width, footerHeight))
+	}
 	objects[bodyIndex].Move(fyne.NewPos(0, h))
-	objects[bodyIndex].Resize(fyne.NewSize(size.Width, max(float32(0), size.Height-h)))
+	objects[bodyIndex].Resize(fyne.NewSize(size.Width, max(float32(0), size.Height-h-footerHeight)))
 }
 
 type workspaceToolbarLayout struct{}

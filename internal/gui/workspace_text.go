@@ -14,6 +14,7 @@ type wrappedValue struct {
 	widget.BaseWidget
 	value string
 	mono  bool
+	muted bool
 }
 
 func newWrappedValue(value string, mono bool) *wrappedValue {
@@ -86,6 +87,9 @@ func (r *wrappedValueRenderer) Layout(size fyne.Size) {
 	lines := r.w.lines(size.Width)
 	for len(r.texts) < len(lines) {
 		t := canvas.NewText("", colorForeground)
+		if r.w.muted {
+			t.Color = colorDimGray
+		}
 		t.TextSize = scaledSize(12)
 		t.TextStyle.Monospace = r.w.mono
 		r.texts = append(r.texts, t)

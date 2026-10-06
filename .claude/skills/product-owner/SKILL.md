@@ -197,9 +197,9 @@ is already registered, the auto-add is a no-op.
 
 ### DL-017: Contextual help and visible actions
 
-**Decision:** Keep repository guidance in the projects panel and navigation/card shortcuts in the bottom help bar. The workspace header exposes New Worktree, Board, List, Grid, Refresh, and Inspector; Add repository stays in the projects panel. The workspace and main-card More menus offer GitHub issue creation and PR checkout alongside their existing `i` and `f` shortcuts.
+**Decision:** Keep contextual keyboard guidance visible in a wrapping shortcut strip across the full workspace below the browser and inspector. Adapt it to panel focus, selected main/linked checkout, provider, and sandbox state; show inline hints on relevant controls without hover popups. The workspace header exposes New Worktree, Board, List, Grid, Refresh, and Inspector; Add repository stays in the projects panel. The workspace and main-card More menus offer GitHub issue creation and PR checkout alongside their existing `i` and `f` shortcuts.
 
-**Why:** Common actions should be discoverable with a mouse while established keyboard workflows remain available. Keeping guidance near the relevant panel reduces the amount of unrelated help shown at once.
+**Why:** The interface remains keyboard-first: established actions keep their bindings, and visible controls invoke the same workflows. Contextual inline hints make the available keys discoverable across Board, List, and Grid, including narrow windows and zoom, without requiring mouse exploration.
 
 ### DL-019: Removing last sandbox mode converts to regular
 
@@ -228,7 +228,7 @@ leaves the door open for future providers (Bitbucket, Gitea, etc.).
 
 **Decision:** When a repo/mode is first displayed, the linked worktrees are
 shown in the kanban board (five PR lifecycle columns) rather than the
-responsive card grid. Board and List are the primary visible views; Grid remains available. Use the controls to choose a view; `g` toggles Board/Grid and returns from List to Board. Narrow boards scroll horizontally while each column scrolls vertically. The preference is
+responsive card grid. Board and List are the primary visible views; Grid remains available. Press `v` to cycle Board → List → Grid → Board; `g` retains Board/Grid switching and returns from List to Board. Visible controls offer the same view choices. Narrow boards scroll horizontally while each column scrolls vertically. The preference is
 held in memory in `RepoState.ViewMode`; it is not persisted across launches.
 
 **Why:** The primary use-case for biomelab is running multiple AI agents on
@@ -293,6 +293,6 @@ worktree-count chip on the right edge.
 
 ### DL-026: Prominent main checkout and shared presentation
 
-**Decision:** Keep a prominent Main checkout card at full workspace width above the linked browser and inspector in every view. It shows branch, path, checkout state, and activity, with Terminal, Editor, and Notes actions targeting the main checkout. List excludes a duplicate main row; navigation still reaches the pinned card. Details expands extra main metadata and Hide details collapses it, without adding a shortcut. The selected-item Inspector exposes full checkout and request values plus terminal, editor, notes, activity, and contextual More actions. List initially opens it; each view remembers visibility during the app run. Narrow workspaces put it below the browser. Retain disclosure and view-specific scroll state during dashboard rebuilds. Use proportional type for interface text and monospace for technical values, with shared dark/light theme and zoom across dashboard and dialogs.
+**Decision:** Keep a prominent Main checkout card at full workspace width above the linked browser and inspector in every view. It shows branch, path, checkout state, and activity, with Terminal, Editor, and Notes actions targeting the main checkout. List excludes a duplicate main row; navigation still reaches the pinned card. Details expands extra main metadata and Hide details collapses it, without adding a shortcut. The selected-item Inspector exposes full checkout and request values plus terminal, editor, notes, activity, and contextual More actions. `Ctrl/Cmd+I` toggles it with the worktree panel focused; plain `i` keeps issue creation. List initially opens it; each view remembers visibility during the app run. Narrow workspaces put it below the browser. Retain disclosure and view-specific scroll state during dashboard rebuilds. Use proportional type for interface text and monospace for technical values, with shared dark/light theme and zoom across dashboard and dialogs.
 
 **Why:** The main checkout anchors repository context and needs a consistent, readily visible place in Board, List, and Grid. Pinning it above the browser and inspector keeps it available while linked worktrees scroll; disclosure keeps extra metadata available on demand. Consistent neutral surfaces, compact project navigation, and readable typography help distinguish interface guidance from repository data while preserving existing creation, input, and confirmation workflows. Explicit inspector details keep hover free of unsolicited popups.

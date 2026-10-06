@@ -145,6 +145,7 @@ func (a *App) Run() {
 	// widget implements Focusable — repo panel uses tappable labels (not
 	// widget.Tree) and cards use tappableCard (Tappable only).
 	setupKeyHandlers(a.window.Canvas(), a.handleKeyName, a.handleRune)
+	registerInspectorShortcuts(a.window.Canvas(), a.toggleInspector)
 
 	// Ctrl+/Ctrl- zoom (uses AddShortcut which works with modifiers).
 	registerZoomShortcuts(a.window.Canvas(), a.theme, a.fyneApp, func() {

@@ -94,7 +94,7 @@ internal/
 
 ## Views and desktop state
 
-`RepoState.ViewMode` selects Board, List, or Grid in memory; it is not serialized. List shows linked rows and initially opens the selected-item inspector; each view retains its inspector visibility. All views share a prominent Main checkout card pinned at full workspace width above the browser/inspector panes. The `g` shortcut toggles Board/Grid and returns from List to Board.
+`RepoState.ViewMode` selects Board, List, or Grid in memory; it is not serialized. List shows linked rows and initially opens the selected-item inspector; each view retains its inspector visibility. All views share a prominent Main checkout card pinned at full workspace width above the browser/inspector panes. The `v` shortcut cycles Board → List → Grid → Board; `g` toggles Board/Grid and returns from List to Board. `Ctrl/Cmd+I` toggles the inspector while the worktree panel is focused, retaining plain `i` for issue creation.
 `kanbanStageOf` maps provider state/reviews into Closed Unmerged, Created, PR Sent,
 PR In Review, and PR Merged. The main worktree stays above the linked browser in every view; List does not duplicate it as a row.
 `navigateKanbanRight` searches `len(stages)`, including the final PR Merged
@@ -136,7 +136,7 @@ The visible New Worktree, Board, List, Grid, Refresh, Inspector, Details, and Mo
 stale-dashboard callbacks or clicks during a dialog, and routes work through the
 existing handlers. Creation/issue/PR-fetch actions select the main card;
 refresh acts on the selected card. Details only changes presentation and has no
-new shortcut. Inspector terminal/editor/notes/activity and More actions route to the same current-repository handlers as keyboard shortcuts. Main-card Terminal, Editor, and Notes callbacks select the current main checkout before invoking those handlers; List keeps selection index 0 for Main and indexes linked rows from 1. Add repository resolves its callback at tap time. Dialog inputs remain Focusable for their own keyboard handling. No main-shell action is Focusable, and technical values are shown through explicit details instead of hover popups.
+new shortcut. Inspector terminal/editor/notes/activity and More actions route to the same current-repository handlers as keyboard shortcuts. Main-card Terminal, Editor, and Notes callbacks select the current main checkout before invoking those handlers; List keeps selection index 0 for Main and indexes linked rows from 1. Add repository resolves its callback at tap time. Dialog inputs remain Focusable for their own keyboard handling. No main-shell action is Focusable, and technical values are shown through explicit details instead of hover popups. The contextual shortcut strip sits across the full workspace below the browser and inspector, wraps instead of truncating, and adapts to panel focus, selected main/linked card, provider, and sandbox state. Inline control hints expose the same bindings without popup help.
 
 ## Keyboard handling
 
@@ -148,9 +148,9 @@ Fyne's keyboard event delivery has several constraints:
 
 The solution:
 - **No Focusable widgets** in the content tree (repo panel uses tappable labels, not widget.Tree)
-- **`desktop.Canvas.SetOnKeyDown`** handles all keys (fires before Tab interception)
+- **`desktop.Canvas.SetOnKeyDown`** handles plain navigation/action keys before Tab interception. The desktop driver supplies current modifiers so Ctrl/Cmd/Alt chords do not also invoke plain-letter actions.
 - **`Canvas.SetOnTypedRune`** handles only Shift+S and Shift+P (case-sensitive)
-- **Zoom shortcuts** use `Canvas.AddShortcut` with Ctrl/Cmd modifier (which works)
+- **Zoom, theme, and inspector shortcuts** use `Canvas.AddShortcut` with Ctrl/Cmd modifiers; the inspector chord stays distinct from plain `i`.
 - **Dialog Escape** calls `dialog.Hide()` (never `overlays.Remove` which corrupts state)
 
 ## Async pattern

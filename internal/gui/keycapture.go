@@ -14,7 +14,16 @@ import (
 // For character input (runes), we use Canvas.SetOnTypedRune which fires
 // when no widget has focus (which is always true since we have no Focusable widgets).
 func setupKeyHandlers(c fyne.Canvas, onKey func(fyne.KeyName), onRune func(rune)) {
-	// desktop.Canvas.SetOnKeyDown fires for every key PRESS before
+	setupKeyHandlersWithModifiers(c, onKey, onRune, func() fyne.KeyModifier {
+		if driver, ok := fyne.CurrentApp().Driver().(desktop.Driver); ok {
+			return driver.CurrentKeyModifiers()
+		}
+		return 0
+	})
+}
+
+func setupKeyHandlersWithModifiers(c fyne.Canvas, onKey func(fyne.KeyName), onRune func(rune), modifiers func() fyne.KeyModifier) {
+	// desktop.Canvas.SetOnKeyDown fires for an unfocused key PRESS before
 	// Fyne's focus/shortcut/tab interception. This is the only way
 	// to receive Tab and Escape events (both are consumed by Fyne
 	// before reaching SetOnTypedKey).
@@ -24,14 +33,26 @@ func setupKeyHandlers(c fyne.Canvas, onKey func(fyne.KeyName), onRune func(rune)
 	// navigation to skip every other card.
 	if dc, ok := c.(desktop.Canvas); ok {
 		dc.SetOnKeyDown(func(ev *fyne.KeyEvent) {
-			onKey(ev.Name)
+			// Native key-down precedes shortcut dispatch. Modifier chords must
+			// not also invoke their plain-letter action (Cmd+I versus i).
+			if ev.Name == fyne.KeyEscape || modifiers()&(fyne.KeyModifierControl|fyne.KeyModifierSuper|fyne.KeyModifierAlt) == 0 {
+				onKey(ev.Name)
+			}
 		})
 	}
 
 	// SetOnTypedRune fires for character input when no widget has focus.
 	c.SetOnTypedRune(func(r rune) {
-		onRune(r)
+		if modifiers()&(fyne.KeyModifierControl|fyne.KeyModifierSuper|fyne.KeyModifierAlt) == 0 {
+			onRune(r)
+		}
 	})
+}
+
+func registerInspectorShortcuts(c fyne.Canvas, onToggle func()) {
+	for _, mod := range []fyne.KeyModifier{fyne.KeyModifierControl, fyne.KeyModifierSuper} {
+		c.AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyI, Modifier: mod}, func(fyne.Shortcut) { onToggle() })
+	}
 }
 
 // registerZoomShortcuts adds Ctrl+Plus, Ctrl+Minus, Ctrl+0 for font scaling.

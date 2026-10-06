@@ -303,7 +303,7 @@ func (a *App) updateSysdepsBanner(reps []sysdeps.Reported) {
 	text := dialogText(msg)
 	text.Importance = widget.WarningImportance
 
-	open := widget.NewButton("Open Dependencies", func() {
+	open := newActionControl("Open Dependencies", nil, false, func() {
 		a.showSysDepsDialog()
 	})
 

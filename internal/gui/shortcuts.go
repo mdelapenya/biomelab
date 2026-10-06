@@ -23,8 +23,7 @@ const (
 )
 
 // handleKeyName processes special key events (arrows, Enter, Esc, Tab).
-// Called from both desktop.Canvas.SetOnKeyDown (for Tab, before Fyne intercepts)
-// and Canvas.SetOnTypedKey (for repeated keys).
+// Called from desktop.Canvas.SetOnKeyDown before Fyne intercepts Tab.
 func (a *App) handleKeyName(key fyne.KeyName) {
 	// Escape dismisses open dialogs via their Hide() method.
 	// This triggers Fyne's proper cleanup (unlike manual overlay removal
@@ -77,12 +76,15 @@ func (a *App) handleKeyName(key fyne.KeyName) {
 		return
 	}
 
-	// Letter keys — handled here instead of SetOnTypedRune because
-	// onTypedRune only fires when canvas.Focused()==nil, which can
-	// silently break after dialog dismissal. SetOnKeyDown always fires.
+	// Letter keys share the canvas router with navigation. Main content stays
+	// unfocused so Fyne delivers key-down instead of routing to a child widget.
 	// View toggle is global across both panels.
 	if key == fyne.KeyG {
 		a.toggleView()
+		return
+	}
+	if key == fyne.KeyV {
+		a.cycleView()
 		return
 	}
 
@@ -342,6 +344,29 @@ func (a *App) navigateRight() {
 }
 
 // --- View toggle ---
+
+func (a *App) cycleView() {
+	re := a.activeRepo()
+	if a.dialogOpen || re == nil || a.dashboard == nil {
+		return
+	}
+	next := ViewKanban
+	switch re.state.ViewMode {
+	case ViewKanban:
+		next = ViewList
+	case ViewList:
+		next = ViewGrid
+	}
+	a.dashboard.setView(next)
+}
+
+func (a *App) toggleInspector() {
+	if a.dialogOpen || a.focus != focusRight || a.activeRepo() == nil || a.dashboard == nil || a.dashboard.state.MainWorktree() == nil {
+		return
+	}
+	a.dashboard.inspectorOpen = !a.dashboard.inspectorOpen
+	a.dashboard.Rebuild()
+}
 
 func (a *App) toggleView() {
 	re := a.activeRepo()
