@@ -57,6 +57,7 @@ func (a *App) openNoteDialog(wt git.Worktree) {
 		existing.RequestFocus()
 		return
 	}
+	origin := a.noteRepoForPath(wt.Path)
 
 	initial, bodyExists, _ := notes.Read(wt.Path)
 	initialTitle, titleExists, _ := notes.ReadTitle(wt.Path)
@@ -117,15 +118,14 @@ func (a *App) openNoteDialog(wt git.Worktree) {
 		case bodyErr != nil:
 			message = "Note save failed (body): " + bodyErr.Error()
 		}
-		if a.dashboard != nil {
-			a.dashboard.Rebuild()
-		}
+		a.rebuildNoteRepo(origin)
 		if message != "" {
 			errorLabel.SetText(message)
 			errorLabel.Show()
-			a.setStatus(message, true)
+			a.setRepoStatus(origin, message, true)
 			return
 		}
+		a.setRepoStatus(origin, "Note saved", false)
 		w.Close()
 	}
 
@@ -144,15 +144,23 @@ func (a *App) openNoteDialog(wt git.Worktree) {
 					if !confirmed {
 						return
 					}
-					if err := notes.Delete(wt.Path); err != nil {
-						a.setStatus("Note delete failed: "+err.Error(), true)
+					bodyErr := notes.Delete(wt.Path)
+					titleErr := notes.DeleteTitle(wt.Path)
+					a.rebuildNoteRepo(origin)
+					var message string
+					switch {
+					case bodyErr != nil:
+						message = "Note delete failed: " + bodyErr.Error()
+					case titleErr != nil:
+						message = "Note delete failed (title): " + titleErr.Error()
 					}
-					if err := notes.DeleteTitle(wt.Path); err != nil {
-						a.setStatus("Note delete failed (title): "+err.Error(), true)
+					if message != "" {
+						errorLabel.SetText(message)
+						errorLabel.Show()
+						a.setRepoStatus(origin, message, true)
+						return
 					}
-					if a.dashboard != nil {
-						a.dashboard.Rebuild()
-					}
+					a.setRepoStatus(origin, "Note deleted", false)
 					w.Close()
 				},
 				w,
@@ -184,4 +192,34 @@ func (a *App) openNoteDialog(wt git.Worktree) {
 	// new window behind the parent. Explicitly request focus.
 	w.RequestFocus()
 	w.Canvas().Focus(entry)
+}
+
+// noteRepoForPath resolves the worktree that owns a non-modal editor at
+// open time. Its callbacks keep this identity even if another repo becomes
+// active while the editor remains open.
+func (a *App) noteRepoForPath(path string) *repoEntry {
+	if re := a.activeRepo(); re != nil && re.state != nil {
+		for _, wt := range re.state.Worktrees {
+			if wt.Path == path {
+				return re
+			}
+		}
+	}
+	for _, re := range a.repos {
+		if re.state == nil {
+			continue
+		}
+		for _, wt := range re.state.Worktrees {
+			if wt.Path == path {
+				return re
+			}
+		}
+	}
+	return nil
+}
+
+func (a *App) rebuildNoteRepo(re *repoEntry) {
+	if a.hasRepoEntry(re) && re.dashboard != nil {
+		re.dashboard.Rebuild()
+	}
 }

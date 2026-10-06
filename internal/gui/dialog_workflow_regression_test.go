@@ -8,6 +8,7 @@ import (
 	"github.com/mdelapenya/biomelab/internal/git"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -66,7 +67,7 @@ func findNoteControls(root fyne.CanvasObject) (*noteEntry, *widget.Button) {
 	return entry, save
 }
 
-func TestNoteSaveFailureKeepsEditorOpen(t *testing.T) {
+func TestNoteSaveFailureKeepsEditorAndOriginatingRepo(t *testing.T) {
 	fa := test.NewApp()
 	defer fa.Quit()
 	fa.Settings().SetTheme(newBiomeTheme(VariantDark))
@@ -86,8 +87,12 @@ func TestNoteSaveFailureKeepsEditorOpen(t *testing.T) {
 		t.Fatal("note editor controls missing")
 	}
 	entry.SetText("unsaved draft")
+	a.active = 1 // the editor is non-modal, so repo navigation remains possible
 	save.Tapped(nil)
 	if a.noteWindows[root] != w || entry.Text != "unsaved draft" {
 		t.Fatal("failed save closed the editor or discarded its text")
+	}
+	if !strings.Contains(origin.state.StatusMessage, "Note save failed") || other.state.StatusMessage != "" {
+		t.Fatalf("save error went to wrong repo: origin=%q other=%q", origin.state.StatusMessage, other.state.StatusMessage)
 	}
 }
