@@ -25,27 +25,29 @@ var sysDepsDialogSize = fyne.NewSize(760, 600)
 // with a status dot, version, action buttons, and an "Optional tools"
 // expander for opt-in tools that aren't installed.
 func (a *App) showSysDepsDialog() dialog.Dialog {
-	cfg := a.loadConfigForSysDeps()
-
 	var d *dialog.CustomDialog
 	body := container.NewVBox()
+	closed := false
 
-	visible := func() []sysdeps.Reported {
-		raw := a.sysdepsCache.Get(cfg)
-		return sysdeps.ApplyVisibility(sysdeps.ApplySuppression(raw), cfg)
-	}
-
-	rebuild := func() {
-		a.sysdepsCache.Invalidate()
-		body.Objects = []fyne.CanvasObject{a.buildSysDepsContent(visible())}
+	show := func(reps []sysdeps.Reported) {
+		if closed {
+			return
+		}
+		body.Objects = []fyne.CanvasObject{a.buildSysDepsContent(reps)}
 		body.Refresh()
-		// Keep the systray summary line in sync after a manual re-probe.
-		a.refreshSysdepsTray()
 	}
 
-	body.Objects = []fyne.CanvasObject{a.buildSysDepsContent(visible())}
+	refresh := func(force bool) {
+		a.requestSysdepsRefresh(force, show)
+	}
 
-	recheck := widget.NewButton("Re-check", rebuild)
+	if raw, ok := a.sysdepsCache.Peek(); ok {
+		show(a.visibleSysDeps(raw))
+	} else {
+		body.Objects = []fyne.CanvasObject{widget.NewLabel("Checking dependencies…")}
+	}
+
+	recheck := widget.NewButton("Re-check", func() { refresh(true) })
 	recheck.Importance = widget.HighImportance
 	footer := container.NewBorder(nil, nil, recheck, nil)
 
@@ -56,20 +58,27 @@ func (a *App) showSysDepsDialog() dialog.Dialog {
 	content := container.NewBorder(nil, footer, nil, nil, container.NewVScroll(body))
 
 	d = dialog.NewCustom("System Dependencies", "Close", content, a.window)
+	d.SetOnClosed(func() { closed = true })
 	d.Resize(sysDepsDialogSize)
 	d.Show()
+	refresh(false)
 	return d
 }
 
-// loadConfigForSysDeps loads the on-disk config so the cache can decide which
-// checks Apply (sbx/docker hide when no sandbox-mode repo is configured).
-// Errors are swallowed: a nil-but-present config still drives sane defaults.
+// loadConfigForSysDeps snapshots the already loaded repositories. Rendering
+// dependencies must not reread the config file on the event loop.
 func (a *App) loadConfigForSysDeps() *config.Config {
-	cfg, err := config.Load(a.configPath)
-	if err != nil || cfg == nil {
-		return &config.Config{}
+	cfg := &config.Config{Repos: make([]config.RepoEntry, 0, len(a.repos))}
+	for _, re := range a.repos {
+		if re != nil && re.group != nil {
+			cfg.Repos = append(cfg.Repos, config.RepoEntry{Path: re.group.Path, Modes: re.group.Modes})
+		}
 	}
 	return cfg
+}
+
+func (a *App) visibleSysDeps(raw []sysdeps.Reported) []sysdeps.Reported {
+	return sysdeps.ApplyVisibility(sysdeps.ApplySuppression(raw), a.loadConfigForSysDeps())
 }
 
 // buildSysDepsContent assembles the dialog body from a probed Reported list:
@@ -240,22 +249,28 @@ func statusColor(s sysdeps.Status) color.Color {
 	}
 }
 
-// buildDepsBanner returns a clickable banner shown above the main layout
-// when one or more primary dependencies are missing or degraded. Returns
-// nil when everything is ready — in that case the layout omits the banner
-// row entirely. Optional tools never trigger the banner; they live in the
-// dialog's expander.
+// buildDepsBanner returns a banner that stays hidden until an asynchronous
+// probe finds a missing or degraded primary dependency. Optional tools never
+// trigger it; they live in the dialog's expander.
 func (a *App) buildDepsBanner() fyne.CanvasObject {
-	cfg := a.loadConfigForSysDeps()
-	reps := sysdeps.ApplyVisibility(
-		sysdeps.ApplySuppression(a.sysdepsCache.Get(cfg)),
-		cfg,
-	)
+	a.sysdepsBanner = container.NewVBox()
+	a.sysdepsBanner.Hide()
+	if raw, ok := a.sysdepsCache.Peek(); ok {
+		a.updateSysdepsBanner(a.visibleSysDeps(raw))
+	}
+	return a.sysdepsBanner
+}
+
+func (a *App) updateSysdepsBanner(reps []sysdeps.Reported) {
+	if a.sysdepsBanner == nil {
+		return
+	}
 	primary, _ := sysdeps.Partition(reps)
 
 	c := sysdeps.Summarize(primary)
 	if c.Missing == 0 && c.Degraded == 0 {
-		return nil
+		a.sysdepsBanner.Hide()
+		return
 	}
 
 	var bits []string
@@ -275,7 +290,9 @@ func (a *App) buildDepsBanner() fyne.CanvasObject {
 	})
 
 	row := container.NewBorder(nil, nil, nil, open, container.NewPadded(text))
-	return container.NewPadded(row)
+	a.sysdepsBanner.Objects = []fyne.CanvasObject{container.NewPadded(row)}
+	a.sysdepsBanner.Show()
+	a.sysdepsBanner.Refresh()
 }
 
 // namesByStatus returns "<label>: a, b, c" for entries whose status matches

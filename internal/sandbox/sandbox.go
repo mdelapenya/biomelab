@@ -312,12 +312,25 @@ func VersionContext(ctx context.Context) VersionInfo {
 // daemon running, network policy set). Runs "sbx ls --json" which exercises
 // the full stack. Returns nil if ready, or an error with user-facing instructions.
 func Preflight() error {
+	return PreflightContext(context.Background())
+}
+
+// PreflightContext bounds the daemon probe and accepts caller cancellation.
+func PreflightContext(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("sbx readiness check: %w", err)
+	}
 	if !Available() {
 		return fmt.Errorf("sbx CLI not found in PATH — install it from https://docs.docker.com/ai/sandboxes/")
 	}
-	cmd := command.Background("sbx", "ls", "--json")
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	cmd := command.BackgroundContext(ctx, "sbx", "ls", "--json")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("sbx readiness check: %w", ctx.Err())
+		}
 		output := strings.TrimSpace(string(out))
 		return fmt.Errorf("sbx not ready — run 'sbx ls' in a terminal to complete setup (auth, network policy).\nsbx output: %s", output)
 	}

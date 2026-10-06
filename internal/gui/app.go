@@ -88,6 +88,10 @@ type App struct {
 	// systray summary. TTL is short enough to feel live; the dialog also
 	// exposes an explicit Re-check button that forces a refresh.
 	sysdepsCache *sysdeps.Cache
+	// Dependency widgets and generations are accessed on the Fyne event loop.
+	sysdepsGeneration uint64
+	sysdepsClosed     bool
+	sysdepsBanner     *fyne.Container
 
 	// issueDeps is per-App so GUI tests can replace network and filesystem
 	// operations without process-wide mutable hooks.
@@ -454,10 +458,8 @@ func (a *App) buildMainLayout() fyne.CanvasObject {
 	split := container.NewHSplit(a.repoPanel.Content(), a.dashSlot)
 	split.Offset = 0.18
 
-	// First-run banner: shown above the split when one or more primary
-	// dependencies are missing or degraded. Click → opens the dialog.
-	// buildDepsBanner returns nil when everything is OK, in which case
-	// we omit the row entirely.
+	// The dependency banner starts hidden and appears when the background
+	// probe finds a missing or degraded primary tool.
 	top := fyne.CanvasObject(titleBar)
 	if banner := a.buildDepsBanner(); banner != nil {
 		top = container.NewVBox(titleBar, banner)

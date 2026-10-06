@@ -78,6 +78,7 @@ func (a *App) setupSystemTray() {
 	)
 	desk.SetSystemTrayMenu(a.trayMenu)
 	desk.SetSystemTrayIcon(AppIcon)
+	a.requestSysdepsRefresh(false, nil)
 
 	// Update label when window is hidden via close button.
 	a.window.SetCloseIntercept(func() {
@@ -128,15 +129,14 @@ func openInSystem(path string) error {
 }
 
 // sysdepsSummaryLabel returns the systray label like "Dependencies: 3/4 ✓"
-// or "Dependencies: 1 missing" when something is wrong. Builds from a fresh
-// cache read so the count reflects the latest probe (the cache itself
-// memoizes for sysdepsCacheTTL, so this is cheap to call on menu refresh).
+// or "Dependencies: 1 missing" when something is wrong. This only reads the
+// last snapshot; command probes always run off the UI thread.
 func (a *App) sysdepsSummaryLabel() string {
-	cfg := a.loadConfigForSysDeps()
-	reps := sysdeps.ApplyVisibility(
-		sysdeps.ApplySuppression(a.sysdepsCache.Get(cfg)),
-		cfg,
-	)
+	raw, ok := a.sysdepsCache.Peek()
+	if !ok {
+		return "Dependencies: checking…"
+	}
+	reps := a.visibleSysDeps(raw)
 	primary, _ := sysdeps.Partition(reps)
 	c := sysdeps.Summarize(primary)
 	total := c.Total()
@@ -150,14 +150,12 @@ func (a *App) sysdepsSummaryLabel() string {
 	return fmt.Sprintf("Dependencies: %d/%d (%d need attention)", c.OK, total, missing)
 }
 
-// refreshSysdepsTray re-probes the dependency cache and updates the systray
-// label and menu. Call after actions that could change the dep state
-// (e.g. dialog Re-check, future install actions).
+// refreshSysdepsTray updates the menu from the current snapshot without
+// invalidating it or running commands on the event loop.
 func (a *App) refreshSysdepsTray() {
 	if a.trayDepsItem == nil {
 		return
 	}
-	a.sysdepsCache.Invalidate()
 	a.trayDepsItem.Label = a.sysdepsSummaryLabel()
 	desk, ok := a.fyneApp.(desktop.App)
 	if ok && a.trayMenu != nil {
@@ -165,7 +163,41 @@ func (a *App) refreshSysdepsTray() {
 	}
 }
 
+// requestSysdepsRefresh is called on the event loop. A generation check keeps
+// late results from updating widgets after a newer request or app shutdown.
+func (a *App) requestSysdepsRefresh(force bool, done func([]sysdeps.Reported)) {
+	if force {
+		a.sysdepsGeneration++
+		a.sysdepsCache.Invalidate()
+	}
+	generation := a.sysdepsGeneration
+	go func() {
+		raw := a.sysdepsCache.Get(nil)
+		fyne.Do(func() {
+			if a.sysdepsClosed {
+				return
+			}
+			if generation != a.sysdepsGeneration {
+				// A forced refresh superseded this snapshot. Keep an open
+				// dialog's callback alive; it will share the current probe.
+				if done != nil {
+					a.requestSysdepsRefresh(false, done)
+				}
+				return
+			}
+			reps := a.visibleSysDeps(raw)
+			a.refreshSysdepsTray()
+			a.updateSysdepsBanner(reps)
+			if done != nil {
+				done(reps)
+			}
+		})
+	}()
+}
+
 func (a *App) stopAllRefresh() {
+	a.sysdepsClosed = true
+	a.sysdepsGeneration++
 	for _, session := range a.terminalSessions {
 		session.Cleanup()
 	}

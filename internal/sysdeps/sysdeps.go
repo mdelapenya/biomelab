@@ -105,9 +105,7 @@ func runAll(cfg *config.Config, checks []Check) []Reported {
 		}
 		out[i] = Reported{Check: c, Result: c.Probe()}
 	}
-	// Hint to keep cfg referenced; ApplyVisibility uses it later. Avoids
-	// touching cfg here so cache invalidation stays driven by pointer
-	// identity (see Cache.Get).
+	// ApplyVisibility uses cfg later; probes themselves are config independent.
 	_ = cfg
 	return out
 }
@@ -209,17 +207,16 @@ func Summarize(reps []Reported) Counts {
 }
 
 // Cache memoizes Probe results for a fixed TTL so opening the systray menu
-// or the dialog doesn't re-exec on every interaction. The cache is keyed
-// implicitly by the Config pointer — if the caller swaps the config (e.g.
-// after a repo add), the cache invalidates automatically. Callers can also
-// force a re-probe via Invalidate.
+// or the dialog doesn't re-exec on every interaction. Probe results do not
+// depend on Config; visibility is applied to each snapshot after reading it.
 type Cache struct {
 	mu     sync.Mutex
 	ttl    time.Duration
 	last   time.Time
-	cfg    *config.Config
 	data   []Reported
 	checks []Check // optional override for tests
+	epoch  uint64
+	flight chan struct{}
 }
 
 // NewCache returns a Cache with the given TTL.
@@ -227,22 +224,54 @@ func NewCache(ttl time.Duration) *Cache {
 	return &Cache{ttl: ttl}
 }
 
-// Get returns memoized results, refreshing if the TTL has expired or the
-// config pointer differs from the previous call.
+// Get returns memoized raw results, refreshing after the TTL. Concurrent
+// callers share one probe. Config is retained for source compatibility only.
 func (c *Cache) Get(cfg *config.Config) []Reported {
+	for {
+		c.mu.Lock()
+		if c.data != nil && time.Since(c.last) < c.ttl {
+			data := c.data
+			c.mu.Unlock()
+			return data
+		}
+		if c.flight != nil {
+			flight := c.flight
+			c.mu.Unlock()
+			<-flight
+			continue
+		}
+		flight := make(chan struct{})
+		c.flight = flight
+		epoch := c.epoch
+		checks := c.checks
+		if checks == nil {
+			checks = Registry()
+		}
+		c.mu.Unlock()
+
+		data := runAll(cfg, checks)
+		c.mu.Lock()
+		current := c.epoch == epoch
+		if current {
+			c.data = data
+			c.last = time.Now()
+		}
+		c.flight = nil
+		close(flight)
+		c.mu.Unlock()
+		if current {
+			return data
+		}
+		// An invalidation during the probe requires another pass.
+	}
+}
+
+// Peek returns the last probe without running a command. The boolean reports
+// whether results exist, including expired results suitable for a placeholder.
+func (c *Cache) Peek() ([]Reported, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.data != nil && c.cfg == cfg && time.Since(c.last) < c.ttl {
-		return c.data
-	}
-	checks := c.checks
-	if checks == nil {
-		checks = Registry()
-	}
-	c.data = runAll(cfg, checks)
-	c.last = time.Now()
-	c.cfg = cfg
-	return c.data
+	return c.data, c.data != nil
 }
 
 // Invalidate forces the next Get to re-probe.
@@ -250,6 +279,7 @@ func (c *Cache) Invalidate() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.data = nil
+	c.epoch++
 }
 
 // SetChecks substitutes the registry used by Get. Intended for tests.
@@ -258,4 +288,5 @@ func (c *Cache) SetChecks(checks []Check) {
 	defer c.mu.Unlock()
 	c.checks = checks
 	c.data = nil
+	c.epoch++
 }
