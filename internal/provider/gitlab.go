@@ -39,8 +39,12 @@ func (g *GitLabProvider) FetchPRs(repoDir string, branches []string) PRResult {
 }
 
 func (g *GitLabProvider) FetchPRsContext(ctx context.Context, repoDir string, branches []string) PRResult {
-	return fetchPRsConcurrent(ctx, repoDir, branches, func(dir, branch string) *PRInfo {
-		return fetchGitLabMRContext(ctx, dir, branch)
+	return successfulPRs(g.FetchPRsDetailedContext(ctx, repoDir, branches))
+}
+
+func (g *GitLabProvider) FetchPRsDetailedContext(ctx context.Context, repoDir string, branches []string) PRLookupResult {
+	return fetchPRsDetailedConcurrent(ctx, repoDir, branches, func(dir, branch string) (*PRInfo, error) {
+		return lookupGitLabMRContext(ctx, dir, branch)
 	})
 }
 

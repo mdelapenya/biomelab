@@ -154,3 +154,39 @@ func TestRepoStateApplyPreservesSandboxStatusWhenInventoryFails(t *testing.T) {
 		t.Fatal("successful empty inventory did not mark sandbox missing")
 	}
 }
+
+func TestRepoStateApplyDetailedPRLookupsMergeAndPrune(t *testing.T) {
+	s := &RepoState{
+		Worktrees: []git.Worktree{
+			{Path: "/repo", Branch: "main"},
+			{Path: "/wt/found", Branch: "found"},
+			{Path: "/wt/absent", Branch: "absent"},
+			{Path: "/wt/error", Branch: "error"},
+		},
+		PRs: provider.PRResult{
+			"found":  {Number: 1},
+			"absent": {Number: 2},
+			"error":  {Number: 3},
+		},
+	}
+	s.Apply(ops.RefreshResult{HasPRs: true, HasPRLookups: true,
+		PRLookups: provider.PRLookupResult{
+			"found":  {Info: &provider.PRInfo{Number: 10}},
+			"absent": {},
+			"error":  {Err: errFakeRefresh},
+		},
+	})
+	if s.PRs["found"] == nil || s.PRs["found"].Number != 10 || s.PRs["absent"] != nil || s.PRs["error"] == nil || s.PRs["error"].Number != 3 {
+		t.Fatalf("detailed PR merge failed: %+v", s.PRs)
+	}
+	// A subsequent quick snapshot can remove a branch even while its PR
+	// lookup is failing; its obsolete cached status must disappear.
+	s.Apply(ops.RefreshResult{Worktrees: []git.Worktree{
+		{Path: "/repo", Branch: "main"},
+		{Path: "/wt/found", Branch: "found"},
+		{Path: "/wt/absent", Branch: "absent"},
+	}})
+	if s.PRs["error"] != nil {
+		t.Fatal("removed worktree retained a cached PR")
+	}
+}

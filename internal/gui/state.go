@@ -92,6 +92,7 @@ func (s *RepoState) Apply(result ops.RefreshResult) bool {
 	}
 	if result.Worktrees != nil {
 		s.SetWorktrees(result.Worktrees)
+		s.prunePRs()
 	}
 	if result.Agents != nil {
 		s.Agents = result.Agents
@@ -107,7 +108,24 @@ func (s *RepoState) Apply(result ops.RefreshResult) bool {
 		s.HasCLIAvail = true
 	}
 	if result.HasPRs {
-		s.PRs = result.PRs
+		if result.HasPRLookups {
+			if s.PRs == nil {
+				s.PRs = make(provider.PRResult)
+			}
+			for branch, lookup := range result.PRLookups {
+				if lookup.Err != nil {
+					continue // retain the last known status on a transient failure
+				}
+				if lookup.Info == nil {
+					delete(s.PRs, branch) // confirmed no PR for this branch
+				} else {
+					s.PRs[branch] = lookup.Info
+				}
+			}
+			s.prunePRs()
+		} else {
+			s.PRs = result.PRs // legacy providers expose only a full snapshot
+		}
 		s.LastNetworkRefresh = time.Now()
 		s.NetFlash = true
 	} else {
@@ -130,6 +148,21 @@ func (s *RepoState) Apply(result ops.RefreshResult) bool {
 	// errors) almost immediately. Status stays until another setStatus
 	// call or an Esc dismisses it.
 	return true
+}
+
+func (s *RepoState) prunePRs() {
+	if len(s.PRs) == 0 {
+		return
+	}
+	branches := make(map[string]bool, len(s.Worktrees))
+	for _, wt := range s.Worktrees {
+		branches[wt.Branch] = true
+	}
+	for branch := range s.PRs {
+		if !branches[branch] {
+			delete(s.PRs, branch)
+		}
+	}
 }
 
 // SetWorktrees stores worktrees and sorts linked ones alphabetically by branch.

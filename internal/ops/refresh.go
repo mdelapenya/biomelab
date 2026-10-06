@@ -22,6 +22,8 @@ type RefreshResult struct {
 	Terminals       terminal.DetectionResult
 	PRs             provider.PRResult
 	HasPRs          bool
+	PRLookups       provider.PRLookupResult
+	HasPRLookups    bool // detailed providers distinguish absence from lookup failure
 	CLIAvail        provider.CLIAvailability
 	HasCLIAvail     bool // CLIAvailable is zero, so presence must be explicit
 	Err             error
@@ -136,8 +138,8 @@ func LocalRefresh(
 		Terminals:       terms,
 		SandboxStatus:   sbxStatus,
 		HasSbxStatus:    hasSbxInventory,
-		HasSbxInventory: hasSbxInventory,
 		AllSbxStatuses:  allStatuses,
+		HasSbxInventory: hasSbxInventory,
 		SbxClientVer:    sbxVer.Client,
 		SbxServerVer:    sbxVer.Server,
 		SbxMatchedName:  sbxMatched,
@@ -194,7 +196,14 @@ func NetworkRefresh(
 		return RefreshResult{Err: err}
 	}
 	var prs provider.PRResult
-	if prProv != nil && cliAvail == provider.CLIAvailable {
+	var prLookups provider.PRLookupResult
+	var hasPRLookups bool
+	if detailed, ok := prProv.(provider.DetailedPRProvider); ok {
+		hasPRLookups = true
+		if cliAvail == provider.CLIAvailable {
+			prLookups = detailed.FetchPRsDetailedContext(ctx, repo.Root(), branches)
+		}
+	} else if prProv != nil && cliAvail == provider.CLIAvailable {
 		prs = prProv.FetchPRsContext(ctx, repo.Root(), branches)
 	} else {
 		prs = make(provider.PRResult)
@@ -225,6 +234,8 @@ func NetworkRefresh(
 		IDEs:            ides,
 		Terminals:       terms,
 		PRs:             prs,
+		PRLookups:       prLookups,
+		HasPRLookups:    hasPRLookups,
 		HasSbxStatus:    hasSbxInventory,
 		AllSbxStatuses:  allStatuses,
 		HasSbxInventory: hasSbxInventory,
@@ -269,23 +280,32 @@ func CardRefresh(
 	}
 
 	var prs provider.PRResult
-	if cliAvail == provider.CLIAvailable {
+	var prLookups provider.PRLookupResult
+	var hasPRLookups bool
+	if detailed, ok := prProv.(provider.DetailedPRProvider); ok {
+		hasPRLookups = true
+		if cliAvail == provider.CLIAvailable {
+			prLookups = detailed.FetchPRsDetailedContext(ctx, repo.Root(), []string{branch})
+		}
+	} else if prProv != nil && cliAvail == provider.CLIAvailable {
 		prs = prProv.FetchPRs(repo.Root(), []string{branch})
 	} else {
 		prs = make(provider.PRResult)
 	}
 
 	return RefreshResult{
-		Worktrees:   snap.Worktrees,
-		Agents:      agents,
-		IDEs:        ides,
-		Terminals:   terms,
-		PRs:         prs,
-		HasPRs:      true,
-		CLIAvail:    cliAvail,
-		HasCLIAvail: true,
-		FetchErr:    fetchErr,
-		Generation:  snap.Generation,
+		Worktrees:    snap.Worktrees,
+		Agents:       agents,
+		IDEs:         ides,
+		Terminals:    terms,
+		PRs:          prs,
+		PRLookups:    prLookups,
+		HasPRLookups: hasPRLookups,
+		HasPRs:       true,
+		CLIAvail:     cliAvail,
+		HasCLIAvail:  true,
+		FetchErr:     fetchErr,
+		Generation:   snap.Generation,
 	}
 }
 

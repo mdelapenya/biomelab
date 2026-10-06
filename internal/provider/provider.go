@@ -79,6 +79,21 @@ type PRInfo struct {
 // PRResult maps branch names to their PR info.
 type PRResult map[string]*PRInfo
 
+// PRLookup distinguishes a confirmed absence (Info and Err both nil) from a
+// failed lookup (Err non-nil). Consumers can retain old data only on failure.
+type PRLookup struct {
+	Info *PRInfo
+	Err  error
+}
+
+type PRLookupResult map[string]PRLookup
+
+// DetailedPRProvider is an optional extension of PRProvider. Each requested
+// non-empty branch receives a result, including canceled and failed lookups.
+type DetailedPRProvider interface {
+	FetchPRsDetailedContext(context.Context, string, []string) PRLookupResult
+}
+
 // PRProvider fetches PR/MR information for branches from a hosting provider.
 type PRProvider interface {
 	// CheckCLI performs a pre-flight check for the provider's CLI tool.
@@ -86,7 +101,7 @@ type PRProvider interface {
 	CheckCLI() CLIAvailability
 	CheckCLIContext(context.Context) CLIAvailability
 
-	// FetchPRs looks up open PRs/MRs for the given branch names.
+	// FetchPRs looks up PRs/MRs for the given branch names.
 	// Returns results for branches that have an associated PR/MR.
 	FetchPRs(repoDir string, branches []string) PRResult
 	FetchPRsContext(context.Context, string, []string) PRResult
@@ -207,6 +222,53 @@ func fetchPRsConcurrent(ctx context.Context, repoDir string, branches []string, 
 		}(branch)
 	}
 	wg.Wait()
+	return result
+}
+
+func fetchPRsDetailedConcurrent(ctx context.Context, repoDir string, branches []string, fetchFn func(string, string) (*PRInfo, error)) PRLookupResult {
+	result := make(PRLookupResult, len(branches))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 4)
+	for _, branch := range branches {
+		if branch == "" {
+			continue
+		}
+		wg.Add(1)
+		go func(br string) {
+			defer wg.Done()
+			select {
+			case <-ctx.Done():
+				mu.Lock()
+				result[br] = PRLookup{Err: ctx.Err()}
+				mu.Unlock()
+				return
+			case sem <- struct{}{}:
+			}
+			defer func() { <-sem }()
+			if err := ctx.Err(); err != nil {
+				mu.Lock()
+				result[br] = PRLookup{Err: err}
+				mu.Unlock()
+				return
+			}
+			info, err := fetchFn(repoDir, br)
+			mu.Lock()
+			result[br] = PRLookup{Info: info, Err: err}
+			mu.Unlock()
+		}(branch)
+	}
+	wg.Wait()
+	return result
+}
+
+func successfulPRs(lookups PRLookupResult) PRResult {
+	result := make(PRResult)
+	for branch, lookup := range lookups {
+		if lookup.Err == nil && lookup.Info != nil {
+			result[branch] = lookup.Info
+		}
+	}
 	return result
 }
 

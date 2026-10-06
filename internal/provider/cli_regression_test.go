@@ -46,8 +46,8 @@ func TestGitLabLookupUsesDocumentedOutputAndSchema(t *testing.T) {
 	argsPath := fakeCLI(t, "glab")
 	t.Setenv("BIOME_CLI_RESPONSE", `[{"iid":31,"title":"MR","state":"opened","draft":true,"web_url":"https://gitlab.com/a/b/-/merge_requests/31","source_branch":"feature"}]`)
 	t.Setenv("BIOME_CLI_DETAIL_RESPONSE", `{"iid":31,"title":"MR","state":"opened","draft":true,"web_url":"https://gitlab.com/a/b/-/merge_requests/31","source_branch":"feature","head_pipeline":{"status":"failed"}}`)
-	got := (&GitLabProvider{}).FetchPRsContext(context.Background(), t.TempDir(), []string{"feature"})["feature"]
-	if got == nil || got.Number != 31 || got.URL == "" || got.State != "open" || !got.Draft || got.CheckStatus != "failure" || got.ReviewStatus != "" {
+	got := (&GitLabProvider{}).FetchPRsDetailedContext(context.Background(), t.TempDir(), []string{"feature"})["feature"]
+	if got.Err != nil || got.Info == nil || got.Info.Number != 31 || got.Info.URL == "" || got.Info.State != "open" || !got.Info.Draft || got.Info.CheckStatus != "failure" || got.Info.ReviewStatus != "" {
 		t.Fatalf("wrong GitLab MR: %+v", got)
 	}
 	want := []string{"mr", "view", "31", "--output", "json"}
@@ -64,16 +64,58 @@ func TestGitLabLookupPrefersOpenMRAndRejectsWrongDetail(t *testing.T) {
 	argsPath := fakeCLI(t, "glab")
 	t.Setenv("BIOME_CLI_RESPONSE", `[{"iid":40,"state":"merged","web_url":"https://gitlab.com/a/b/-/merge_requests/40","source_branch":"feature"},{"iid":31,"state":"opened","web_url":"https://gitlab.com/a/b/-/merge_requests/31","source_branch":"feature"}]`)
 	t.Setenv("BIOME_CLI_DETAIL_RESPONSE", `{"iid":31,"title":"current","state":"opened","web_url":"https://gitlab.com/a/b/-/merge_requests/31","source_branch":"feature"}`)
-	got := (&GitLabProvider{}).FetchPRsContext(context.Background(), t.TempDir(), []string{"feature"})["feature"]
-	if got == nil || got.Number != 31 {
+	got := (&GitLabProvider{}).FetchPRsDetailedContext(context.Background(), t.TempDir(), []string{"feature"})["feature"]
+	if got.Err != nil || got.Info == nil || got.Info.Number != 31 {
 		t.Fatalf("selected MR = %+v", got)
 	}
 	if args := cliArgs(t, argsPath); !reflect.DeepEqual(args, []string{"mr", "view", "31", "--output", "json"}) {
 		t.Fatalf("view args = %q", args)
 	}
 	t.Setenv("BIOME_CLI_DETAIL_RESPONSE", `{"iid":40,"state":"merged","web_url":"https://gitlab.com/a/b/-/merge_requests/40","source_branch":"feature"}`)
-	got = (&GitLabProvider{}).FetchPRsContext(context.Background(), t.TempDir(), []string{"feature"})["feature"]
-	if got != nil {
+	got = (&GitLabProvider{}).FetchPRsDetailedContext(context.Background(), t.TempDir(), []string{"feature"})["feature"]
+	if got.Err == nil || got.Info != nil {
 		t.Fatalf("wrong detail accepted: %+v", got)
+	}
+}
+
+func TestGitLabLookupDistinguishesAbsenceAndErrors(t *testing.T) {
+	fakeCLI(t, "glab")
+	p := &GitLabProvider{}
+	for _, tt := range []struct {
+		output, exit   string
+		absent, failed bool
+	}{
+		{output: "[]", absent: true},
+		{output: "{broken", failed: true},
+		{output: "null", failed: true},
+		{output: "[]", exit: "1", failed: true},
+	} {
+		t.Setenv("BIOME_CLI_RESPONSE", tt.output)
+		t.Setenv("BIOME_CLI_EXIT", tt.exit)
+		got := p.FetchPRsDetailedContext(context.Background(), t.TempDir(), []string{"feature"})["feature"]
+		if (got.Err != nil) != tt.failed || (got.Info == nil && got.Err == nil) != tt.absent {
+			t.Errorf("output=%q exit=%q got %+v", tt.output, tt.exit, got)
+		}
+	}
+}
+
+func TestGitHubLookupDistinguishesAbsenceAndErrors(t *testing.T) {
+	fakeCLI(t, "gh")
+	p := &GitHubProvider{}
+	for _, tt := range []struct {
+		output, exit   string
+		absent, failed bool
+	}{
+		{output: "[]", absent: true},
+		{output: "{broken", failed: true},
+		{output: "null", failed: true},
+		{output: "[]", exit: "1", failed: true},
+	} {
+		t.Setenv("BIOME_CLI_RESPONSE", tt.output)
+		t.Setenv("BIOME_CLI_EXIT", tt.exit)
+		got := p.FetchPRsDetailedContext(context.Background(), t.TempDir(), []string{"feature"})["feature"]
+		if (got.Err != nil) != tt.failed || (got.Info == nil && got.Err == nil) != tt.absent {
+			t.Errorf("output=%q exit=%q got %+v", tt.output, tt.exit, got)
+		}
 	}
 }
