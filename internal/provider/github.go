@@ -25,7 +25,7 @@ func (g *GitHubProvider) CheckCLIContext(ctx context.Context) CLIAvailability {
 	if _, err := exec.LookPath("gh"); err != nil {
 		return CLINotFound
 	}
-	cmd := command.BackgroundContext(ctx, "gh", "auth", "status")
+	cmd := command.BackgroundContext(ctx, "gh", "auth", "status", "--hostname", "github.com")
 	if err := cmd.Run(); err != nil {
 		return CLINotAuthenticated
 	}

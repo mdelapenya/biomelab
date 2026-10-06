@@ -138,6 +138,16 @@ func TestGitHubLookupDistinguishesAbsenceAndErrors(t *testing.T) {
 	}
 }
 
+func TestGitHubAuthCheckScopesHost(t *testing.T) {
+	argsPath := fakeCLI(t, "gh")
+	if got := (&GitHubProvider{}).CheckCLI(); got != CLIAvailable {
+		t.Fatalf("auth check = %v", got)
+	}
+	if args := cliArgs(t, argsPath); !reflect.DeepEqual(args, []string{"auth", "status", "--hostname", "github.com"}) {
+		t.Fatalf("auth arguments = %q", args)
+	}
+}
+
 func TestDetectProviderUsesHostOnly(t *testing.T) {
 	for _, tt := range []struct {
 		remote string
