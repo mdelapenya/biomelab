@@ -180,6 +180,31 @@ func TestDetect_CmdlineMatch(t *testing.T) {
 	}
 }
 
+func TestDetect_ExecutableNameWinsOverArguments(t *testing.T) {
+	d := NewDetectorWithLister(&mockLister{procs: []process.Info{
+		{PID: 700, Name: "claude", Cmdline: "claude --prompt 'compare with codex and gemini'", Cwd: "/project"},
+	}})
+	for i := 0; i < 100; i++ {
+		got := d.Detect([]string{"/project"})
+		if len(got["/project"]) != 1 || got["/project"][0].Kind != Claude {
+			t.Fatalf("iteration %d classified claude as %+v", i, got)
+		}
+	}
+}
+
+func TestDetect_CmdlineFallbackStableForNodeScript(t *testing.T) {
+	d := NewDetectorWithLister(&mockLister{procs: []process.Info{
+		{PID: 701, Name: "node", Cmdline: "node /opt/gemini/bin/cli.js --agent codex", Cwd: "/project"},
+	}})
+	for i := 0; i < 100; i++ {
+		got := d.Detect([]string{"/project"})
+		if len(got["/project"]) != 1 || got["/project"][0].Kind != Gemini {
+			// The script path appears before incidental option values.
+			t.Fatalf("iteration %d classified fallback as %+v", i, got)
+		}
+	}
+}
+
 func TestDetect_CmdlineNoFalsePositive(t *testing.T) {
 	// A node process without any agent in the cmdline should not match.
 	lister := &mockLister{
