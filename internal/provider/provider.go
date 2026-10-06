@@ -86,7 +86,7 @@ type PRInfo struct {
 	// CI check status: "success", "failure", "pending", or "" if unknown.
 	CheckStatus string
 
-	// ReviewStatus is the most significant review state on the PR/MR.
+	// ReviewStatus is the current review state known for the PR/MR.
 	// Values: "approved", "changes_requested", "commented", or "" (no reviews).
 	ReviewStatus string
 }
