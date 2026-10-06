@@ -131,7 +131,12 @@ document.querySelectorAll('.kb-card[data-kb]').forEach(function (card) {
 document.querySelectorAll('a[href^="#"]').forEach(function (anchor) {
   anchor.addEventListener('click', function (e) {
     e.preventDefault();
-    var target = document.querySelector(this.getAttribute('href'));
+    var href = this.getAttribute('href');
+    if (href === '#') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    var target = document.querySelector(href);
     if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 });
