@@ -202,44 +202,6 @@ func (u *UnsupportedProvider) Provider() Provider {
 	return u.provider
 }
 
-// fetchPRsConcurrent fetches PR/MR info for multiple branches concurrently,
-// using the provided fetch function for each branch. Limits concurrency to 4.
-func fetchPRsConcurrent(ctx context.Context, repoDir string, branches []string, fetchFn func(repoDir, branch string) *PRInfo) PRResult {
-	result := make(PRResult)
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 4)
-
-	for _, branch := range branches {
-		if branch == "" {
-			continue
-		}
-		wg.Add(1)
-		go func(br string) {
-			defer wg.Done()
-			select {
-			case <-ctx.Done():
-				return
-			case sem <- struct{}{}:
-			}
-			if ctx.Err() != nil {
-				<-sem
-				return
-			}
-			defer func() { <-sem }()
-
-			pr := fetchFn(repoDir, br)
-			if pr != nil {
-				mu.Lock()
-				result[br] = pr
-				mu.Unlock()
-			}
-		}(branch)
-	}
-	wg.Wait()
-	return result
-}
-
 func fetchPRsDetailedConcurrent(ctx context.Context, repoDir string, branches []string, fetchFn func(string, string) (*PRInfo, error)) PRLookupResult {
 	result := make(PRLookupResult, len(branches))
 	var mu sync.Mutex
