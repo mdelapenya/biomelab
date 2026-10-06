@@ -174,6 +174,20 @@ func TestParsePRRef(t *testing.T) {
 			t.Error("expected error for zero PR number")
 		}
 	})
+
+	t.Run("oversized plain PR number returns error", func(t *testing.T) {
+		_, err := ParsePRRef("999999999999999999999999999999999999")
+		if err == nil {
+			t.Error("expected error for oversized PR number")
+		}
+	})
+
+	t.Run("oversized fork PR number returns error", func(t *testing.T) {
+		_, err := ParsePRRef("owner/repo#999999999999999999999999999999999999")
+		if err == nil {
+			t.Error("expected error for oversized fork PR number")
+		}
+	})
 }
 
 func TestStatusIcon(t *testing.T) {
