@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -189,7 +190,6 @@ func ParsePRRef(input string) (PRRef, error) {
 }
 
 func parsePositiveInt(s string) (int, error) {
-	n := 0
 	if s == "" {
 		return 0, fmt.Errorf("empty string")
 	}
@@ -197,7 +197,10 @@ func parsePositiveInt(s string) (int, error) {
 		if c < '0' || c > '9' {
 			return 0, fmt.Errorf("not a number")
 		}
-		n = n*10 + int(c-'0')
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, err
 	}
 	if n <= 0 {
 		return 0, fmt.Errorf("must be positive")
