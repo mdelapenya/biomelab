@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"syscall"
 )
 
 // KitInstall records a kit applied to a sandbox at create time. New installs
@@ -85,7 +86,7 @@ func Load(path string) (*Config, error) {
 				return &Config{}, nil
 			}
 			// Legacy config found — parse, migrate, save to the new path,
-			// and remove the old directory.
+			// and remove the old file and its directory if empty.
 			var cfg Config
 			if err := json.Unmarshal(data, &cfg); err != nil {
 				return nil, err
@@ -94,7 +95,7 @@ func Load(path string) (*Config, error) {
 			if err := Save(path, &cfg); err != nil {
 				return nil, err
 			}
-			if err := os.RemoveAll(filepath.Dir(legacy)); err != nil {
+			if err := removeLegacyConfig(legacy); err != nil {
 				return nil, err
 			}
 			return &cfg, nil
@@ -106,13 +107,22 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	cfg.migrate()
-	// Clean up legacy gwaim config directory if it still exists.
-	if legacyDir := filepath.Dir(legacyPathFn()); dirExists(legacyDir) {
-		if err := os.RemoveAll(legacyDir); err != nil {
-			return nil, err
-		}
+	// Clean up the legacy config file and its directory if it is empty.
+	if err := removeLegacyConfig(legacyPathFn()); err != nil {
+		return nil, err
 	}
 	return &cfg, nil
+}
+
+func removeLegacyConfig(path string) error {
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.Remove(filepath.Dir(path)); err != nil &&
+		!errors.Is(err, os.ErrNotExist) && !errors.Is(err, syscall.ENOTEMPTY) {
+		return err
+	}
+	return nil
 }
 
 // migrate converts old-format entries (Sandbox bool, no Modes) to the new

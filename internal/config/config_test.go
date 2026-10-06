@@ -482,6 +482,10 @@ func TestLoadMigratesFromLegacyGwaimPath(t *testing.T) {
 	if err := os.WriteFile(legacyFile, []byte(oldJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	siblingFile := filepath.Join(filepath.Dir(legacyFile), "keep.txt")
+	if err := os.WriteFile(siblingFile, []byte("keep me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	// Override legacyPathFn to point to our temp legacy file.
 	origFn := legacyPathFn
@@ -503,9 +507,12 @@ func TestLoadMigratesFromLegacyGwaimPath(t *testing.T) {
 		t.Errorf("expected new config file to exist: %v", err)
 	}
 
-	// The legacy directory should have been removed.
-	if _, err := os.Stat(filepath.Dir(legacyFile)); !os.IsNotExist(err) {
-		t.Errorf("expected legacy directory to be removed, but it still exists")
+	// The legacy file should be removed without deleting unrelated siblings.
+	if _, err := os.Stat(legacyFile); !os.IsNotExist(err) {
+		t.Errorf("expected legacy config file to be removed, stat error = %v", err)
+	}
+	if data, err := os.ReadFile(siblingFile); err != nil || string(data) != "keep me" {
+		t.Errorf("expected sibling file to survive migration, data = %q, err = %v", data, err)
 	}
 }
 
@@ -528,6 +535,10 @@ func TestLoadIgnoresLegacyWhenNewExists(t *testing.T) {
 	if err := os.WriteFile(legacyFile, []byte(legacyJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	siblingFile := filepath.Join(filepath.Dir(legacyFile), "keep.txt")
+	if err := os.WriteFile(siblingFile, []byte("keep me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	origFn := legacyPathFn
 	legacyPathFn = func() string { return legacyFile }
@@ -540,6 +551,12 @@ func TestLoadIgnoresLegacyWhenNewExists(t *testing.T) {
 	}
 	if len(cfg.Repos) != 1 || cfg.Repos[0].Path != "/tmp/repo-a" {
 		t.Errorf("expected new config repo, got %+v", cfg.Repos)
+	}
+	if _, err := os.Stat(legacyFile); !os.IsNotExist(err) {
+		t.Errorf("expected legacy config file to be removed, stat error = %v", err)
+	}
+	if data, err := os.ReadFile(siblingFile); err != nil || string(data) != "keep me" {
+		t.Errorf("expected sibling file to survive cleanup, data = %q, err = %v", data, err)
 	}
 }
 
