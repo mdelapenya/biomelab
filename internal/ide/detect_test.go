@@ -351,6 +351,26 @@ func TestDetect_CmdlineMatchesMostSpecificPath(t *testing.T) {
 	}
 }
 
+func TestDetect_CmdlinePathBoundary(t *testing.T) {
+	procs := []process.Info{
+		{PID: 801, Name: "code", Cmdline: "code /repo2", Cwd: "/"},
+		{PID: 802, Name: "code", Cmdline: "code '/repo with spaces'", Cwd: "/"},
+		{PID: 803, Name: "code", Cmdline: "code --folder=/repo/subdir", Cwd: "/"},
+		{PID: 804, Name: "code", Cmdline: "code /other/repo", Cwd: "/"},
+	}
+	d := NewDetectorWithLister(&mockLister{procs: procs})
+	got := d.Detect([]string{"/repo", "/repo2", "/repo with spaces"})
+	if len(got["/repo"]) != 1 || got["/repo"][0].PID != 803 {
+		t.Errorf("/repo should match descendant only: %+v", got["/repo"])
+	}
+	if len(got["/repo2"]) != 1 || got["/repo2"][0].PID != 801 {
+		t.Errorf("/repo2 should match itself: %+v", got["/repo2"])
+	}
+	if len(got["/repo with spaces"]) != 1 || got["/repo with spaces"][0].PID != 802 {
+		t.Errorf("quoted path should match: %+v", got["/repo with spaces"])
+	}
+}
+
 func TestDetect_CWDMatchNotAffectedByMostSpecificCmdline(t *testing.T) {
 	// A process with CWD matching the parent repo should still match,
 	// even if its cmdline also contains a child worktree path.

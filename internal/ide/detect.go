@@ -168,7 +168,7 @@ func (d *Detector) DetectFromProcessesContext(ctx context.Context, procs []proce
 		bestCmdlineIdx := -1
 		bestCmdlineLen := 0
 		for j := range worktreePaths {
-			if strings.Contains(cmdline, cleanPaths[j]) && len(cleanPaths[j]) > bestCmdlineLen {
+			if cmdlineHasPath(cmdline, cleanPaths[j]) && len(cleanPaths[j]) > bestCmdlineLen {
 				bestCmdlineIdx = j
 				bestCmdlineLen = len(cleanPaths[j])
 			}
@@ -200,4 +200,28 @@ func (d *Detector) DetectFromProcessesContext(ctx context.Context, procs []proce
 	}
 
 	return result
+}
+
+// cmdlineHasPath accepts a path argument or one of its descendants, but not
+// a sibling whose name merely starts with the same bytes (repo vs repo2).
+// Quoted paths and option values such as --folder=/repo are supported.
+func cmdlineHasPath(cmdline, path string) bool {
+	if path == "" || path == "." {
+		return false
+	}
+	for offset := 0; offset <= len(cmdline)-len(path); {
+		i := strings.Index(cmdline[offset:], path)
+		if i < 0 {
+			return false
+		}
+		i += offset
+		left := i == 0 || strings.ContainsRune(" \t\r\n\"'=:/", rune(cmdline[i-1]))
+		end := i + len(path)
+		right := end == len(cmdline) || strings.ContainsRune("/\\ \t\r\n\"'", rune(cmdline[end]))
+		if left && right {
+			return true
+		}
+		offset = i + 1
+	}
+	return false
 }
