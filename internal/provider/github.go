@@ -133,7 +133,7 @@ func lookupGitHubPRContext(ctx context.Context, repoDir, branch string) (*PRInfo
 	defer cancel()
 	cmd := command.BackgroundContext(ctx, "gh", "pr", "list", "--head", branch,
 		"--state", "all", "--limit", "100",
-		"--json", "number,title,state,isDraft,url,statusCheckRollup,reviews,headRefName",
+		"--json", "number,title,state,isDraft,url,statusCheckRollup,reviewDecision,latestReviews,headRefName",
 	)
 	cmd.Dir = repoDir
 	out, err := cmd.Output()
@@ -148,14 +148,15 @@ func lookupGitHubPRContext(ctx context.Context, repoDir, branch string) (*PRInfo
 		IsDraft           bool   `json:"isDraft"`
 		URL               string `json:"url"`
 		HeadRefName       string `json:"headRefName"`
+		ReviewDecision    string `json:"reviewDecision"`
 		StatusCheckRollup []struct {
 			State      string `json:"state"`
 			Status     string `json:"status"`
 			Conclusion string `json:"conclusion"`
 		} `json:"statusCheckRollup"`
-		Reviews []struct {
+		LatestReviews []struct {
 			State string `json:"state"`
-		} `json:"reviews"`
+		} `json:"latestReviews"`
 	}
 	if err := json.Unmarshal(out, &raw); err != nil {
 		return nil, fmt.Errorf("parse gh PR list %q: %w", branch, err)
@@ -188,12 +189,26 @@ func lookupGitHubPRContext(ctx context.Context, repoDir, branch string) (*PRInfo
 	}
 
 	pr.CheckStatus = rollupStatus(r.StatusCheckRollup)
-	pr.ReviewStatus = githubReviewStatus(r.Reviews)
+	switch strings.ToUpper(r.ReviewDecision) {
+	case "APPROVED":
+		pr.ReviewStatus = "approved"
+	case "CHANGES_REQUESTED":
+		pr.ReviewStatus = "changes_requested"
+	case "REVIEW_REQUIRED":
+		// Individual approvals do not mean the PR satisfies review policy.
+		pr.ReviewStatus = githubReviewStatus(r.LatestReviews)
+		if pr.ReviewStatus == "approved" {
+			pr.ReviewStatus = ""
+		}
+	default:
+		pr.ReviewStatus = githubReviewStatus(r.LatestReviews)
+	}
 	return pr, nil
 }
 
-// githubReviewStatus returns the most significant review state from a list of
-// GitHub reviews. Priority: approved > changes_requested > commented.
+// githubReviewStatus summarizes reviewers' latest reviews. Changes requested
+// wins over an approval by another reviewer; historical reviews must not be
+// passed to this function.
 func githubReviewStatus(reviews []struct {
 	State string `json:"state"`
 }) string {
@@ -211,10 +226,10 @@ func githubReviewStatus(reviews []struct {
 		}
 	}
 	switch {
-	case hasApproved:
-		return "approved"
 	case hasChanges:
 		return "changes_requested"
+	case hasApproved:
+		return "approved"
 	case hasComment:
 		return "commented"
 	default:

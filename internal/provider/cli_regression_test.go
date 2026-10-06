@@ -99,6 +99,24 @@ func TestGitLabLookupDistinguishesAbsenceAndErrors(t *testing.T) {
 	}
 }
 
+func TestGitHubLookupUsesCurrentReviewDecision(t *testing.T) {
+	argsPath := fakeCLI(t, "gh")
+	t.Setenv("BIOME_CLI_RESPONSE", `[{"number":42,"title":"PR","state":"OPEN","url":"https://github.com/a/b/pull/42","headRefName":"feature","reviewDecision":"CHANGES_REQUESTED","latestReviews":[{"state":"APPROVED"}]}]`)
+	got := (&GitHubProvider{}).FetchPRsDetailedContext(context.Background(), t.TempDir(), []string{"feature"})["feature"]
+	if got.Err != nil || got.Info == nil || got.Info.ReviewStatus != "changes_requested" {
+		t.Fatalf("stale approval defeated current decision: %+v", got)
+	}
+	args := cliArgs(t, argsPath)
+	if len(args) < 3 || args[0] != "pr" || args[1] != "list" || !strings.Contains(strings.Join(args, ","), "reviewDecision") {
+		t.Fatalf("wrong gh arguments: %q", args)
+	}
+	t.Setenv("BIOME_CLI_RESPONSE", `[{"number":42,"title":"PR","state":"OPEN","url":"https://github.com/a/b/pull/42","headRefName":"feature","latestReviews":[{"state":"APPROVED"},{"state":"CHANGES_REQUESTED"}]}]`)
+	got = (&GitHubProvider{}).FetchPRsDetailedContext(context.Background(), t.TempDir(), []string{"feature"})["feature"]
+	if got.Err != nil || got.Info.ReviewStatus != "changes_requested" {
+		t.Fatalf("mixed current reviews reported approval: %+v", got)
+	}
+}
+
 func TestGitHubLookupDistinguishesAbsenceAndErrors(t *testing.T) {
 	fakeCLI(t, "gh")
 	p := &GitHubProvider{}
