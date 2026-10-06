@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/mdelapenya/biomelab/internal/sandbox"
 )
 
 func TestEnsureSandbox(t *testing.T) {
@@ -14,17 +16,22 @@ func TestEnsureSandbox(t *testing.T) {
 		t.Skip("fake sbx executable uses a POSIX shell")
 	}
 	for _, tc := range []struct {
-		name, listing, wantName                   string
+		name, listing, storedName, wantName       string
 		kits                                      []string
 		baseRef                                   string
+		generated, wrapper                        bool
 		listFail, createFail, wantCreate, wantErr bool
 	}{
 		{name: "plain", listing: `{"sandboxes":[]}`, wantName: "owner-repo-claude", wantCreate: true},
+		{name: "generated name when not stored", listing: `{"sandboxes":[]}`, generated: true, wantCreate: true},
 		{name: "kits", listing: `{"sandboxes":[]}`, wantName: "owner-repo-claude", wantCreate: true,
 			kits: []string{"docker.io/sbx/code-server-kit:latest", "docker.io/sbx/playwright-kit:latest"}},
+		{name: "legacy wrapper with mixin", listing: `{"sandboxes":[]}`, wantName: "owner-repo-claude", wantCreate: true, wrapper: true,
+			kits: []string{"docker.io/sbx/playwright-kit:latest"}},
 		{name: "sandbox kit base with mixin", listing: `{"sandboxes":[]}`, wantName: "owner-repo-claude", wantCreate: true,
 			baseRef: "docker.io/sbx/claude-kit:latest", kits: []string{"docker.io/sbx/playwright-kit:latest"}},
-		{name: "reuse alternate name", listing: `{"sandboxes":[{"name":"claude-owner-repo","status":"stopped"}]}`, wantName: "claude-owner-repo"},
+		{name: "do not adopt alternate name", listing: `{"sandboxes":[{"name":"claude-owner-repo","status":"stopped"}]}`, wantName: "owner-repo-claude", wantCreate: true},
+		{name: "reuse explicit legacy name", listing: `{"sandboxes":[{"name":"claude-owner-repo","status":"stopped"}]}`, storedName: "claude-owner-repo", wantName: "claude-owner-repo"},
 		{name: "never replace existing for kits", listing: `{"sandboxes":[{"name":"owner-repo-claude","status":"running"}]}`,
 			kits: []string{"docker.io/sbx/code-server-kit:latest"}, wantErr: true},
 		{name: "invalid discovery", listing: `broken-json`, wantErr: true},
@@ -55,11 +62,28 @@ esac
 			t.Setenv("TEST_CREATE_LOG", log)
 			t.Setenv("TEST_LIST_FAIL", boolString(tc.listFail))
 			t.Setenv("TEST_CREATE_FAIL", boolString(tc.createFail))
-			name, created, err := EnsureSandboxWithKit("owner/repo", "/workspace/my repo", "owner-repo-claude", "claude", tc.baseRef, tc.kits)
+			stored := tc.storedName
+			if stored == "" && !tc.generated {
+				stored = "owner-repo-claude"
+			}
+			var name string
+			var created bool
+			var err error
+			if tc.wrapper {
+				name, created, err = EnsureSandbox("owner/repo", "/workspace/my repo", stored, "claude", tc.kits)
+			} else {
+				name, created, err = EnsureSandboxWithKit("owner/repo", "/workspace/my repo", stored, "claude", tc.baseRef, tc.kits)
+			}
+			wantName := tc.wantName
+			if tc.generated {
+				wantName = sandbox.GeneratedName("/workspace/my repo", "claude")
+			} else if wantName == "" {
+				wantName = stored
+			}
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("error = %v, wantErr %v", err, tc.wantErr)
 			}
-			if !tc.wantErr && (name != tc.wantName || created != tc.wantCreate) {
+			if !tc.wantErr && (name != wantName || created != tc.wantCreate) {
 				t.Fatalf("name=%q created=%v", name, created)
 			}
 			data, readErr := os.ReadFile(log)
@@ -72,7 +96,7 @@ esac
 			if readErr != nil {
 				t.Fatal(readErr)
 			}
-			want := []string{"create", "--name", "owner-repo-claude"}
+			want := []string{"create", "--name", wantName}
 			for _, ref := range tc.kits {
 				want = append(want, "--kit", ref)
 			}

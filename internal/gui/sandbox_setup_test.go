@@ -2,6 +2,7 @@ package gui
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -113,5 +114,14 @@ func TestKitInstallReferencesMatchCreationAndPersist(t *testing.T) {
 		if k.Reference != refs[i] || k.Ref != "latest" {
 			t.Fatalf("persisted kit = %+v", k)
 		}
+	}
+}
+
+func TestNewSandboxModeUsesRepositoryIdentity(t *testing.T) {
+	root := t.TempDir()
+	a := newSandboxMode(filepath.Join(root, "one", "widget"), "claude")
+	b := newSandboxMode(filepath.Join(root, "two", "widget"), "claude")
+	if a.SandboxName == "" || b.SandboxName == "" || a.SandboxName == b.SandboxName {
+		t.Fatalf("repository sandbox names collided: %q and %q", a.SandboxName, b.SandboxName)
 	}
 }

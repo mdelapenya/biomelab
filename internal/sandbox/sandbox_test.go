@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -141,76 +142,62 @@ func TestSanitizeName(t *testing.T) {
 }
 
 func TestCandidates(t *testing.T) {
-	tests := []struct {
-		name     string
-		stored   string
-		repoName string
-		repoPath string
-		agent    string
-		want     []string
-	}{
-		{
-			// biomelab stored "<repo>-<agent>" but sbx actually created
-			// "<agent>-<repo>". Both orderings must appear in the list.
-			name:     "both orderings included when repo is owner/name",
-			stored:   "pay2class-claude",
-			repoName: "mdelapenya/pay2class",
-			repoPath: "/Users/me/src/github.com/mdelapenya/pay2class",
-			agent:    "claude",
-			want: []string{
-				"pay2class-claude",
-				"mdelapenya-pay2class-claude",
-				"claude-mdelapenya-pay2class",
-				"claude-pay2class",
-			},
-		},
-		{
-			name:     "all forms converge — deduplicated",
-			stored:   "acme-widget-claude",
-			repoName: "acme/widget",
-			repoPath: "/tmp/widget",
-			agent:    "claude",
-			want: []string{
-				"acme-widget-claude",
-				"claude-acme-widget",
-				"widget-claude",
-				"claude-widget",
-			},
-		},
-		{
-			name:     "stored empty — still derives from repo in both orderings",
-			stored:   "",
-			repoName: "owner/repo",
-			repoPath: "/tmp/repo",
-			agent:    "claude",
-			want: []string{
-				"owner-repo-claude",
-				"claude-owner-repo",
-				"repo-claude",
-				"claude-repo",
-			},
-		},
-		{
-			name:     "no agent — only stored name returned",
-			stored:   "abc",
-			repoName: "owner/repo",
-			repoPath: "/tmp/repo",
-			agent:    "",
-			want:     []string{"abc"},
-		},
-		{
-			name:   "everything empty",
-			stored: "",
-			want:   nil,
-		},
+	root := t.TempDir()
+	a := filepath.Join(root, "one", "widget")
+	b := filepath.Join(root, "two", "widget")
+	for _, path := range []string{a, b} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := Candidates(tt.stored, tt.repoName, tt.repoPath, tt.agent)
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Candidates() = %v, want %v", got, tt.want)
-			}
-		})
+	an := GeneratedName(a, "claude")
+	bn := GeneratedName(b, "claude")
+	if an == bn || !strings.HasPrefix(an, "widget-claude-") || !strings.HasPrefix(bn, "widget-claude-") {
+		t.Fatalf("repo identity collapsed: %q and %q", an, bn)
+	}
+	if got := Candidates("", "widget", a, "claude"); !reflect.DeepEqual(got, []string{an}) {
+		t.Fatalf("new repo candidates = %v", got)
+	}
+	if got := Candidates("widget-claude", "widget", a, "claude"); !reflect.DeepEqual(got, []string{"widget-claude", an}) {
+		t.Fatalf("stored legacy name was lost: %v", got)
+	}
+	if _, _, ok := MatchStatus(map[string]Status{bn: StatusRunning, "widget-claude": StatusStopped}, Candidates("", "widget", a, "claude")); ok {
+		t.Fatal("repo adopted another repo's or an ambiguous legacy sandbox")
+	}
+	if got := Candidates("", "widget", "", "claude"); got != nil {
+		t.Fatalf("missing repo path yielded candidates: %v", got)
+	}
+	if got := Candidates("explicit", "widget", "", "claude"); !reflect.DeepEqual(got, []string{"explicit"}) {
+		t.Fatalf("explicit association lost: %v", got)
+	}
+}
+
+func TestGeneratedNameCanonicalPath(t *testing.T) {
+	root := t.TempDir()
+	link := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(root, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if got, want := GeneratedName(link, "Claude"), GeneratedName(root, "Claude"); got != want {
+		t.Fatalf("alias generated a different name: %q != %q", got, want)
+	}
+}
+
+func TestPreflightContextCancelsDaemonProbe(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake sbx shell script is Unix-only")
+	}
+	binDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(binDir, "sbx"), []byte("#!/bin/sh\nexec sleep 10\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	err := PreflightContext(ctx)
+	if !errors.Is(err, context.DeadlineExceeded) || time.Since(start) > 3*time.Second {
+		t.Fatalf("probe cancellation = %v after %s", err, time.Since(start))
 	}
 }
 
@@ -260,22 +247,4 @@ func TestCommandString(t *testing.T) {
 			t.Errorf("CommandString() = %q, want %q", got, want)
 		}
 	})
-}
-
-func TestPreflightContextCancelsDaemonProbe(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("fake sbx shell script is Unix-only")
-	}
-	binDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(binDir, "sbx"), []byte("#!/bin/sh\nexec sleep 10\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-	start := time.Now()
-	err := PreflightContext(ctx)
-	if !errors.Is(err, context.DeadlineExceeded) || time.Since(start) > 3*time.Second {
-		t.Fatalf("probe cancellation = %v after %s", err, time.Since(start))
-	}
 }

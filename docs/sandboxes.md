@@ -11,6 +11,8 @@ BiomeLab supports host mode and recommends Docker Sandboxes for agent execution.
 
 An existing sandbox can be registered without changing its kits. Adding a sandbox to a regular-only repository replaces its regular entry. Multiple agents can have separate sandbox modes for the same repository.
 
+New sandbox names include a short repository-path identifier, so repositories with the same directory name stay separate. A sandbox name already saved in a repository's configuration remains associated with that repository. BiomeLab does not infer ownership of older, unsaved sandboxes from their name alone; register the intended name explicitly before using or removing it.
+
 ## Kits
 
 Catalog discovery lists published kit artifacts in Docker Hub's `sbx` organization. Ordinary container images are excluded. A sandbox kit supplies the base agent and is passed as the positional workload to `sbx create`; mixin kits add tools or configuration through `--kit`. The picker marks each kind and requires one sandbox base. It keeps incompatible mixins visible and explains why Continue is unavailable until the selection is valid.
