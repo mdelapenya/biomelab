@@ -142,3 +142,15 @@ func TestRepoStateApplyCLIAvailabilityRequiresPresence(t *testing.T) {
 		t.Fatalf("zero-valued available result was lost: (%v, %v)", s.HasCLIAvail, s.CLIAvail)
 	}
 }
+
+func TestRepoStateApplyPreservesSandboxStatusWhenInventoryFails(t *testing.T) {
+	s := &RepoState{SandboxStatus: 1}
+	s.Apply(ops.RefreshResult{SandboxStatus: 0, HasSbxStatus: false})
+	if s.SandboxStatus != 1 {
+		t.Fatal("failed inventory reset prior sandbox status")
+	}
+	s.Apply(ops.RefreshResult{SandboxStatus: 0, HasSbxStatus: true})
+	if s.SandboxStatus != 0 {
+		t.Fatal("successful empty inventory did not mark sandbox missing")
+	}
+}
