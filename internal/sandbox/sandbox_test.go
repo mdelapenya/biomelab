@@ -1,8 +1,14 @@
 package sandbox
 
 import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
+	"time"
 )
 
 func TestCreateArgs(t *testing.T) {
@@ -254,4 +260,22 @@ func TestCommandString(t *testing.T) {
 			t.Errorf("CommandString() = %q, want %q", got, want)
 		}
 	})
+}
+
+func TestPreflightContextCancelsDaemonProbe(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake sbx shell script is Unix-only")
+	}
+	binDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(binDir, "sbx"), []byte("#!/bin/sh\nexec sleep 10\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	err := PreflightContext(ctx)
+	if !errors.Is(err, context.DeadlineExceeded) || time.Since(start) > 3*time.Second {
+		t.Fatalf("probe cancellation = %v after %s", err, time.Since(start))
+	}
 }
