@@ -322,8 +322,12 @@ func (r *Repository) listWorktreesQuickLocked() ([]Worktree, error) {
 	if err != nil {
 		return result, nil
 	}
+	metadataRoot, err := worktreeMetadataRoot(r.repoRoot)
+	if err != nil {
+		return nil, err
+	}
 	for _, name := range names {
-		wtMetaDir := filepath.Join(r.repoRoot, ".git", "worktrees", name)
+		wtMetaDir := filepath.Join(metadataRoot, name)
 		wtPath, pathErr := readWorktreePath(wtMetaDir)
 		if pathErr != nil {
 			wtPath = filepath.Join(r.worktreesDir(), name)
@@ -611,7 +615,11 @@ func (r *Repository) syncStatus(branch string) SyncStatus {
 
 // linkedWorktree returns info about a linked worktree by name.
 func (r *Repository) linkedWorktree(name string) (*Worktree, error) {
-	wtMetaDir := filepath.Join(r.repoRoot, ".git", "worktrees", name)
+	metadataRoot, err := worktreeMetadataRoot(r.repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	wtMetaDir := filepath.Join(metadataRoot, name)
 
 	// Read the actual worktree path from the gitdir file.
 	// The gitdir file contains the path to the worktree's .git file.
@@ -995,7 +1003,11 @@ func (r *Repository) RemoveWorktree(name string) error {
 	// Read the worktree path and branch name before removing metadata.
 	// The branch name read from HEAD may differ from `name` for branches
 	// with slashes (worktree name is sanitized, branch ref keeps slashes).
-	wtMetaDir := filepath.Join(r.repoRoot, ".git", "worktrees", name)
+	metadataRoot, err := worktreeMetadataRoot(r.repoRoot)
+	if err != nil {
+		return fmt.Errorf("resolve worktree metadata directory: %w", err)
+	}
+	wtMetaDir := filepath.Join(metadataRoot, name)
 	if _, err := os.Stat(wtMetaDir); err != nil {
 		return fmt.Errorf("worktree %q not found: %w", name, err)
 	}
@@ -1036,7 +1048,10 @@ func (r *Repository) RemoveWorktree(name string) error {
 
 // pruneWorktrees removes worktree metadata entries whose working directories no longer exist.
 func (r *Repository) pruneWorktrees() {
-	worktreesDir := filepath.Join(r.repoRoot, ".git", "worktrees")
+	worktreesDir, err := worktreeMetadataRoot(r.repoRoot)
+	if err != nil {
+		return
+	}
 	entries, err := os.ReadDir(worktreesDir)
 	if err != nil {
 		return
