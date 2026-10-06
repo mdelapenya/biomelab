@@ -1,12 +1,37 @@
 package notes
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestCreateContextFileRemovesFailedNewFileAndRetries(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "issue.md")
+	previous := writeContextFile
+	writeContextFile = func(f *os.File, content []byte) (int, error) {
+		_, _ = f.Write(content[:1])
+		return 1, errors.New("simulated partial write")
+	}
+	defer func() { writeContextFile = previous }()
+	if err := createContextFile(path, []byte("complete")); err == nil {
+		t.Fatal("partial write succeeded")
+	}
+	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("partial snapshot remained: %v", err)
+	}
+	writeContextFile = previous
+	if err := createContextFile(path, []byte("complete")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != "complete" {
+		t.Fatalf("retry snapshot = %q, %v", got, err)
+	}
+}
 
 func TestIssueContextPaths(t *testing.T) {
 	root := "/some/worktree"
