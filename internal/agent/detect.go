@@ -58,19 +58,14 @@ func (d *Detector) DetectFromProcessesContext(ctx context.Context, procs []proce
 		}
 		name := strings.ToLower(filepath.Base(p.Name))
 		cmdline := strings.ToLower(p.Cmdline)
-		matched := false
-		for kind, patterns := range ProcessPatterns {
-			for _, pat := range patterns {
-				if strings.Contains(name, pat) || strings.Contains(cmdline, pat) {
-					p.Name = string(kind) // normalize to kind name
-					agents = append(agents, p)
-					matched = true
-					break
-				}
-			}
-			if matched {
-				break
-			}
+		kind := matchAgent(name)
+		if kind == "" {
+			// Node-based agents expose only the script path in Cmdline.
+			kind = matchAgentCommandLine(cmdline)
+		}
+		if kind != "" {
+			p.Name = string(kind)
+			agents = append(agents, p)
 		}
 	}
 
@@ -141,4 +136,28 @@ func (d *Detector) DetectFromProcessesContext(ctx context.Context, procs []proce
 	}
 
 	return result
+}
+
+// The order is stable, and executable names take precedence over incidental
+// agent names in arguments (for example `claude --prompt codex`).
+var agentKinds = []Kind{Claude, Kiro, Copilot, Codex, OpenCode, Gemini}
+
+func matchAgent(value string) Kind {
+	for _, kind := range agentKinds {
+		for _, pattern := range ProcessPatterns[kind] {
+			if strings.Contains(value, pattern) {
+				return kind
+			}
+		}
+	}
+	return ""
+}
+
+func matchAgentCommandLine(cmdline string) Kind {
+	for _, arg := range strings.Fields(cmdline) {
+		if kind := matchAgent(arg); kind != "" {
+			return kind
+		}
+	}
+	return ""
 }
