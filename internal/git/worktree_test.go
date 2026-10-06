@@ -691,6 +691,41 @@ func TestRemoveWorktree_Simple(t *testing.T) {
 	}
 }
 
+func TestRemoveDetachedWorktreePreservesUnrelatedBranch(t *testing.T) {
+	dir, _ := setupTestRepo(t)
+	repo, err := OpenRepository(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	branch := runGit(t, dir, "symbolic-ref", "--short", "HEAD")
+	before := runGit(t, dir, "rev-parse", "refs/heads/"+branch)
+	runGit(t, dir, "config", "branch."+branch+".remote", "origin")
+
+	// Native git names metadata after the detached worktree directory, even
+	// when that name is a branch checked out in the main worktree.
+	wtPath := filepath.Join(t.TempDir(), branch)
+	runGit(t, dir, "worktree", "add", "--detach", wtPath)
+	wts, err := repo.ListWorktrees()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wts) != 2 || wts[1].Name != branch || !wts[1].Detached {
+		t.Fatalf("worktrees = %+v, want detached worktree named %q", wts, branch)
+	}
+	if err := repo.RemoveWorktree(wts[1].Name); err != nil {
+		t.Fatal(err)
+	}
+	if got := runGit(t, dir, "rev-parse", "refs/heads/"+branch); got != before {
+		t.Fatalf("unrelated branch moved or disappeared: got %s, want %s", got, before)
+	}
+	if got := runGit(t, dir, "config", "--get", "branch."+branch+".remote"); got != "origin" {
+		t.Fatalf("unrelated branch config changed: %q", got)
+	}
+	if _, err := os.Stat(wtPath); !os.IsNotExist(err) {
+		t.Errorf("detached worktree directory remains: %v", err)
+	}
+}
+
 func TestDirtyDetection(t *testing.T) {
 	dir, _ := setupTestRepo(t)
 
