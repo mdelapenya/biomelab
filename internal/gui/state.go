@@ -29,13 +29,14 @@ const (
 // RepoState holds all UI-relevant state for a single repo+mode.
 type RepoState struct {
 	// Domain data from business logic.
-	Worktrees     []git.Worktree
-	Agents        agent.DetectionResult
-	IDEs          ide.DetectionResult
-	Terminals     terminal.DetectionResult
-	PRs           provider.PRResult
-	CLIAvail      provider.CLIAvailability
-	Provider      provider.Provider
+	Worktrees        []git.Worktree
+	Agents           agent.DetectionResult
+	IDEs             ide.DetectionResult
+	Terminals        terminal.DetectionResult
+	PRs              provider.PRResult
+	CLIAvail         provider.CLIAvailability
+	HasCLIAvail      bool
+	Provider         provider.Provider
 	SandboxStatus    sandbox.Status
 	SbxClientVersion string
 	SbxServerVersion string
@@ -100,6 +101,10 @@ func (s *RepoState) Apply(result ops.RefreshResult) bool {
 	}
 	if result.Terminals != nil {
 		s.Terminals = result.Terminals
+	}
+	if result.HasCLIAvail {
+		s.CLIAvail = result.CLIAvail
+		s.HasCLIAvail = true
 	}
 	if result.HasPRs {
 		s.PRs = result.PRs

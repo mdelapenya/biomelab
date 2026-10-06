@@ -722,7 +722,7 @@ func (a *App) handleSendPR() {
 		a.setStatus("Cannot create PR from detached HEAD", true)
 		return
 	}
-	if re.state.CLIAvail != provider.CLIAvailable {
+	if !re.state.HasCLIAvail || re.state.CLIAvail != provider.CLIAvailable {
 		a.setStatus("CLI tool required for PR creation", true)
 		return
 	}

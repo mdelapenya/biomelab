@@ -5,6 +5,7 @@ import (
 
 	"github.com/mdelapenya/biomelab/internal/git"
 	"github.com/mdelapenya/biomelab/internal/ops"
+	"github.com/mdelapenya/biomelab/internal/provider"
 )
 
 // TestRepoStateApply_DropsStaleSnapshot is the regression guard for the
@@ -123,5 +124,21 @@ func TestRepoStateApplyPreservesSelectedWorktreeAcrossSortedRefresh(t *testing.T
 	s.SetWorktrees([]git.Worktree{{Path: "/repo", Branch: "main"}, {Path: "/wt/alpha", Branch: "alpha"}})
 	if s.SelectedCard != 1 {
 		t.Fatalf("selection after removal = %d, want nearest remaining card", s.SelectedCard)
+	}
+}
+
+func TestRepoStateApplyCLIAvailabilityRequiresPresence(t *testing.T) {
+	s := &RepoState{}
+	s.Apply(ops.RefreshResult{CLIAvail: provider.CLINotAuthenticated})
+	if s.HasCLIAvail {
+		t.Fatal("quick/local result changed CLI availability")
+	}
+	s.Apply(ops.RefreshResult{CLIAvail: provider.CLINotAuthenticated, HasCLIAvail: true})
+	if !s.HasCLIAvail || s.CLIAvail != provider.CLINotAuthenticated {
+		t.Fatalf("CLI state = (%v, %v), want known and unauthenticated", s.HasCLIAvail, s.CLIAvail)
+	}
+	s.Apply(ops.RefreshResult{CLIAvail: provider.CLIAvailable, HasCLIAvail: true})
+	if !s.HasCLIAvail || s.CLIAvail != provider.CLIAvailable {
+		t.Fatalf("zero-valued available result was lost: (%v, %v)", s.HasCLIAvail, s.CLIAvail)
 	}
 }
