@@ -49,6 +49,7 @@ type App struct {
 	active            int // active repo entry index
 	dashSlot          *fyne.Container
 	shellSlot         *fyne.Container
+	sidebarWidth      float32 // logical drag preference; UI-thread owned
 	dashboard         *Dashboard
 	refreshMgr        *RefreshManager
 	sbxStatuses       map[string]sandbox.Status
@@ -448,7 +449,7 @@ func (a *App) buildMainLayout() fyne.CanvasObject {
 	// Start the active repo's refresh manager.
 	a.repos[0].refreshMgr.Start()
 
-	a.shellSlot = container.NewStack(newShellLayout(a.repoPanel.Content(), a.dashSlot, a.buildDepsBanner()))
+	a.shellSlot = container.NewStack(newShellLayoutWithWidth(a.repoPanel.Content(), a.dashSlot, a.buildDepsBanner(), &a.sidebarWidth))
 	return a.shellSlot
 }
 
@@ -604,7 +605,7 @@ func (a *App) refreshShellLayout() {
 	if a.shellSlot == nil || a.repoPanel == nil || a.dashSlot == nil {
 		return
 	}
-	a.shellSlot.Objects = []fyne.CanvasObject{newShellLayout(a.repoPanel.Content(), a.dashSlot, a.sysdepsBanner)}
+	a.shellSlot.Objects = []fyne.CanvasObject{newShellLayoutWithWidth(a.repoPanel.Content(), a.dashSlot, a.sysdepsBanner, &a.sidebarWidth)}
 	a.shellSlot.Refresh()
 }
 

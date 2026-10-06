@@ -2,6 +2,8 @@
 
 Launch BiomeLab from your desktop, or run `biomelab` inside a repository to auto-register it in host mode. Otherwise, click **Add repository**, or focus the projects panel and press `a`. The left panel lists repositories and their host or sandbox modes; selecting a mode updates the dashboard. `Tab` switches panel focus. Drag a repository's `☰` handle to reorder it; the order is saved.
 
+Drag the vertical divider at the right edge of the projects panel to resize it. The chosen width is kept for the current app run through view changes, refreshes, theme changes, and zoom; narrow windows temporarily clamp it so the workspace stays usable.
+
 ## Board, list, and inspector
 
 The prominent **Main checkout** card spans the full workspace above the linked worktrees and inspector in Board, List, and Grid. It stays pinned while you scroll the worktree browser, and shows the main branch, path, checkout state, and detected activity. **Terminal**, **Editor**, and **Notes** act on the main checkout, even when a linked worktree is selected. **Details** expands extra metadata; **Hide details** collapses it. Details has no dedicated keyboard shortcut. The workspace and main-card **More** menus offer **Create from GitHub issue** and **Fetch GitHub PR**, available for GitHub repositories; the existing main-card `i` and `f` shortcuts still work.

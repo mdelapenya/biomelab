@@ -102,7 +102,7 @@ func (l *workspaceToolbarLayout) height(objects []fyne.CanvasObject, width float
 	if controlsWidth+scaledSize(100) <= width {
 		return scaledSize(44)
 	}
-	return l.flow(objects[1:], width, false, scaledSize(36)) + scaledSize(spaceSM)
+	return l.flow(objects[1:], width, false, objects[0].MinSize().Height+scaledSize(spaceXS*2)) + scaledSize(spaceSM)
 }
 func (l *workspaceToolbarLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	pad := scaledSize(spaceMD)
@@ -123,8 +123,9 @@ func (l *workspaceToolbarLayout) Layout(objects []fyne.CanvasObject, size fyne.S
 		}
 	} else {
 		objects[0].Move(fyne.NewPos(pad, scaledSize(spaceXS)))
-		objects[0].Resize(fyne.NewSize(width, scaledSize(30)))
-		l.flow(objects[1:], width, true, scaledSize(36))
+		titleHeight := objects[0].MinSize().Height
+		objects[0].Resize(fyne.NewSize(width, titleHeight))
+		l.flow(objects[1:], width, true, titleHeight+scaledSize(spaceXS*2))
 	}
 }
 

@@ -25,7 +25,7 @@ func TestShellReservesCompactRailAndResponsiveWorkspace(t *testing.T) {
 	for _, width := range []float32{1100, 1440, 800, 20} {
 		shell.Resize(fyne.NewSize(width, 700))
 		side := rail.Size().Width
-		if width >= 800 && (side < 160 || side > 190) {
+		if width >= 800 && side != 190 {
 			t.Fatalf("rail width %v at window width %v", side, width)
 		}
 		if workspace.Position().X != side+1 || workspace.Size().Width != width-side-1 || workspace.Size().Height != 700 {
