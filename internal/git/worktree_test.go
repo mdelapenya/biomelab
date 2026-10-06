@@ -977,6 +977,39 @@ func TestFetchPR_SlashedBranchName(t *testing.T) {
 	})
 }
 
+func TestFetchPRPreservesExistingLocalBranch(t *testing.T) {
+	remoteDir := setupRemoteWithPRRef(t, 73)
+	for _, checkedOut := range []bool{false, true} {
+		name := "unattached"
+		if checkedOut {
+			name = "checked out"
+		}
+		t.Run(name, func(t *testing.T) {
+			dir, _ := setupTestRepo(t)
+			runGit(t, dir, "remote", "add", "origin", remoteDir)
+			branch := runGit(t, dir, "symbolic-ref", "--short", "HEAD")
+			if !checkedOut {
+				branch = "topic"
+				runGit(t, dir, "branch", branch)
+			}
+			before := runGit(t, dir, "rev-parse", "refs/heads/"+branch)
+			repo, err := OpenRepository(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := repo.FetchPR(73, branch, remoteDir); err == nil || !strings.Contains(err.Error(), "already exists") {
+				t.Fatalf("FetchPR collision error = %v", err)
+			}
+			if got := runGit(t, dir, "rev-parse", "refs/heads/"+branch); got != before {
+				t.Fatalf("local branch moved: got %s, want %s", got, before)
+			}
+			if _, err := os.Stat(filepath.Join(dir, ".biomelab-worktrees", branch)); !os.IsNotExist(err) {
+				t.Fatalf("worktree created despite collision: %v", err)
+			}
+		})
+	}
+}
+
 // setupRepoWithMultipleRemotes creates a local repo with two remotes ("origin" and "upstream")
 // that share a common history. Origin is the initial repo, upstream is cloned from origin,
 // and local is cloned from origin with upstream added as a second remote.
