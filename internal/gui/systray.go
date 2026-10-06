@@ -24,14 +24,13 @@ func (a *App) setupSystemTray() {
 		return
 	}
 
+	a.mainWindowVisible = true
 	toggleItem := fyne.NewMenuItem("Hide", nil)
 	toggleItem.Action = func() {
-		if a.window.Content().Visible() {
-			a.window.Hide()
-			toggleItem.Label = "Show"
-		} else {
-			a.window.Show()
+		if a.toggleMainWindowVisible() {
 			toggleItem.Label = "Hide"
+		} else {
+			toggleItem.Label = "Show"
 		}
 		desk.SetSystemTrayMenu(a.trayMenu)
 	}
@@ -82,10 +81,24 @@ func (a *App) setupSystemTray() {
 
 	// Update label when window is hidden via close button.
 	a.window.SetCloseIntercept(func() {
-		a.window.Hide()
+		a.setMainWindowVisible(false)
 		toggleItem.Label = "Show"
 		desk.SetSystemTrayMenu(a.trayMenu)
 	})
+}
+
+func (a *App) toggleMainWindowVisible() bool {
+	a.setMainWindowVisible(!a.mainWindowVisible)
+	return a.mainWindowVisible
+}
+
+func (a *App) setMainWindowVisible(visible bool) {
+	a.mainWindowVisible = visible
+	if visible {
+		a.window.Show()
+	} else {
+		a.window.Hide()
+	}
 }
 
 // openConfigFile opens the config file with the system's default application.

@@ -39,8 +39,9 @@ type repoEntry struct {
 
 // App is the top-level Fyne application.
 type App struct {
-	fyneApp fyne.App
-	window  fyne.Window
+	fyneApp           fyne.App
+	window            fyne.Window
+	mainWindowVisible bool
 
 	theme             *biomeTheme
 	repoPanel         *RepoPanel
