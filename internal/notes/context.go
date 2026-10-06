@@ -105,12 +105,37 @@ func createContextFile(path string, content []byte) error {
 	if err != nil {
 		return err
 	}
-	if _, err := f.Write(content); err != nil {
+	createdInfo, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		_ = os.Remove(path)
+		return fmt.Errorf("inspect created context file: %w", err)
+	}
+	// A failed new snapshot is not a completed snapshot. Remove only the file
+	// this call created; an existing file is always preserved above.
+	complete := false
+	defer func() {
+		if !complete {
+			// Another process may have replaced this path after our write
+			// failed. Never delete a replacement we did not create.
+			if current, err := os.Lstat(path); err == nil && os.SameFile(createdInfo, current) {
+				_ = os.Remove(path)
+			}
+		}
+	}()
+	if _, err := writeContextFile(f, content); err != nil {
 		_ = f.Close()
 		return fmt.Errorf("write: %w", err)
 	}
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("close: %w", err)
 	}
+	complete = true
 	return nil
+}
+
+// Kept as a small seam so a failed write and its retry can be exercised
+// without relying on platform-specific full-filesystem devices.
+var writeContextFile = func(f *os.File, content []byte) (int, error) {
+	return f.Write(content)
 }
