@@ -33,6 +33,12 @@ func CreateArgs(name, agent, repoPath string, kitURLs []string) []string {
 	return append(args, agent, repoPath)
 }
 
+// CreateWithKitArgs uses a sandbox kit as the positional workload. Only mixin
+// references belong in --kit flags; the engine permits one sandbox base.
+func CreateWithKitArgs(name, sandboxRef, repoPath string, mixinRefs []string) []string {
+	return CreateArgs(name, sandboxRef, repoPath, mixinRefs)
+}
+
 // StartAgentScript is the well-known path where the sbx daemon writes the
 // per-sandbox agent launcher. `sbx run` executes it as
 // `/bin/bash <script>`; we do the same via `sbx exec` so a worktree session

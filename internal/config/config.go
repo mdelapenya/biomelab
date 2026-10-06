@@ -12,8 +12,9 @@ import (
 // in Ref and no Reference; they remain readable without migration.
 type KitInstall struct {
 	Name      string `json:"name"`                // kit directory in sbx-kits-contrib (e.g. "code-server")
+	Kind      string `json:"kind,omitempty"`      // sandbox base or mixin; absent in older entries
 	Ref       string `json:"ref,omitempty"`       // Docker Hub tag, or a legacy Git SHA
-	Reference string `json:"reference,omitempty"` // exact --kit argument
+	Reference string `json:"reference,omitempty"` // exact kit reference used at creation
 }
 
 // ModeEntry describes how a repo is managed: regular (host worktrees) or

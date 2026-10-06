@@ -60,7 +60,7 @@ internal/
   terminal/            Terminal detection, launch, activation (platform-specific)
   github/pr.go         GitHub-specific PR helpers (ParsePRRef, ValidatePR)
   github/issue.go      GitHub issue reference parsing and authenticated gh lookup
-  kits/kits.go         Compatible catalog discovery and OCI kit references
+  kits/kits.go         Docker Hub sbx kit discovery and OCI references
   notes/notes.go       Per-worktree Markdown notes and PR drafts
   notes/context.go     Issue snapshot and progress handoff artifacts
   notes/bootstrap.go   Agent instruction handoff for issue worktrees
@@ -206,7 +206,7 @@ type RepoEntry struct {
     Modes []ModeEntry
 }
 type KitInstall struct {
-    Name, Ref, Reference string
+    Name, Kind, Ref, Reference string
 }
 type Config struct {
     Repos []RepoEntry // slice order is the displayed repository order
@@ -221,21 +221,30 @@ The old flat format (with `Sandbox bool`) is auto-migrated on load.
 Project-panel `n`, host-card `n`, and adding a repository in sandbox mode share
 `beginSandboxSetup`. The agent prompt asks whether to add kits; only Yes calls
 catalog discovery. Discovery is cancellable and runs off the UI thread. The
-picker offers mixins compatible with the chosen agent (`requires.agent`, or
-legacy `extends`). One final confirmation creates or reuses the sandbox, then
-registers the mode and mirrors persisted modes into the UI. Creation failures
+picker displays every published Docker Hub `sbx` kit in eight-card pages, with
+kind and logo, and keeps selection across pages. It requires exactly one
+`kind: sandbox` base and checks selected mixins' `requires.agent` affinity
+against that base and its bounded `extends` lineage.
+The chosen sandbox kit is the positional workload for `sbx create`; mixins are
+passed as repeated `--kit` arguments. The no-kit path uses the selected built-in
+agent. One final confirmation creates or reuses the sandbox, then registers
+the mode and mirrors persisted modes into the UI. Creation failures
 and cancellation do not save a placeholder mode. In-flight creation is guarded
 by sandbox name, and status messages belong to the originating repository.
 Kits are selectable only during initial setup. Adding kits later would recreate
 the agent container inside the sandbox; there is no post-creation kit action or
 automatic sandbox removal/recreation path.
 
-`internal/kits` discovers metadata with `gh api`, but supplies Docker Hub OCI
-references (`docker.io/sbx/<directory>-kit:latest`) to every kit installation
-path. The directory, not necessarily `spec.name`, determines the artifact name.
-`KitInstall.Reference` stores that exact argument; `Ref` stores `latest` for new
-installs. Older entries containing a Git SHA remain readable. `latest` is a
-rolling tag, not an immutable installed-version identifier.
+`internal/kits` discovers kit artifacts from Docker Hub's `sbx` namespace and
+excludes ordinary images. It uses kit metadata to distinguish sandbox bases
+from mixins. `KitInstall.Reference` stores the exact OCI reference used for
+creation, `Kind` records its role, and `Ref` stores `latest` for new installs.
+Older entries containing a Git SHA remain readable. `latest` is a rolling tag,
+not an immutable installed-version identifier. At app startup a bounded
+background refresh warms catalog payloads and logos under
+`~/.biomelab/cache/kits`. A complete one-hour catalog snapshot lets a warm
+picker open without HTTP requests; failed refreshes retain the last complete
+snapshot.
 
 ## Task notes
 

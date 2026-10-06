@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"context"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -14,6 +15,7 @@ import (
 	"github.com/mdelapenya/biomelab/internal/config"
 	"github.com/mdelapenya/biomelab/internal/git"
 	"github.com/mdelapenya/biomelab/internal/ide"
+	"github.com/mdelapenya/biomelab/internal/kits"
 	"github.com/mdelapenya/biomelab/internal/ops"
 	"github.com/mdelapenya/biomelab/internal/process"
 	"github.com/mdelapenya/biomelab/internal/provider"
@@ -157,6 +159,13 @@ func (a *App) Run() {
 	// System tray: closing the window hides to tray instead of quitting.
 	// SetCloseIntercept is set inside setupSystemTray.
 	a.setupSystemTray()
+	// Keep the published kit catalog and logos warm for a later picker visit.
+	// Refresh is best-effort and never holds the desktop startup path.
+	kitRefreshCtx, cancelKitRefresh := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancelKitRefresh()
+	go func() {
+		_ = kits.RefreshCache(kitRefreshCtx)
+	}()
 
 	a.window.ShowAndRun()
 }

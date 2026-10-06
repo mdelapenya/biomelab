@@ -56,7 +56,7 @@ Install only the tools needed for your workflow. The tray's **Dependencies** dia
 
 | Tool | Enables |
 |---|---|
-| `gh`, authenticated with `gh auth login` | GitHub status, PR creation and PR checkout; sandbox kit catalog discovery |
+| `gh`, authenticated with `gh auth login` | GitHub status, PR creation and PR checkout |
 | `glab`, authenticated with `glab auth login` | GitLab MR status and creation |
 | `sbx`, initialized with `sbx ls` | Docker Sandbox lifecycle and sessions |
 | `rgt` | Optional re_gent activity integration and JSON export |

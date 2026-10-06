@@ -16,11 +16,14 @@ func TestEnsureSandbox(t *testing.T) {
 	for _, tc := range []struct {
 		name, listing, wantName                   string
 		kits                                      []string
+		baseRef                                   string
 		listFail, createFail, wantCreate, wantErr bool
 	}{
 		{name: "plain", listing: `{"sandboxes":[]}`, wantName: "owner-repo-claude", wantCreate: true},
 		{name: "kits", listing: `{"sandboxes":[]}`, wantName: "owner-repo-claude", wantCreate: true,
 			kits: []string{"docker.io/sbx/code-server-kit:latest", "docker.io/sbx/playwright-kit:latest"}},
+		{name: "sandbox kit base with mixin", listing: `{"sandboxes":[]}`, wantName: "owner-repo-claude", wantCreate: true,
+			baseRef: "docker.io/sbx/claude-kit:latest", kits: []string{"docker.io/sbx/playwright-kit:latest"}},
 		{name: "reuse alternate name", listing: `{"sandboxes":[{"name":"claude-owner-repo","status":"stopped"}]}`, wantName: "claude-owner-repo"},
 		{name: "never replace existing for kits", listing: `{"sandboxes":[{"name":"owner-repo-claude","status":"running"}]}`,
 			kits: []string{"docker.io/sbx/code-server-kit:latest"}, wantErr: true},
@@ -52,7 +55,7 @@ esac
 			t.Setenv("TEST_CREATE_LOG", log)
 			t.Setenv("TEST_LIST_FAIL", boolString(tc.listFail))
 			t.Setenv("TEST_CREATE_FAIL", boolString(tc.createFail))
-			name, created, err := EnsureSandbox("owner/repo", "/workspace/my repo", "owner-repo-claude", "claude", tc.kits)
+			name, created, err := EnsureSandboxWithKit("owner/repo", "/workspace/my repo", "owner-repo-claude", "claude", tc.baseRef, tc.kits)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("error = %v, wantErr %v", err, tc.wantErr)
 			}
@@ -73,7 +76,11 @@ esac
 			for _, ref := range tc.kits {
 				want = append(want, "--kit", ref)
 			}
-			want = append(want, "claude", "/workspace/my repo")
+			workload := "claude"
+			if tc.baseRef != "" {
+				workload = tc.baseRef
+			}
+			want = append(want, workload, "/workspace/my repo")
 			if got := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n"); !reflect.DeepEqual(got, want) {
 				t.Fatalf("args = %q, want %q", got, want)
 			}
