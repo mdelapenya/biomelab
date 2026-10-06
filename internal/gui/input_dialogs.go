@@ -2,6 +2,7 @@ package gui
 
 import (
 	"net/url"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -14,24 +15,39 @@ import (
 const sbxInstallURL = "https://docs.docker.com/ai/sandboxes/"
 
 func showBranchInput(parent fyne.Window, onDone func(), onSubmit func(name string)) dialog.Dialog {
-	var d *dialog.ConfirmDialog
+	var d *dialog.CustomDialog
 
 	entry := newDialogEntry(func() { d.Hide() })
 	entry.TextStyle.Monospace = true
 	entry.SetPlaceHolder("branch-name")
-	entry.OnSubmitted = func(_ string) { d.Confirm() }
+	submit := func() {
+		name := strings.TrimSpace(entry.Text)
+		if name == "" {
+			return
+		}
+		d.Hide()
+		onSubmit(name)
+	}
+	entry.OnSubmitted = func(_ string) { submit() }
+	create := newDialogButton("Create", submit, func() { d.Hide() })
+	create.Importance = widget.HighImportance
+	create.Disable()
+	entry.OnChanged = func(text string) {
+		if strings.TrimSpace(text) == "" {
+			create.Disable()
+		} else {
+			create.Enable()
+		}
+	}
 
 	content := dialogGroup(
 		dialogHeading("Branch name"),
 		entry,
 	)
 
-	d = dialog.NewCustomConfirm("Create Worktree", "Create", "Cancel", content, func(ok bool) {
-		onDone()
-		if ok && entry.Text != "" {
-			onSubmit(entry.Text)
-		}
-	}, parent)
+	d = dialog.NewCustomWithoutButtons("Create Worktree", content, parent)
+	d.SetButtons([]fyne.CanvasObject{newDialogButton("Cancel", func() { d.Hide() }, func() { d.Hide() }), create})
+	d.SetOnClosed(onDone)
 	d.Resize(boundedDialogSize(parent, dialogMinSize))
 	d.Show()
 	focusInDialog(parent, entry)
@@ -39,24 +55,39 @@ func showBranchInput(parent fyne.Window, onDone func(), onSubmit func(name strin
 }
 
 func showFetchPRInput(parent fyne.Window, onDone func(), onSubmit func(input string)) dialog.Dialog {
-	var d *dialog.ConfirmDialog
+	var d *dialog.CustomDialog
 
 	entry := newDialogEntry(func() { d.Hide() })
 	entry.TextStyle.Monospace = true
 	entry.SetPlaceHolder("123 or owner/repo#123")
-	entry.OnSubmitted = func(_ string) { d.Confirm() }
+	submit := func() {
+		input := strings.TrimSpace(entry.Text)
+		if input == "" {
+			return
+		}
+		d.Hide()
+		onSubmit(input)
+	}
+	entry.OnSubmitted = func(_ string) { submit() }
+	fetch := newDialogButton("Fetch", submit, func() { d.Hide() })
+	fetch.Importance = widget.HighImportance
+	fetch.Disable()
+	entry.OnChanged = func(text string) {
+		if strings.TrimSpace(text) == "" {
+			fetch.Disable()
+		} else {
+			fetch.Enable()
+		}
+	}
 
 	content := dialogGroup(
 		dialogHeading("Pull request number or reference"),
 		entry,
 	)
 
-	d = dialog.NewCustomConfirm("Fetch PR", "Fetch", "Cancel", content, func(ok bool) {
-		onDone()
-		if ok && entry.Text != "" {
-			onSubmit(entry.Text)
-		}
-	}, parent)
+	d = dialog.NewCustomWithoutButtons("Fetch PR", content, parent)
+	d.SetButtons([]fyne.CanvasObject{newDialogButton("Cancel", func() { d.Hide() }, func() { d.Hide() }), fetch})
+	d.SetOnClosed(onDone)
 	d.Resize(boundedDialogSize(parent, dialogMinSize))
 	d.Show()
 	focusInDialog(parent, entry)
@@ -64,24 +95,39 @@ func showFetchPRInput(parent fyne.Window, onDone func(), onSubmit func(input str
 }
 
 func showAddRepoInput(parent fyne.Window, onDone func(), onSubmit func(path string)) dialog.Dialog {
-	var d *dialog.ConfirmDialog
+	var d *dialog.CustomDialog
 
 	entry := newDialogEntry(func() { d.Hide() })
 	entry.TextStyle.Monospace = true
 	entry.SetPlaceHolder("/path/to/repository")
-	entry.OnSubmitted = func(_ string) { d.Confirm() }
+	submit := func() {
+		path := strings.TrimSpace(entry.Text)
+		if path == "" {
+			return
+		}
+		d.Hide()
+		onSubmit(path)
+	}
+	entry.OnSubmitted = func(_ string) { submit() }
+	add := newDialogButton("Add", submit, func() { d.Hide() })
+	add.Importance = widget.HighImportance
+	add.Disable()
+	entry.OnChanged = func(text string) {
+		if strings.TrimSpace(text) == "" {
+			add.Disable()
+		} else {
+			add.Enable()
+		}
+	}
 
 	content := dialogGroup(
 		dialogHeading("Repository path"),
 		entry,
 	)
 
-	d = dialog.NewCustomConfirm("Add Repository", "Add", "Cancel", content, func(ok bool) {
-		onDone()
-		if ok && entry.Text != "" {
-			onSubmit(entry.Text)
-		}
-	}, parent)
+	d = dialog.NewCustomWithoutButtons("Add Repository", content, parent)
+	d.SetButtons([]fyne.CanvasObject{newDialogButton("Cancel", func() { d.Hide() }, func() { d.Hide() }), add})
+	d.SetOnClosed(onDone)
 	d.Resize(boundedDialogSize(parent, dialogMinSize))
 	d.Show()
 	focusInDialog(parent, entry)
@@ -119,7 +165,7 @@ func showModeSelection(parent fyne.Window, onDone func(), onRegular func(), onSa
 
 	content.Add(regBtn)
 
-	d = dialog.NewCustom("Select Mode", "Cancel", dialogSection(content), parent)
+	d = newKeyboardDismiss("Select Mode", "Cancel", dialogSection(content), parent)
 	d.SetOnClosed(func() {
 		onDone()
 	})
@@ -139,15 +185,35 @@ func showModeSelection(parent fyne.Window, onDone func(), onRegular func(), onSa
 var agentOptions = []string{"claude", "codex", "copilot", "docker-agent", "gemini", "kiro", "opencode", "shell"}
 
 func showAgentInput(parent fyne.Window, onDone func(), onSubmit func(agent string, addKits bool)) dialog.Dialog {
-	var d *dialog.ConfirmDialog
+	var d *dialog.CustomDialog
+	var sel, addKits *dialogSelect
+	submit := func() {
+		if sel.Selected == "" && addKits.Selected != "Yes" {
+			return
+		}
+		d.Hide()
+		onSubmit(sel.Selected, addKits.Selected == "Yes")
+	}
 
-	sel := newDialogSelect(agentOptions,
-		func() { d.Confirm() },
+	sel = newDialogSelect(agentOptions,
+		submit,
 		func() { d.Hide() },
 	)
 	sel.PlaceHolder = "Select agent..."
-	addKits := newDialogSelect([]string{"No", "Yes"}, nil, func() { d.Hide() })
+	addKits = newDialogSelect([]string{"No", "Yes"}, submit, func() { d.Hide() })
 	addKits.SetSelected("No")
+	continueButton := newDialogButton("Continue", submit, func() { d.Hide() })
+	continueButton.Importance = widget.HighImportance
+	continueButton.Disable()
+	updateContinue := func(string) {
+		if sel.Selected == "" && addKits.Selected != "Yes" {
+			continueButton.Disable()
+		} else {
+			continueButton.Enable()
+		}
+	}
+	sel.OnChanged = updateContinue
+	addKits.OnChanged = updateContinue
 
 	content := dialogGroup(
 		dialogHeading("Built-in agent"),
@@ -157,12 +223,9 @@ func showAgentInput(parent fyne.Window, onDone func(), onSubmit func(agent strin
 		addKits,
 	)
 
-	d = dialog.NewCustomConfirm("New Sandbox", "Continue", "Cancel", content, func(ok bool) {
-		onDone()
-		if ok && (sel.Selected != "" || addKits.Selected == "Yes") {
-			onSubmit(sel.Selected, addKits.Selected == "Yes")
-		}
-	}, parent)
+	d = dialog.NewCustomWithoutButtons("New Sandbox", content, parent)
+	d.SetButtons([]fyne.CanvasObject{newDialogButton("Cancel", func() { d.Hide() }, func() { d.Hide() }), continueButton})
+	d.SetOnClosed(onDone)
 	d.Resize(boundedDialogSize(parent, dialogMinSize))
 	d.Show()
 	focusInDialog(parent, sel)

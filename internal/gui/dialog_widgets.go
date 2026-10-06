@@ -6,6 +6,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -125,6 +126,81 @@ func (b *dialogButton) TypedKey(key *fyne.KeyEvent) {
 		b.Button.TypedKey(key)
 	}
 }
+
+// escapeButton preserves ordinary button activation and dismisses its parent
+// when Escape is delivered directly to a focused footer or content control.
+type escapeButton struct {
+	widget.Button
+	onEscape func()
+}
+
+func newEscapeButton(text string, onTap, onEscape func()) *escapeButton {
+	b := &escapeButton{onEscape: onEscape}
+	b.Text, b.OnTapped = text, onTap
+	b.ExtendBaseWidget(b)
+	return b
+}
+
+func (b *escapeButton) TypedKey(key *fyne.KeyEvent) {
+	if key.Name == fyne.KeyEscape {
+		b.onEscape()
+		return
+	}
+	b.Button.TypedKey(key)
+}
+
+// keyboardConfirmDialog keeps Fyne's confirmation response and callback order,
+// with footer controls that also dismiss correctly after keyboard traversal.
+type keyboardConfirmDialog struct {
+	*dialog.CustomDialog
+	confirm, cancel *escapeButton
+	confirmResponse bool
+}
+
+func newKeyboardConfirm(title, confirm, dismiss string, content fyne.CanvasObject, callback func(bool), parent fyne.Window) *keyboardConfirmDialog {
+	d := &keyboardConfirmDialog{CustomDialog: dialog.NewCustomWithoutButtons(title, content, parent)}
+	d.cancel = newEscapeButton(dismiss, d.Hide, d.Hide)
+	d.cancel.Icon = theme.CancelIcon()
+	d.confirm = newEscapeButton(confirm, d.Confirm, d.Hide)
+	d.confirm.Icon = theme.ConfirmIcon()
+	d.confirm.Importance = widget.HighImportance
+	d.SetButtons([]fyne.CanvasObject{d.cancel, d.confirm})
+	d.SetOnClosed(func() {
+		response := d.confirmResponse
+		d.confirmResponse = false
+		if callback != nil {
+			callback(response)
+		}
+	})
+	return d
+}
+
+func (d *keyboardConfirmDialog) Confirm() {
+	d.confirmResponse = true
+	d.Hide()
+}
+
+func (d *keyboardConfirmDialog) SetConfirmImportance(importance widget.Importance) {
+	d.confirm.Importance = importance
+	d.confirm.Refresh()
+}
+
+func (d *keyboardConfirmDialog) SetConfirmText(text string) { d.confirm.SetText(text) }
+func (d *keyboardConfirmDialog) SetDismissText(text string) { d.cancel.SetText(text) }
+
+type keyboardDismissDialog struct {
+	*dialog.CustomDialog
+	cancel *escapeButton
+}
+
+func newKeyboardDismiss(title, dismiss string, content fyne.CanvasObject, parent fyne.Window) *keyboardDismissDialog {
+	d := &keyboardDismissDialog{CustomDialog: dialog.NewCustomWithoutButtons(title, content, parent)}
+	d.cancel = newEscapeButton(dismiss, d.Hide, d.Hide)
+	d.SetButtons([]fyne.CanvasObject{d.cancel})
+	return d
+}
+
+func (d *keyboardDismissDialog) SetDismissText(text string) { d.cancel.SetText(text) }
 
 // dialogKeyCapture is an invisible focusable widget used by confirm-only
 // dialogs (where Fyne renders the OK/Cancel buttons internally) to translate
@@ -252,10 +328,22 @@ func boundedDialogSize(parent fyne.Window, preferred fyne.Size) fyne.Size {
 	return preferred
 }
 
-func dialogTechnical(text string) *container.Scroll {
-	label := widget.NewLabelWithStyle(text, fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
-	label.Selectable = true
-	scroll := container.NewHScroll(label)
+func dialogReadOnlyText(text string, wrapping fyne.TextWrap, onEscape func()) *noteEntry {
+	entry := newNoteEntry(text, onEscape)
+	entry.SetPlaceHolder("")
+	entry.TextStyle.Monospace = true
+	entry.Wrapping = wrapping
+	entry.MultiLine = wrapping != fyne.TextWrapOff
+	if wrapping == fyne.TextWrapOff {
+		entry.Scroll = container.ScrollNone
+	}
+	entry.SetMinRowsVisible(1)
+	entry.Disable()
+	return entry
+}
+
+func dialogTechnical(text string, onEscape func()) *container.Scroll {
+	scroll := container.NewHScroll(dialogReadOnlyText(text, fyne.TextWrapOff, onEscape))
 	scroll.SetMinSize(fyne.NewSize(0, scaledSize(textBodySize+spaceLG)))
 	return scroll
 }

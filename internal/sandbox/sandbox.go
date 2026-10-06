@@ -57,10 +57,15 @@ func RunAttachArgs(sandboxName string) []string {
 // ExecAgentArgs returns the arguments for an interactive agent session that
 // starts inside workdir, a host worktree path translated with ContainerPath.
 // It runs the daemon's start-agent script when present and falls back to the
-// bare agent binary. sbx exec starts a stopped sandbox automatically.
+// bare agent binary, or interactive bash for the shell workload sentinel.
+// sbx exec starts a stopped sandbox automatically.
 func ExecAgentArgs(sandboxName, workdir, agent string) []string {
+	fallback := ShellQuote(agent)
+	if agent == "shell" {
+		fallback = "/bin/bash -i"
+	}
 	script := "if [ -f " + StartAgentScript + " ]; then exec /bin/bash " +
-		StartAgentScript + "; else exec " + ShellQuote(agent) + "; fi"
+		StartAgentScript + "; else exec " + fallback + "; fi"
 	return []string{"sbx", "exec", "-it", "-w", ContainerPath(workdir), sandboxName, "bash", "-c", script}
 }
 

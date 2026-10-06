@@ -477,8 +477,16 @@ var agentBootstrapExcludeLines = map[string]string{
 	".kiro/steering/biomelab-task.md": "/.kiro/steering/biomelab-task.md",
 }
 
+func biomelabOwnedExcludeLine(path string) (string, bool) {
+	if path == ".biomelab-worktrees" || strings.HasPrefix(path, ".biomelab-worktrees/") {
+		return "/.biomelab-worktrees/", true
+	}
+	line, ok := agentBootstrapExcludeLines[path]
+	return line, ok
+}
+
 // isDirtyIgnoringBiomelabAndBootstrap accounts for the agent instruction
-// files Biomelab creates and records in the repository's common info/exclude.
+// files and generated worktrees recorded in the common info/exclude.
 // go-git does not find that exclude file from a linked worktree because its
 // .git entry is a file. Only an untracked bootstrap file with its exact,
 // root-anchored exclusion is hidden; tracked changes and other files remain
@@ -494,7 +502,7 @@ func isDirtyIgnoringBiomelabAndBootstrap(status gogit.Status, worktreePath strin
 		if fileStatus.Staging != gogit.Untracked || fileStatus.Worktree != gogit.Untracked {
 			continue
 		}
-		if _, ok := agentBootstrapExcludeLines[path]; ok {
+		if _, ok := biomelabOwnedExcludeLine(path); ok {
 			candidates = append(candidates, path)
 		}
 	}
@@ -528,11 +536,11 @@ func isDirtyIgnoringBiomelabAndBootstrap(status gogit.Status, worktreePath strin
 		if path == ".biomelab" || strings.HasPrefix(path, ".biomelab/") {
 			continue
 		}
-		excludeLine, isBootstrap := agentBootstrapExcludeLines[path]
+		excludeLine, isBootstrap := biomelabOwnedExcludeLine(path)
 		if isBootstrap &&
 			fileStatus.Staging == gogit.Untracked && fileStatus.Worktree == gogit.Untracked &&
 			hasExcludeLine(excludes, excludeLine) &&
-			matcher.Match(strings.Split(path, "/"), false) {
+			matcher.Match(strings.Split(path, "/"), path == ".biomelab-worktrees") {
 			continue
 		}
 		return true
@@ -703,8 +711,7 @@ func readWorktreeBranch(wtMetaDir string) string {
 }
 
 // worktreesDir returns the directory where biomelab stores linked worktrees.
-// Uses .biomelab-worktrees/ in the repo root. Users must add this directory
-// to their global gitignore (~/.config/git/ignore or core.excludesFile).
+// Uses .biomelab-worktrees/ in the repo root, ignored through info/exclude.
 func (r *Repository) worktreesDir() string {
 	return filepath.Join(r.repoRoot, ".biomelab-worktrees")
 }
@@ -745,6 +752,9 @@ func (r *Repository) CreateWorktree(branchName string) error {
 		return fmt.Errorf("worktree metadata %q already exists", metadataPath)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("check worktree metadata %q: %w", metadataPath, err)
+	}
+	if err := EnsureExcluded(r.repoRoot, "/.biomelab-worktrees/"); err != nil {
+		return fmt.Errorf("exclude generated worktrees directory: %w", err)
 	}
 	wtFS := osfs.New(wtPath)
 	if err := r.wt.Add(wtFS, safe); err != nil {
@@ -975,6 +985,9 @@ func (r *Repository) FetchPR(prNumber int, branchName, remoteURL string) (string
 	// the local branch ref itself keeps the original name (e.g. "ralph/issue-19").
 	// git worktree add derives the .git/worktrees/<name> key from the directory
 	// basename, so no slashes end up there either.
+	if err := EnsureExcluded(r.repoRoot, "/.biomelab-worktrees/"); err != nil {
+		return "", fmt.Errorf("exclude generated worktrees directory: %w", err)
+	}
 	if err := os.MkdirAll(r.worktreesDir(), 0o755); err != nil {
 		return "", fmt.Errorf("create worktrees dir: %w", err)
 	}
@@ -1013,29 +1026,40 @@ func (r *Repository) RemoveWorktree(name string) error {
 	}
 	wtPath, err := readWorktreePath(wtMetaDir)
 	if err != nil {
-		// Fallback: assume biomelab-worktrees directory.
-		wtPath = filepath.Join(r.worktreesDir(), name)
+		return fmt.Errorf("cannot verify worktree path; nothing was deleted: %w", err)
 	}
 	branchName := readWorktreeBranch(wtMetaDir)
 
-	// Remove the worktree directory from disk.
-	if err := os.RemoveAll(wtPath); err != nil {
-		return fmt.Errorf("remove worktree directory: %w", err)
+	// Check the actual checkout, not a possibly stale dashboard snapshot or
+	// go-git's shared-worktree status. Optional locks disable index writes.
+	status := command.Background("git", "status", "--porcelain=v1", "--untracked-files=all", "--ignore-submodules=none")
+	status.Dir = wtPath
+	status.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0")
+	output, err := status.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("cannot verify changes in %q; nothing was deleted: %w: %s", wtPath, err, strings.TrimSpace(string(output)))
+	}
+	if len(output) != 0 {
+		return fmt.Errorf("worktree %q has modified or untracked files; commit or stash changes and move untracked files before deleting", wtPath)
 	}
 
-	// Remove the worktree metadata directory directly.
-	// We don't use r.wt.Remove() because it rejects names with slashes
-	// (e.g., "ralph/issue-1456") due to its name regex.
-	if err := os.RemoveAll(wtMetaDir); err != nil {
-		return fmt.Errorf("remove worktree metadata: %w", err)
+	// Native Git verifies the managed path, dirty state, locks and submodules
+	// again before removing it. Never force: failed checks preserve user data.
+	remove := command.Background("git", "worktree", "remove", "--", wtPath)
+	remove.Dir = r.repoRoot
+	if output, err := remove.CombinedOutput(); err != nil {
+		return fmt.Errorf("worktree was not removed: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 
 	// A detached worktree has no attached branch. Its metadata name may match
 	// an unrelated branch, so only delete a branch named explicitly by HEAD.
+	var cleanupErr error
 	if branchName != "" {
-		_ = r.repo.DeleteBranch(branchName)
+		if err := r.repo.DeleteBranch(branchName); err != nil && !errors.Is(err, gogit.ErrBranchNotFound) {
+			cleanupErr = err
+		}
 		refName := plumbing.NewBranchReferenceName(branchName)
-		_ = r.repo.Storer.RemoveReference(refName)
+		cleanupErr = errors.Join(cleanupErr, r.repo.Storer.RemoveReference(refName))
 	}
 
 	// Prune stale worktree entries by removing any metadata dirs
@@ -1043,6 +1067,9 @@ func (r *Repository) RemoveWorktree(name string) error {
 	r.pruneWorktrees()
 
 	r.generation.Add(1)
+	if cleanupErr != nil {
+		return fmt.Errorf("worktree %q was removed, but branch cleanup failed: %w", wtPath, cleanupErr)
+	}
 	return nil
 }
 

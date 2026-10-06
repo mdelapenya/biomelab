@@ -122,6 +122,11 @@ func TestCreateWorktree_WithSeparateGitDir(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(gitDir, "worktrees", "topic")); err != nil {
 		t.Fatalf("worktree metadata: %v", err)
 	}
+	excluded, err := os.ReadFile(filepath.Join(gitDir, "info", "exclude"))
+	if err != nil || !hasExcludeLine(excluded, "/.biomelab-worktrees/") {
+		t.Fatalf("generated storage exclusion missing from common Git directory: %q error=%v", excluded, err)
+	}
+	assertMainDirtyMatchesNative(t, repo, false)
 	for _, listing := range []struct {
 		name string
 		list func() ([]Worktree, error)
@@ -479,6 +484,9 @@ func setupWorktreeManually(t *testing.T, repoDir, wtName, branchName string) str
 		t.Fatalf("failed to create branch ref dir: %v", err)
 	}
 	writeFile(filepath.Join(refsDir, branchName), commitHash+"\n")
+	// A real clean checkout needs its index and tracked files. Otherwise the
+	// protective removal check correctly sees every tracked file as deleted.
+	runGit(t, wtPath, "reset", "--hard", branchName)
 
 	return wtPath
 }
@@ -962,6 +970,7 @@ func TestFetchPR_SlashedBranchName(t *testing.T) {
 		if err != nil {
 			t.Fatalf("FetchPR: %v", err)
 		}
+		assertMainDirtyMatchesNative(t, repo, false)
 
 		// Worktree path must use the sanitized directory name.
 		wantPath := filepath.Join(mainDir, ".biomelab-worktrees", "ralph-issue-19")

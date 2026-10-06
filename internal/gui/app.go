@@ -43,17 +43,18 @@ type App struct {
 	window            fyne.Window
 	mainWindowVisible bool
 
-	theme             *biomeTheme
-	repoPanel         *RepoPanel
-	repos             []*repoEntry
-	active            int // active repo entry index
-	dashSlot          *fyne.Container
-	shellSlot         *fyne.Container
-	sidebarWidth      float32 // logical drag preference; UI-thread owned
-	dashboard         *Dashboard
-	refreshMgr        *RefreshManager
-	sbxStatuses       map[string]sandbox.Status
-	creatingSandboxes map[string]bool // UI-thread owned, keyed by globally unique sandbox name
+	theme               *biomeTheme
+	repoPanel           *RepoPanel
+	repos               []*repoEntry
+	active              int    // active repo entry index
+	workspaceGeneration uint64 // UI-thread navigation intent, used by async completions
+	dashSlot            *fyne.Container
+	shellSlot           *fyne.Container
+	sidebarWidth        float32 // logical drag preference; UI-thread owned
+	dashboard           *Dashboard
+	refreshMgr          *RefreshManager
+	sbxStatuses         map[string]sandbox.Status
+	creatingSandboxes   map[string]bool // UI-thread owned, keyed by globally unique sandbox name
 
 	configPath      string
 	detector        *agent.Detector
@@ -441,6 +442,7 @@ func (a *App) buildMainLayout() fyne.CanvasObject {
 
 	// Active dashboard (right side).
 	a.active = 0
+	a.workspaceGeneration++
 	a.dashboard = a.repos[0].dashboard
 	a.refreshMgr = a.repos[0].refreshMgr
 	a.dashSlot = container.NewStack(a.dashboard.Content())
@@ -457,6 +459,7 @@ func (a *App) switchMode(groupIdx, modeIdx int) {
 	if groupIdx < 0 || groupIdx >= len(a.repos) {
 		return
 	}
+	a.workspaceGeneration++
 
 	// Pause the old active repo's refresh.
 	if a.active >= 0 && a.active < len(a.repos) {
@@ -466,6 +469,23 @@ func (a *App) switchMode(groupIdx, modeIdx int) {
 	a.active = groupIdx
 	re := a.repos[groupIdx]
 
+	a.configureRepoMode(re, modeIdx)
+
+	a.dashboard = re.dashboard
+	a.refreshMgr = re.refreshMgr
+	a.updatePanelFocus()
+	a.dashboard.Rebuild()
+	a.dashSlot.Objects = []fyne.CanvasObject{a.dashboard.Content()}
+	a.dashSlot.Refresh()
+
+	if a.repoPanel != nil {
+		a.repoPanel.SetActive(groupIdx, modeIdx)
+	}
+
+	re.refreshMgr.Resume()
+}
+
+func (a *App) configureRepoMode(re *repoEntry, modeIdx int) {
 	if modeIdx >= 0 && modeIdx < len(re.group.Modes) {
 		mode := re.group.Modes[modeIdx]
 		re.state.ActiveMode = &mode
@@ -482,18 +502,55 @@ func (a *App) switchMode(groupIdx, modeIdx int) {
 		re.refreshMgr.SetSandboxCandidates(sbxCandidates)
 	}
 
-	a.dashboard = re.dashboard
-	a.refreshMgr = re.refreshMgr
-	a.updatePanelFocus()
-	a.dashboard.Rebuild()
-	a.dashSlot.Objects = []fyne.CanvasObject{a.dashboard.Content()}
-	a.dashSlot.Refresh()
+}
 
-	if a.repoPanel != nil {
-		a.repoPanel.SetActive(groupIdx, modeIdx)
+// removeRepoEntry retires a registration and its refresh work without closing
+// independent note windows or changing the repository on disk.
+func (a *App) removeRepoEntry(removed *repoEntry) {
+	index := -1
+	for i, re := range a.repos {
+		if re == removed {
+			index = i
+			break
+		}
 	}
-
-	re.refreshMgr.Resume()
+	if index < 0 {
+		return
+	}
+	a.workspaceGeneration++
+	current := a.activeRepo()
+	if removed.refreshMgr != nil {
+		removed.refreshMgr.Stop()
+	}
+	a.repos = append(a.repos[:index], a.repos[index+1:]...)
+	if len(a.repos) == 0 {
+		a.active = -1
+		a.dashboard, a.refreshMgr = nil, nil
+		a.repoPanel, a.dashSlot, a.shellSlot = nil, nil, nil
+		a.focus = focusRight
+		a.window.SetContent(a.emptyState())
+		a.window.Canvas().Unfocus()
+		return
+	}
+	if a.repoPanel != nil {
+		a.repoPanel.groups = a.collectGroups()
+		a.repoPanel.rebuildList()
+	}
+	if current != removed {
+		for i, re := range a.repos {
+			if re == current {
+				a.active = i
+				if a.repoPanel != nil {
+					a.repoPanel.SetActive(i, re.group.ActiveMode)
+				}
+				return
+			}
+		}
+	}
+	a.active = -1 // the old index now belongs to a different registration
+	next := min(index, len(a.repos)-1)
+	a.switchMode(next, a.repos[next].group.ActiveMode)
+	a.window.Canvas().Unfocus()
 }
 
 // loadInitialVariant reads the saved theme variant from the config,

@@ -35,7 +35,13 @@ func setupKeyHandlersWithModifiers(c fyne.Canvas, onKey func(fyne.KeyName), onRu
 		dc.SetOnKeyDown(func(ev *fyne.KeyEvent) {
 			// Native key-down precedes shortcut dispatch. Modifier chords must
 			// not also invoke their plain-letter action (Cmd+I versus i).
-			if ev.Name == fyne.KeyEscape || modifiers()&(fyne.KeyModifierControl|fyne.KeyModifierSuper|fyne.KeyModifierAlt) == 0 {
+			mods := modifiers()
+			// P/S have distinct uppercase commands dispatched by the later
+			// character event. Do not run Pull/Start before Send PR/Stop.
+			if mods&fyne.KeyModifierShift != 0 && (ev.Name == fyne.KeyP || ev.Name == fyne.KeyS) {
+				return
+			}
+			if ev.Name == fyne.KeyEscape || mods&(fyne.KeyModifierControl|fyne.KeyModifierSuper|fyne.KeyModifierAlt) == 0 {
 				onKey(ev.Name)
 			}
 		})

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -77,6 +78,76 @@ func TestExecAgentArgsTranslatesWindowsWorktreePath(t *testing.T) {
 	if got[4] != "/c/Users/me/repo/.biomelab-worktrees/feat" {
 		t.Errorf("ExecAgentArgs() workdir = %q, want the container path", got[4])
 	}
+}
+
+func TestExecAgentArgsSelectsShellAgentAndKitLaunchers(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sandbox launcher uses a POSIX shell")
+	}
+	for _, tc := range []struct {
+		name, agent string
+		script      bool
+		want        []string
+	}{
+		{"shell fallback", "shell", false, []string{"/bin/bash", "-i"}},
+		{"shell kit launcher", "shell", true, []string{"/bin/bash", StartAgentScript}},
+		{"named agent fallback", "claude", false, []string{"claude"}},
+		{"named agent launcher", "claude", true, []string{"/bin/bash", StartAgentScript}},
+		{"kit metadata launcher", "custom-kit", true, []string{"/bin/bash", StartAgentScript}},
+		{"quoted agent fallback", "agent; echo injected", false, []string{"agent; echo injected"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			present := "1"
+			if tc.script {
+				present = "0"
+			}
+			args := ExecAgentArgs("box & 'quoted", "/repo/linked & 'quoted", tc.agent)
+			wantPrefix := []string{"sbx", "exec", "-it", "-w", "/repo/linked & 'quoted", "box & 'quoted", "bash", "-c"}
+			if !reflect.DeepEqual(args[:8], wantPrefix) {
+				t.Fatalf("sandbox/worktree argument boundaries changed: %q", args)
+			}
+			// Replace only file-existence and exec builtins to exercise the real
+			// generated conditional without launching agents or reading host files.
+			harness := "[() { return " + present + "; }; exec() { printf '%s\\n' \"$@\"; }; " + args[8]
+			out, err := exec.Command("bash", "-c", harness).CombinedOutput()
+			if err != nil || string(out) != strings.Join(tc.want, "\n")+"\n" {
+				t.Fatalf("launcher chose %q, error=%v; want %q", out, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestExecShellFallbackStartsInteractiveShellInLinkedWorktree(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sandbox launcher uses a POSIX shell")
+	}
+	workdir := filepath.Join(t.TempDir(), "linked & 'quoted")
+	if err := os.Mkdir(workdir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	args := ExecAgentArgs("owned-fixture", workdir, "shell")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	// Execute the actual launcher fallback and its interactive flags. The
+	// test-only exec function suppresses personal shell startup files; it
+	// rejects any command other than the expected container shell invocation.
+	harness := `[() { return 1; }; exec() { if [[ "$#" == 2 && "$1" == /bin/bash && "$2" == -i ]]; then builtin exec /bin/bash --noprofile --norc -i; fi; printf 'unexpected exec: %s\n' "$*"; return 91; }; ` + args[8]
+	cmd := exec.CommandContext(ctx, "bash", "-c", harness)
+	cmd.Dir = args[4]
+	cmd.Stdin = strings.NewReader("printf '\\nBIOME_SHELL_CWD:%s\\nBIOME_SHELL_FLAGS:%s\\n' \"$PWD\" \"$-\"\nexit\n")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("interactive shell failed: %v (%s)", err, out)
+	}
+	if !strings.Contains(string(out), "BIOME_SHELL_CWD:"+workdir+"\n") {
+		t.Fatalf("interactive shell lost linked worktree: %s", out)
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if flags, ok := strings.CutPrefix(line, "BIOME_SHELL_FLAGS:"); ok && strings.Contains(flags, "i") {
+			return
+		}
+	}
+	t.Fatalf("shell was not interactive: %s", out)
 }
 
 func TestContainerPath(t *testing.T) {

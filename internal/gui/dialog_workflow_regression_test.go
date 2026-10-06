@@ -47,15 +47,15 @@ func TestSendPRRemoteSelectionRetainsModalGuardThroughConfirmation(t *testing.T)
 	}
 }
 
-func findNoteControls(root fyne.CanvasObject) (*noteEntry, *widget.Button) {
+func findNoteControls(root fyne.CanvasObject) (*noteEntry, *dialogButton) {
 	var entry *noteEntry
-	var save *widget.Button
+	var save *dialogButton
 	var visit func(fyne.CanvasObject)
 	visit = func(obj fyne.CanvasObject) {
-		if e, ok := obj.(*noteEntry); ok {
+		if e, ok := obj.(*noteEntry); ok && e.MultiLine && !e.Disabled() {
 			entry = e
 		}
-		if b, ok := obj.(*widget.Button); ok && b.Text == "Save" {
+		if b, ok := obj.(*dialogButton); ok && b.Text == "Save" {
 			save = b
 		}
 		if c, ok := obj.(*fyne.Container); ok {
@@ -213,8 +213,8 @@ func TestNoteEditorExposesCompleteLinkedWorktreeContext(t *testing.T) {
 	defer w.Close()
 	found := false
 	walkPolish(w.Content(), func(obj fyne.CanvasObject) {
-		if label, ok := obj.(*widget.Label); ok && label.Text == "Branch: "+wt.Branch+"\nPath: "+wt.Path {
-			found = label.TextStyle.Monospace && label.Wrapping == fyne.TextWrapBreak && label.Selectable
+		if context, ok := obj.(*noteEntry); ok && context.Text == "Branch: "+wt.Branch+"\nPath: "+wt.Path {
+			found = context.TextStyle.Monospace && context.Wrapping == fyne.TextWrapBreak && context.Disabled()
 		}
 	})
 	if !found {

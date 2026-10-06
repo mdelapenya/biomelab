@@ -261,11 +261,13 @@ func TestProductionSecondaryActionsFitNarrowZoom(t *testing.T) {
 			nw.Resize(fyne.NewSize(640, 480))
 			_, save := findNoteControls(nw.Content())
 			assertVisible(nw, save)
+			var cancel *escapeButton
 			walkPolish(nw.Content(), func(obj fyne.CanvasObject) {
-				if b, ok := obj.(*widget.Button); ok && b.Text == "Cancel" {
-					assertVisible(nw, b)
+				if b, ok := obj.(*escapeButton); ok && b.Text == "Cancel" {
+					cancel = b
 				}
 			})
+			assertVisible(nw, cancel)
 		})
 	}
 }

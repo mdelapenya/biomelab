@@ -139,7 +139,7 @@ func (a *App) handleKeyName(key fyne.KeyName) {
 // so Shift+S (stop sandbox) and Shift+P (send PR) are handled here.
 // Called from canvas.SetOnTypedRune — only fires when canvas.Focused()==nil.
 func (a *App) handleRune(r rune) {
-	if a.dialogOpen {
+	if a.dialogOpen || a.focus != focusRight {
 		return
 	}
 	switch r {
@@ -682,7 +682,7 @@ func (a *App) handleDeleteOrRemoveSandbox() {
 	}
 	wt := re.state.Worktrees[idx]
 	done := a.openDialog()
-	a.activeDialog = showConfirmDelete(a.window, wt.Branch, done, func() {
+	a.activeDialog = showConfirmDelete(a.window, wt.Branch, wt.Path, done, func() {
 		go func() {
 			err := ops.RemoveWorktree(re.repo, wt.Name)
 			fyne.Do(func() {
@@ -705,16 +705,26 @@ func (a *App) handleFetchPR() {
 	}
 	done := a.openDialog()
 	a.activeDialog = showFetchPRInput(a.window, done, func(input string) {
+		a.setRepoStatus(re, "Fetching PR "+input+"…", false)
 		go func() {
 			result := ops.FetchPR(re.repo, input)
 			fyne.Do(func() {
-				if result.Err != nil {
-					a.setRepoStatus(re, result.Err.Error(), true)
-				}
-				a.refreshRepo(re, re.refreshMgr.TriggerQuick)
+				a.applyFetchPRResult(re, result)
 			})
 		}()
 	})
+}
+
+func (a *App) applyFetchPRResult(re *repoEntry, result ops.FetchPRResult) {
+	if !a.hasRepoEntry(re) {
+		return
+	}
+	if result.Err != nil {
+		a.setRepoStatus(re, result.Err.Error(), true)
+	} else {
+		a.setRepoStatus(re, "Fetched "+result.BranchName, false)
+	}
+	a.refreshRepo(re, re.refreshMgr.TriggerQuick)
 }
 
 func (a *App) handlePull() {
@@ -801,12 +811,14 @@ func (a *App) handleSendPR() {
 		a.setStatus("Cannot create PR from detached HEAD", true)
 		return
 	}
-	if !re.state.HasCLIAvail || re.state.CLIAvail != provider.CLIAvailable {
-		a.setStatus("CLI tool required for PR creation", true)
+	if re.state.Provider == provider.ProviderUnknown {
+		// Unknown providers never receive a provider-specific CLI probe. A
+		// missing remote must not be misreported as a missing installed CLI.
+		a.setStatus("Add a supported GitHub or GitLab remote to create a PR", true)
 		return
 	}
-	if re.state.Provider == provider.ProviderUnknown {
-		a.setStatus("Unsupported git provider for PR creation", true)
+	if !re.state.HasCLIAvail || re.state.CLIAvail != provider.CLIAvailable {
+		a.setStatus("CLI tool required for PR creation", true)
 		return
 	}
 
@@ -1074,6 +1086,10 @@ func (a *App) handleAddRepo() {
 }
 
 func (a *App) addRepoToConfig(repoRoot, repoName string, mode config.ModeEntry) bool {
+	return a.addRepoToConfigWithActivation(repoRoot, repoName, mode, true)
+}
+
+func (a *App) addRepoToConfigWithActivation(repoRoot, repoName string, mode config.ModeEntry, activate bool) bool {
 	cfg, err := config.Load(a.configPath)
 	if err != nil {
 		a.showError(err)
@@ -1103,16 +1119,35 @@ func (a *App) addRepoToConfig(repoRoot, repoName string, mode config.ModeEntry) 
 		}
 	}
 
-	// Case 1: repo is already in the UI — just sync its modes and switch to
-	// the newly added one.
+	// Case 1: mirror registration without changing a newer workspace intent.
 	for gi, re := range a.repos {
 		if re.group.Path == repoRoot {
+			previous := re.state.ActiveMode
 			re.group.Modes = persisted.Modes
+			if !activate {
+				retained := -1
+				if previous != nil {
+					for i, candidate := range persisted.Modes {
+						if candidate.Type == previous.Type && candidate.SandboxName == previous.SandboxName {
+							retained = i
+							break
+						}
+					}
+				}
+				if retained < 0 {
+					retained = newModeIdx
+				}
+				a.configureRepoMode(re, retained)
+			}
 			if a.repoPanel != nil {
 				a.repoPanel.groups = a.collectGroups()
 				a.repoPanel.rebuildList()
 			}
-			a.switchMode(gi, newModeIdx)
+			if activate {
+				a.switchMode(gi, newModeIdx)
+			} else if a.repoPanel != nil && a.activeRepo() == re {
+				a.repoPanel.SetActive(gi, re.group.ActiveMode)
+			}
 			return true
 		}
 	}
@@ -1138,7 +1173,9 @@ func (a *App) addRepoToConfig(repoRoot, repoName string, mode config.ModeEntry) 
 		a.repoPanel.groups = a.collectGroups()
 		a.repoPanel.rebuildList()
 	}
-	a.switchMode(len(a.repos)-1, 0)
+	if activate {
+		a.switchMode(len(a.repos)-1, 0)
+	}
 	return true
 }
 
@@ -1163,17 +1200,25 @@ func (a *App) handleRemoveMode() {
 
 	done := a.openDialog()
 	a.activeDialog = showConfirmRemoveMode(a.window, re.group.Name, modeLabel, mode.Type == "sandbox", done, func() {
-		cfg, _ := config.Load(a.configPath)
+		cfg, err := config.Load(a.configPath)
+		if err != nil {
+			a.showError(err)
+			return
+		}
 		cfg.RemoveMode(re.group.Path, mode)
 
 		// DL-019: if last sandbox removed, convert to regular.
 		if mode.Type == "sandbox" && cfg.IndexOf(re.group.Path) < 0 {
 			cfg.Add(re.group.Path, re.group.Name, config.ModeEntry{Type: "regular"})
 		}
-		_ = config.Save(a.configPath, cfg)
+		if err := config.Save(a.configPath, cfg); err != nil {
+			a.showError(err)
+			return
+		}
 
 		idx := cfg.IndexOf(re.group.Path)
 		if idx < 0 {
+			a.removeRepoEntry(re)
 			return
 		}
 		re.group.Modes = cfg.Repos[idx].Modes

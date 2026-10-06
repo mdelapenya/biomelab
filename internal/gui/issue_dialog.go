@@ -118,11 +118,8 @@ func showIssuePreview(parent fyne.Window, issue github.IssueInfo, sourceRepo, de
 	}
 	bodyLabel := widget.NewLabel(body)
 	bodyLabel.Wrapping = fyne.TextWrapWord
-	boundedLine := func(text string) *widget.Label {
-		label := widget.NewLabelWithStyle(text, fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
-		label.Wrapping = fyne.TextWrapBreak
-		label.Selectable = true
-		return label
+	boundedLine := func(text string) *noteEntry {
+		return dialogReadOnlyText(text, fyne.TextWrapBreak, func() { d.Hide() })
 	}
 	wrapped := dialogText
 	title := dialogHeading(fmt.Sprintf("#%d  %s", issue.Number, issue.Title))

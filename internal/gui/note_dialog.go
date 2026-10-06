@@ -15,12 +15,11 @@ import (
 
 var noteWindowInitialSize = fyne.NewSize(720, 500)
 
-// noteEntry is a multi-line Entry that invokes onEscape on Escape, so the
-// caller can close its container (a dialog or a standalone window) without
-// Fyne's default focus manager swallowing the key.
+// noteEntry keeps window Save and Escape available while an editor has focus.
 type noteEntry struct {
 	widget.Entry
 	onEscape func()
+	onSave   func()
 }
 
 func newNoteEntry(initial string, onEscape func()) *noteEntry {
@@ -41,6 +40,37 @@ func (e *noteEntry) TypedKey(key *fyne.KeyEvent) {
 		return
 	}
 	e.Entry.TypedKey(key)
+}
+
+func (e *noteEntry) TypedShortcut(shortcut fyne.Shortcut) {
+	if key, ok := shortcut.(fyne.KeyboardShortcut); ok && key.Key() == fyne.KeyS &&
+		(key.Mod() == fyne.KeyModifierControl || key.Mod() == fyne.KeyModifierSuper) && e.onSave != nil {
+		e.onSave()
+		return
+	}
+	if e.Disabled() {
+		switch shortcut.(type) {
+		case *fyne.ShortcutCopy, *fyne.ShortcutSelectAll:
+		default:
+			return
+		}
+	}
+	e.Entry.TypedShortcut(shortcut)
+}
+
+func (e *noteEntry) KeyDown(key *fyne.KeyEvent) {
+	// Fyne suppresses non-copy shortcuts on disabled selectable entries.
+	// Preserve window Save before that filter, using the native modifiers.
+	if e.Disabled() && key.Name == fyne.KeyS && e.onSave != nil {
+		if driver, ok := fyne.CurrentApp().Driver().(desktop.Driver); ok {
+			modifiers := driver.CurrentKeyModifiers()
+			if modifiers == fyne.KeyModifierControl || modifiers == fyne.KeyModifierSuper {
+				e.onSave()
+				return
+			}
+		}
+	}
+	e.Entry.KeyDown(key)
 }
 
 // openNoteDialog opens the note editor as a standalone window so the user
@@ -81,7 +111,9 @@ func (a *App) openNoteDialog(wt git.Worktree) {
 		preview.ParseMarkdown(s)
 	}
 
-	titleEntry := newDialogEntry(func() { w.Close() })
+	titleEntry := newNoteEntry(initialTitle, func() { w.Close() })
+	titleEntry.MultiLine = false
+	titleEntry.Wrapping = fyne.TextWrapOff
 	titleEntry.SetPlaceHolder("Conventional Commits title — feat(scope): description")
 	titleEntry.SetText(initialTitle)
 
@@ -90,9 +122,14 @@ func (a *App) openNoteDialog(wt git.Worktree) {
 	errorLabel.Wrapping = fyne.TextWrapWord
 	errorLabel.Importance = widget.DangerImportance
 	errorLabel.Hide()
-	worktreeContext := widget.NewLabelWithStyle("Branch: "+wt.Branch+"\nPath: "+wt.Path, fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
+	// A disabled entry keeps desktop text selection/copy while allowing the
+	// same Escape handler as the editors. Selectable Label's internal focus
+	// control consumes Escape without forwarding it to the window canvas.
+	worktreeContext := newNoteEntry("Branch: "+wt.Branch+"\nPath: "+wt.Path, func() { w.Close() })
+	worktreeContext.SetPlaceHolder("")
+	worktreeContext.TextStyle.Monospace = true
 	worktreeContext.Wrapping = fyne.TextWrapBreak
-	worktreeContext.Selectable = true
+	worktreeContext.Disable()
 	contextScroll := container.NewVScroll(worktreeContext)
 	contextScroll.SetMinSize(fyne.NewSize(0, scaledSize(64)))
 	titleSection := container.NewVBox(contextScroll, titleLabel, titleEntry, errorLabel)
@@ -131,15 +168,18 @@ func (a *App) openNoteDialog(wt git.Worktree) {
 		a.setRepoStatus(origin, "Note saved", false)
 		w.Close()
 	}
+	entry.onSave = saveAndClose
+	titleEntry.onSave = saveAndClose
+	worktreeContext.onSave = saveAndClose
 
-	saveBtn := widget.NewButton("Save", saveAndClose)
+	saveBtn := newDialogButton("Save", saveAndClose, func() { w.Close() })
 	saveBtn.Importance = widget.HighImportance
-	cancelBtn := widget.NewButton("Cancel", func() { w.Close() })
+	cancelBtn := newEscapeButton("Cancel", func() { w.Close() }, func() { w.Close() })
 
 	rightButtons := container.NewHBox(cancelBtn, saveBtn)
 	var leftSide fyne.CanvasObject
 	if noteExists {
-		deleteBtn := widget.NewButton("Delete note", func() {
+		deleteBtn := newEscapeButton("Delete note", func() {
 			dialog.ShowConfirm(
 				"Delete note?",
 				"This permanently removes the title and description for "+wt.Branch+".",
@@ -168,7 +208,7 @@ func (a *App) openNoteDialog(wt git.Worktree) {
 				},
 				w,
 			)
-		})
+		}, func() { w.Close() })
 		deleteBtn.Importance = widget.DangerImportance
 		leftSide = deleteBtn
 	}
@@ -179,14 +219,17 @@ func (a *App) openNoteDialog(wt git.Worktree) {
 	w.Resize(noteWindowInitialSize)
 	w.CenterOnScreen()
 
-	// Cmd/Ctrl+S also saves. Canvas-level shortcut fires even when the
-	// entry has focus because Cmd+S has a non-zero modifier and Entry
-	// doesn't bind it.
-	w.Canvas().AddShortcut(&desktop.CustomShortcut{
-		KeyName:  fyne.KeyS,
-		Modifier: fyne.KeyModifierShortcutDefault,
-	}, func(_ fyne.Shortcut) {
-		saveAndClose()
+	// Focused entries handle Save themselves: Fyne does not forward their
+	// unhandled shortcuts to the canvas. These bindings cover other focus.
+	for _, modifier := range []fyne.KeyModifier{fyne.KeyModifierControl, fyne.KeyModifierSuper} {
+		w.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyS, Modifier: modifier}, func(_ fyne.Shortcut) {
+			saveAndClose()
+		})
+	}
+	w.Canvas().SetOnTypedKey(func(key *fyne.KeyEvent) {
+		if key.Name == fyne.KeyEscape {
+			w.Close()
+		}
 	})
 
 	w.Show()

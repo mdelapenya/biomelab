@@ -41,6 +41,12 @@ func (c *keyboardCanvas) press(name fyne.KeyName) {
 			shortcut = &fyne.ShortcutSelectAll{}
 		}
 		if focused, ok := c.Focused().(fyne.Shortcutable); ok {
+			if disabled, ok := focused.(interface {
+				fyne.Disableable
+				SelectedText() string
+			}); ok && disabled.Disabled() && shortcut.ShortcutName() != "Copy" {
+				return
+			}
 			focused.TypedShortcut(shortcut)
 		} else {
 			c.Canvas.(fyne.Shortcutable).TypedShortcut(shortcut)
@@ -196,8 +202,8 @@ func TestModifierRoutingPreservesThemeZoomAndShiftRunes(t *testing.T) {
 	c.OnTypedRune()('P')
 	c.press(fyne.KeyS)
 	c.OnTypedRune()('S')
-	if len(keys) != 2 || string(runes) != "PS" {
-		t.Fatal("Shift+P/S routing changed")
+	if len(keys) != 0 || string(runes) != "PS" {
+		t.Fatal("Shift+P/S leaked plain Pull/Start or lost uppercase commands")
 	}
 }
 

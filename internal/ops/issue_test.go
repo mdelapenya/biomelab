@@ -176,7 +176,7 @@ func TestCreateWorktreeFromIssue_ContextConflictDoesNotWriteOtherArtifacts(t *te
 	}
 }
 
-func TestCreateWorktreeFromIssue_ReportsPartialWriteFailure(t *testing.T) {
+func TestCreateWorktreeFromIssue_RejectsStorageExclusionFailure(t *testing.T) {
 	dir, repo := newOpsRepo(t, nil)
 	if err := os.RemoveAll(filepath.Join(dir, ".git", "info")); err != nil {
 		t.Fatal(err)
@@ -185,14 +185,46 @@ func TestCreateWorktreeFromIssue_ReportsPartialWriteFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := CreateWorktreeFromIssue(repo, github.IssueInfo{Number: 4, Title: "Partial", URL: "https://example.test/4"}, "issue-4-partial")
-	if result.Err != nil || result.WtPath == "" || result.NotesErr == nil {
+	if result.Err == nil || !strings.Contains(result.Err.Error(), "exclude generated worktrees directory") || result.WtPath != "" || result.NotesErr != nil {
 		t.Fatalf("result = %+v", result)
 	}
-	if _, err := os.Stat(result.WtPath); err != nil {
+	if _, err := os.Lstat(filepath.Join(dir, ".biomelab-worktrees")); !os.IsNotExist(err) {
+		t.Fatalf("storage created without exclusion: %v", err)
+	}
+	if branch := gitOutput(t, dir, "branch", "--list", "issue-4-partial"); branch != "" {
+		t.Fatalf("branch created without exclusion: %q", branch)
+	}
+}
+
+func TestWriteIssueNotes_ExclusionFailurePreservesCreatedWorktree(t *testing.T) {
+	dir, repo := newOpsRepo(t, nil)
+	const branch = "issue-4-partial"
+	if err := repo.CreateWorktree(branch); err != nil {
+		t.Fatal(err)
+	}
+	wtPath := filepath.Join(dir, ".biomelab-worktrees", branch)
+	// Storage exclusion must succeed before creation. Break it afterwards to
+	// exercise the independent note-writing phase, without timing or permissions.
+	if err := os.RemoveAll(filepath.Join(dir, ".git", "info")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".git", "info"), []byte("blocks exclude directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := writeIssueNotes(wtPath, github.IssueInfo{Number: 4, Title: "Partial", URL: "https://example.test/4"})
+	if err == nil || !strings.Contains(err.Error(), "save issue title") || !strings.Contains(err.Error(), "save issue note") || !strings.Contains(err.Error(), "ensure excluded") {
+		t.Fatalf("missing independent note-write failure: %v", err)
+	}
+	if _, err := os.Stat(wtPath); err != nil {
 		t.Fatalf("created worktree not preserved: %v", err)
 	}
-	if _, err := os.Lstat(notes.TitlePath(result.WtPath)); !os.IsNotExist(err) {
-		t.Errorf("title artifact remained visible after exclusion failure: %v", err)
+	if got := gitOutput(t, wtPath, "branch", "--show-current"); got != branch {
+		t.Fatalf("created branch not preserved: %q", got)
+	}
+	for _, path := range []string{notes.TitlePath(wtPath), notes.Path(wtPath), notes.IssuePath(wtPath), notes.ProgressPath(wtPath)} {
+		if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			t.Errorf("artifact remained visible after exclusion failure: %s (%v)", path, err)
+		}
 	}
 }
 
