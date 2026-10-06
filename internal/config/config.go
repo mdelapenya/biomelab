@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"syscall"
 )
 
 // KitInstall records a kit applied to a sandbox at create time. New installs
@@ -118,10 +117,9 @@ func removeLegacyConfig(path string) error {
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	if err := os.Remove(filepath.Dir(path)); err != nil &&
-		!errors.Is(err, os.ErrNotExist) && !errors.Is(err, syscall.ENOTEMPTY) {
-		return err
-	}
+	// Removing the directory is optional; os.Remove only removes it when empty,
+	// so sibling files remain untouched and platform-specific errors are harmless.
+	_ = os.Remove(filepath.Dir(path))
 	return nil
 }
 
@@ -308,11 +306,6 @@ func (c *Config) Remove(path string) bool {
 		}
 	}
 	return false
-}
-
-func dirExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
 }
 
 // IndexOf returns the index of the repo with the given path, or -1 if not found.
