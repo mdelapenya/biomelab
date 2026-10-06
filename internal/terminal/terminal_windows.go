@@ -194,7 +194,7 @@ func windowsPowerShellScript(req launchRequest, windowsTerminal bool) string {
 		// open would then delete the contents and fail on the directory itself,
 		// leaving the worktree half-removed until the user closes the terminal.
 		// Discovery is not worth breaking worktree removal for.
-		statements = append(statements, "Set-Location -LiteralPath "+powerShellLiteral(filepath.Clean(req.dir)))
+		statements = append(statements, "Set-Location -LiteralPath "+powerShellLiteral(filepath.Clean(req.dir))+" -ErrorAction Stop")
 	}
 	if req.windowTitle != "" {
 		statements = append(statements, "$Host.UI.RawUI.WindowTitle = "+powerShellLiteral(req.windowTitle))

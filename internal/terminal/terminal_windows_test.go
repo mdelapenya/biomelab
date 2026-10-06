@@ -612,6 +612,33 @@ func TestWindowsTerminalRecipeKeepsUserDataOutOfWTGrammar(t *testing.T) {
 	}
 }
 
+func TestWindowsPowerShellScriptStopsBeforeHandshakeOnInvalidDirectory(t *testing.T) {
+	marker := t.TempDir()
+	script := windowsPowerShellScript(launchRequest{
+		dir: filepath.Join(marker, "missing"), markerDir: marker,
+		command: "[IO.File]::WriteAllText('" + filepath.Join(marker, "ran") + "', 'ran')",
+	}, false)
+	location := strings.Index(script, "Set-Location -LiteralPath ")
+	handshake := strings.Index(script, "$biomeRecord =")
+	if location < 0 || handshake < location || !strings.Contains(script, " -ErrorAction Stop") {
+		t.Fatalf("invalid directory would not stop before handshake: %s", script)
+	}
+	shellPath, err := exec.LookPath("powershell.exe")
+	if err != nil {
+		t.Skip("powershell.exe unavailable")
+	}
+	cmd := exec.Command(shellPath, "-NoLogo", "-NoProfile", "-EncodedCommand", encodePowerShell(script))
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW}
+	if out, err := cmd.CombinedOutput(); err == nil {
+		t.Fatalf("missing directory script succeeded: %s", out)
+	}
+	for _, name := range []string{"session", "ran"} {
+		if _, err := os.Lstat(filepath.Join(marker, name)); !os.IsNotExist(err) {
+			t.Fatalf("%s created despite invalid directory: %v", name, err)
+		}
+	}
+}
+
 func TestWithoutWindowsTerminalEnvironment(t *testing.T) {
 	got := withoutWindowsTerminalEnvironment([]string{"Path=x", "WT_SESSION=old", "wt_profile_id=old", "OTHER=y"})
 	want := []string{"Path=x", "OTHER=y"}
