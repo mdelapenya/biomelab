@@ -4,8 +4,16 @@ import (
 	"context"
 	"testing"
 
+	"github.com/mdelapenya/biomelab/internal/agent"
+	"github.com/mdelapenya/biomelab/internal/ide"
+	"github.com/mdelapenya/biomelab/internal/process"
 	"github.com/mdelapenya/biomelab/internal/provider"
+	"github.com/mdelapenya/biomelab/internal/terminal"
 )
+
+type emptyProcessLister struct{}
+
+func (emptyProcessLister) Processes(context.Context) ([]process.Info, error) { return nil, nil }
 
 func TestQuickRefreshDoesNotReplaceDetection(t *testing.T) {
 	_, repo := newOpsRepo(t, nil)
@@ -29,5 +37,20 @@ func TestCancelledRefreshDoesNotStartOperations(t *testing.T) {
 	network := NetworkRefresh(ctx, nil, nil, nil, nil, nil, nil, provider.CLIAvailable, []string{"sandbox"})
 	if local.Err != context.Canceled || network.Err != context.Canceled {
 		t.Fatal("cancelled refresh was not rejected")
+	}
+}
+
+func TestNetworkRefreshCarriesCLIAvailability(t *testing.T) {
+	_, repo := newOpsRepo(t, nil)
+	lister := emptyProcessLister{}
+	result := NetworkRefresh(context.Background(), repo,
+		agent.NewDetectorWithLister(lister), ide.NewDetectorWithLister(lister),
+		terminal.NewDetectorWithLister(lister), lister,
+		nil, provider.CLIAvailable, nil)
+	if result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	if !result.HasCLIAvail || result.CLIAvail != provider.CLIAvailable {
+		t.Fatalf("CLI availability omitted or wrong: %+v", result)
 	}
 }

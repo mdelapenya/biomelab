@@ -22,6 +22,8 @@ type RefreshResult struct {
 	Terminals      terminal.DetectionResult
 	PRs            provider.PRResult
 	HasPRs         bool
+	CLIAvail       provider.CLIAvailability
+	HasCLIAvail    bool // CLIAvailable is zero, so presence must be explicit
 	Err            error
 	FetchErr       error
 	SandboxStatus  sandbox.Status
@@ -217,6 +219,8 @@ func NetworkRefresh(
 		PRs:            prs,
 		HasSbxStatus:   len(sbxCandidates) > 0,
 		HasPRs:         true,
+		CLIAvail:       cliAvail,
+		HasCLIAvail:    true,
 		FetchErr:       fetchErr,
 		SandboxStatus:  sbxStatus,
 		SbxMatchedName: sbxMatched,
@@ -262,14 +266,16 @@ func CardRefresh(
 	}
 
 	return RefreshResult{
-		Worktrees:  snap.Worktrees,
-		Agents:     agents,
-		IDEs:       ides,
-		Terminals:  terms,
-		PRs:        prs,
-		HasPRs:     true,
-		FetchErr:   fetchErr,
-		Generation: snap.Generation,
+		Worktrees:   snap.Worktrees,
+		Agents:      agents,
+		IDEs:        ides,
+		Terminals:   terms,
+		PRs:         prs,
+		HasPRs:      true,
+		CLIAvail:    cliAvail,
+		HasCLIAvail: true,
+		FetchErr:    fetchErr,
+		Generation:  snap.Generation,
 	}
 }
 
