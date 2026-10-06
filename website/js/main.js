@@ -667,10 +667,25 @@ function hideModal(id, onHide) {
   var sandboxDemoLastFocus = null;
   var sandboxDemoConfig = null;
   var SANDBOX_AGENTS = {
-    claude: { label: 'Claude Code', kits: ['docker.io/sbx/code-server-kit:latest', 'docker.io/sbx/playwright-kit:latest'] },
-    codex: { label: 'Codex', kits: ['docker.io/sbx/playwright-kit:latest'] },
-    copilot: { label: 'GitHub Copilot', kits: ['docker.io/sbx/playwright-kit:latest'] }
+    claude: 'Claude Code',
+    codex: 'Codex',
+    copilot: 'GitHub Copilot'
   };
+  var SANDBOX_KIT_PAGE_SIZE = 8;
+  // A compact subset of Docker's published sbx catalog, with the same ordering
+  // and compatibility rules as the desktop picker: bases, then mixins.
+  var SANDBOX_KITS = [
+    { name: 'claude', title: 'Claude Code', kind: 'sandbox', ref: 'docker.io/sbx/claude-kit:latest', description: 'Anthropic Claude Code with proxy-resolved sign-in.', mark: 'C' },
+    { name: 'codex', title: 'Codex', kind: 'sandbox', ref: 'docker.io/sbx/codex-kit:latest', description: 'OpenAI Codex CLI coding agent.', mark: 'X' },
+    { name: 'copilot', title: 'GitHub Copilot', kind: 'sandbox', ref: 'docker.io/sbx/copilot-kit:latest', description: 'GitHub Copilot CLI coding agent.', mark: 'GH' },
+    { name: 'docker-agent', title: 'Docker Agent', kind: 'sandbox', ref: 'docker.io/sbx/docker-agent-kit:latest', description: 'Docker multi-provider coding agent.', mark: 'D' },
+    { name: 'kiro', title: 'Kiro', kind: 'sandbox', ref: 'docker.io/sbx/kiro-kit:latest', description: 'Kiro CLI by AWS with device-flow authentication.', mark: 'K' },
+    { name: 'code-server', title: 'code-server with Claude Code', kind: 'mixin', ref: 'docker.io/sbx/code-server-kit:latest', description: 'Web VS Code with the Claude Code extension.', requires: 'claude', mark: '&lt;/&gt;' },
+    { name: 'playwright', title: 'Playwright', kind: 'mixin', ref: 'docker.io/sbx/playwright-kit:latest', description: 'Browser automation with Chromium.', mark: 'PW' },
+    { name: 'neovim', title: 'Neovim', kind: 'mixin', ref: 'docker.io/sbx/neovim-kit:latest', description: 'Latest stable Neovim and bundled configuration.', mark: 'NV' },
+    { name: 't3code', title: 'T3 Code', kind: 'mixin', ref: 'docker.io/sbx/t3code-kit:latest', description: 'Build toolchain for T3 Code SSH integration.', mark: 'T3' },
+    { name: 'task', title: 'Task', kind: 'mixin', ref: 'docker.io/sbx/task-kit:latest', description: 'Task CLI for running Taskfiles.', mark: 'TK' }
+  ];
 
   function sandboxFocusables() {
     return sandboxDemo ? sandboxDemo.querySelectorAll('button, select, input:not([disabled])') : [];
@@ -689,33 +704,70 @@ function hideModal(id, onHide) {
     if (agentSelect) sandboxDemoConfig.agent = agentSelect.value;
     if (kitsChoice) sandboxDemoConfig.addKits = kitsChoice.value === 'yes';
     if (!sandboxDemoConfig.addKits) {
-      sandboxDemoConfig.kits = [];
-    } else {
-      var kitInputs = sandboxDemo.querySelectorAll('input[name="sbx-demo-kit"]');
-      if (kitInputs.length) {
-        var compatibleKits = SANDBOX_AGENTS[sandboxDemoConfig.agent].kits;
-        sandboxDemoConfig.kits = Array.prototype.filter.call(
-          sandboxDemo.querySelectorAll('input[name="sbx-demo-kit"]:checked'), function (input) {
-            return compatibleKits.indexOf(input.value) !== -1;
-          }
-        ).map(function (input) { return input.value; });
-      } else {
-        sandboxDemoConfig.kits = sandboxDemoConfig.kits.filter(function (kit) {
-          return SANDBOX_AGENTS[sandboxDemoConfig.agent].kits.indexOf(kit) !== -1;
-        });
-      }
+      sandboxDemoConfig.selected = {};
+      sandboxDemoConfig.kitPage = 0;
     }
     return sandboxDemoConfig;
   }
+  function selectedSandboxKits() {
+    return SANDBOX_KITS.filter(function (kit) { return sandboxDemoConfig.selected[kit.ref]; });
+  }
+  function selectedSandboxBase() {
+    return selectedSandboxKits().find(function (kit) { return kit.kind === 'sandbox'; });
+  }
+  function sandboxKitValidation() {
+    var base = selectedSandboxBase();
+    if (!base) return 'Choose one sandbox kit to continue.';
+    var incompatible = selectedSandboxKits().find(function (kit) {
+      return kit.kind === 'mixin' && kit.requires && kit.requires !== base.name;
+    });
+    return incompatible ? incompatible.title + ' requires a different sandbox agent; deselect it or choose a compatible sandbox.' : '';
+  }
+  function sandboxKitCard(kit) {
+    var checked = sandboxDemoConfig.selected[kit.ref] ? ' checked' : '';
+    return '<label class="sbx-kit-card' + (checked ? ' selected' : '') + '">'
+      + '<span class="sbx-kit-mark" aria-hidden="true">' + kit.mark + '</span>'
+      + '<span class="sbx-kit-copy"><span class="sbx-kit-title">' + kit.title + '</span>'
+      + '<span class="sbx-kit-kind">' + kit.kind.toUpperCase() + '</span>'
+      + '<span class="sbx-kit-description">' + kit.description + '</span></span>'
+      + '<span class="sbx-kit-select"><input type="checkbox" name="sbx-demo-kit" value="' + kit.ref + '" aria-label="Select ' + kit.title + ' ' + kit.kind + ' kit"' + checked + '> Select</span></label>';
+  }
+  function renderSandboxKitPicker(focusRef) {
+    sandboxDemo.classList.add('sbx-demo-picker-open');
+    var pages = Math.ceil(SANDBOX_KITS.length / SANDBOX_KIT_PAGE_SIZE);
+    var start = sandboxDemoConfig.kitPage * SANDBOX_KIT_PAGE_SIZE;
+    var visible = SANDBOX_KITS.slice(start, start + SANDBOX_KIT_PAGE_SIZE);
+    var validation = sandboxKitValidation();
+    sandboxDemo.querySelector('.sbx-demo-body').innerHTML = '<p class="sbx-demo-copy">Choose one sandbox kit, then optional mixins for <code>biomelab</code>. Selections remain checked across pages.</p>'
+      + '<div class="sbx-kit-grid">' + visible.map(sandboxKitCard).join('') + '</div>';
+    sandboxDemo.querySelector('.sbx-demo-foot').innerHTML = '<div class="sbx-kit-footer"><p class="sbx-kit-validation" role="status">' + validation + '</p>'
+      + '<div class="sbx-kit-controls"><button class="confirm-btn confirm-no" data-sbx-demo-kit-back>Back</button>'
+      + '<button class="confirm-btn confirm-no" data-sbx-demo-kit-previous' + (sandboxDemoConfig.kitPage === 0 ? ' disabled' : '') + '>Previous</button>'
+      + '<span>Page ' + (sandboxDemoConfig.kitPage + 1) + ' of ' + pages + '</span>'
+      + '<button class="confirm-btn confirm-no" data-sbx-demo-kit-next' + (sandboxDemoConfig.kitPage + 1 >= pages ? ' disabled' : '') + '>Next</button>'
+      + '<span>' + selectedSandboxKits().length + ' selected</span>'
+      + '<button class="confirm-btn confirm-yes" data-sbx-demo-kit-continue' + (validation ? ' disabled' : '') + '>Continue</button></div></div>';
+    var focusTarget = focusRef && sandboxDemo.querySelector('input[value="' + focusRef + '"]');
+    if (focusTarget) focusTarget.focus();
+    else {
+      var first = sandboxDemo.querySelector('input[name="sbx-demo-kit"]');
+      if (first) first.focus();
+    }
+  }
   function renderSandboxDemo(step) {
     var state = sandboxState();
-    var agent = SANDBOX_AGENTS[state.agent];
-    var kitArgs = state.addKits ? state.kits.map(function (kit) { return '--kit ' + kit; }).join(' ') : '';
+    sandboxDemo.classList.remove('sbx-demo-picker-open');
+    var base = state.addKits ? selectedSandboxBase() : null;
+    var agentName = base ? base.name : state.agent;
+    var agentLabel = base ? base.title : SANDBOX_AGENTS[state.agent];
+    var mixins = state.addKits ? selectedSandboxKits().filter(function (kit) { return kit.kind === 'mixin'; }) : [];
+    var kitArgs = mixins.map(function (kit) { return '--kit ' + kit.ref; }).join(' ');
+    var workload = base ? base.ref : state.agent;
     var body = sandboxDemo.querySelector('.sbx-demo-body');
     if (step === 'success') {
       body.innerHTML = '<div class="sbx-demo-success" role="status">'
         + '<span aria-hidden="true">✓</span><div><h4>Sandbox created (simulated)</h4>'
-        + '<p>No backend was called. In biomelab, this project environment would now be available to all ' + agent.label + ' worktrees.</p></div></div>';
+        + '<p>No backend was called. In biomelab, this project environment would now be available to all ' + agentLabel + ' worktrees.</p></div></div>';
       sandboxDemo.querySelector('.sbx-demo-foot').innerHTML = '<button class="confirm-btn confirm-yes" data-sbx-demo-done>Done</button>';
       sandboxDemo.querySelector('[data-sbx-demo-done]').focus();
       return;
@@ -723,10 +775,10 @@ function hideModal(id, onHide) {
     if (step === 'confirm') {
       body.innerHTML = '<p class="sbx-demo-copy">Review the project environment before creating it.</p>'
         + '<dl class="sbx-demo-summary"><div><dt>Project</dt><dd><code>biomelab</code> <span>demo board</span></dd></div>'
-        + '<div><dt>Agent</dt><dd>' + agent.label + '</dd></div><div><dt>Kits</dt><dd>'
-        + (state.addKits && state.kits.length ? state.kits.map(function (kit) { return '<code>' + kit + '</code>'; }).join('<br>') : 'No kits added') + '</dd></div></dl>'
-        + '<p class="sbx-demo-command"><span>Would run</span><code>sbx create --name biomelab-' + state.agent + (kitArgs ? ' ' + kitArgs : '') + ' ' + state.agent + ' /workspace/biomelab</code></p>'
-        + '<p class="sbx-demo-note">Image references are illustrative OCI images; nothing will be pulled in this demo.</p>';
+        + '<div><dt>Agent</dt><dd>' + agentLabel + '</dd></div><div><dt>Kits</dt><dd>'
+        + (base ? '<code>' + base.ref + '</code>' + (mixins.length ? '<br>' + mixins.map(function (kit) { return '<code>' + kit.ref + '</code>'; }).join('<br>') : '') : 'No kits added') + '</dd></div></dl>'
+        + '<p class="sbx-demo-command"><span>Would run</span><code>sbx create --name biomelab-' + agentName + (kitArgs ? ' ' + kitArgs : '') + ' ' + workload + ' /workspace/biomelab</code></p>'
+        + '<p class="sbx-demo-note">Kit references are illustrative OCI artifacts; nothing will be pulled in this demo.</p>';
       sandboxDemo.querySelector('.sbx-demo-foot').innerHTML = '<button class="confirm-btn confirm-no" data-sbx-demo-back>Back</button><button class="confirm-btn confirm-yes" data-sbx-demo-create>Create sandbox</button>';
       sandboxDemo.querySelector('[data-sbx-demo-create]').focus();
       return;
@@ -734,31 +786,16 @@ function hideModal(id, onHide) {
     body.innerHTML = '<p class="sbx-demo-copy"><strong>Demo setup</strong> · Project <code>biomelab</code> on this board. One environment is shared by that agent\'s worktrees.</p>'
       + '<label class="sbx-demo-field" for="sbx-demo-agent">Agent<select id="sbx-demo-agent"><option value="claude">Claude Code</option><option value="codex">Codex</option><option value="copilot">GitHub Copilot</option></select></label>'
       + '<fieldset class="sbx-demo-field"><legend>Do you want to add kits?</legend><label><input type="radio" name="sbx-demo-kits" value="no"> No</label><label><input type="radio" name="sbx-demo-kits" value="yes"> Yes</label></fieldset>'
-      + '<div class="sbx-demo-kits" hidden></div>';
+      + '<p class="sbx-demo-note">Choosing Yes opens the kit catalog. Its sandbox base determines the agent; the selector above is used only when kits are skipped.</p>';
     sandboxDemo.querySelector('#sbx-demo-agent').value = state.agent;
     sandboxDemo.querySelector('input[name="sbx-demo-kits"][value="' + (state.addKits ? 'yes' : 'no') + '"]').checked = true;
     sandboxDemo.querySelector('.sbx-demo-foot').innerHTML = '<button class="confirm-btn confirm-no" data-sbx-demo-cancel>Cancel</button><button class="confirm-btn confirm-yes" data-sbx-demo-continue>Continue</button>';
-    function renderKits(current) {
-      var kits = sandboxDemo.querySelector('.sbx-demo-kits');
-      kits.hidden = !current.addKits;
-      kits.innerHTML = current.addKits ? '<strong>Compatible illustrative kits</strong>'
-        + SANDBOX_AGENTS[current.agent].kits.map(function (kit) {
-          return '<label><input type="checkbox" name="sbx-demo-kit" value="' + kit + '"' + (current.kits.indexOf(kit) !== -1 ? ' checked' : '') + '> <code>' + kit + '</code></label>';
-        }).join('') : '';
-      kits.querySelectorAll('input[name="sbx-demo-kit"]').forEach(function (input) {
-        input.addEventListener('change', function () { sandboxState(); });
-      });
-    }
-    function updateKits() { renderKits(sandboxState()); }
-    renderKits(state);
-    sandboxDemo.querySelector('#sbx-demo-agent').addEventListener('change', updateKits);
-    sandboxDemo.querySelectorAll('input[name="sbx-demo-kits"]').forEach(function (input) { input.addEventListener('change', updateKits); });
     sandboxDemo.querySelector('#sbx-demo-agent').focus();
   }
   function openSandboxDemo() {
     if (sandboxDemo) return;
     sandboxDemoLastFocus = document.activeElement;
-    sandboxDemoConfig = { agent: 'claude', addKits: false, kits: [] };
+    sandboxDemoConfig = { agent: 'claude', addKits: false, selected: {}, kitPage: 0 };
     sandboxDemo = document.createElement('div');
     sandboxDemo.className = 'rgt-modal sbx-demo-modal';
     sandboxDemo.setAttribute('role', 'dialog');
@@ -792,9 +829,45 @@ function hideModal(id, onHide) {
   document.addEventListener('click', function (e) {
     if (!sandboxDemo) return;
     if (e.target.closest('[data-sbx-demo-cancel], [data-sbx-demo-done]')) { closeSandboxDemo(); return; }
-    if (e.target.closest('[data-sbx-demo-continue]')) { renderSandboxDemo('confirm'); return; }
-    if (e.target.closest('[data-sbx-demo-back]')) { renderSandboxDemo('setup'); return; }
+    if (e.target.closest('[data-sbx-demo-continue]')) {
+      if (sandboxState().addKits) renderSandboxKitPicker();
+      else renderSandboxDemo('confirm');
+      return;
+    }
+    if (e.target.closest('[data-sbx-demo-back]')) {
+      if (sandboxDemoConfig.addKits) renderSandboxKitPicker();
+      else renderSandboxDemo('setup');
+      return;
+    }
+    if (e.target.closest('[data-sbx-demo-kit-back]')) { renderSandboxDemo('setup'); return; }
+    if (e.target.closest('[data-sbx-demo-kit-previous]')) {
+      sandboxDemoConfig.kitPage--;
+      renderSandboxKitPicker();
+      return;
+    }
+    if (e.target.closest('[data-sbx-demo-kit-next]')) {
+      sandboxDemoConfig.kitPage++;
+      renderSandboxKitPicker();
+      return;
+    }
+    if (e.target.closest('[data-sbx-demo-kit-continue]') && !sandboxKitValidation()) {
+      renderSandboxDemo('confirm');
+      return;
+    }
     if (e.target.closest('[data-sbx-demo-create]')) { renderSandboxDemo('success'); }
+  });
+  document.addEventListener('change', function (e) {
+    if (!sandboxDemo || !e.target.matches('input[name="sbx-demo-kit"]')) return;
+    var kit = SANDBOX_KITS.find(function (candidate) { return candidate.ref === e.target.value; });
+    if (!kit) return;
+    if (e.target.checked && kit.kind === 'sandbox') {
+      SANDBOX_KITS.forEach(function (candidate) {
+        if (candidate.kind === 'sandbox') delete sandboxDemoConfig.selected[candidate.ref];
+      });
+    }
+    if (e.target.checked) sandboxDemoConfig.selected[kit.ref] = true;
+    else delete sandboxDemoConfig.selected[kit.ref];
+    renderSandboxKitPicker(kit.ref);
   });
 
   // ── Actions ────────────────────────────────────────────────────
