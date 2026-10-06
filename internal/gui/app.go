@@ -318,18 +318,26 @@ func (a *App) buildRepoEntry(entry config.RepoEntry) *repoEntry {
 				}
 			}
 
-			if result.AllSbxStatuses != nil {
-				for k, v := range result.AllSbxStatuses {
-					a.sbxStatuses[k] = v
-				}
-				if a.repoPanel != nil {
-					a.repoPanel.UpdateStatuses(a.sbxStatuses)
-				}
-			}
+			a.applySandboxInventory(result)
 		})
 	}
 
 	return re
+}
+
+func (a *App) applySandboxInventory(result ops.RefreshResult) {
+	if !result.HasSbxInventory {
+		return
+	}
+	// A successful listing is complete, including when it contains no
+	// sandboxes. Copy it so later callers cannot mutate the app's snapshot.
+	a.sbxStatuses = make(map[string]sandbox.Status, len(result.AllSbxStatuses))
+	for name, status := range result.AllSbxStatuses {
+		a.sbxStatuses[name] = status
+	}
+	if a.repoPanel != nil {
+		a.repoPanel.UpdateStatuses(a.sbxStatuses)
+	}
 }
 
 // reconcileConfigOnLoad rewrites any sandbox mode in cfg whose stored name

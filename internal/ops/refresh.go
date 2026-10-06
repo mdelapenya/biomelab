@@ -16,21 +16,22 @@ import (
 
 // RefreshResult carries updated worktree, agent, IDE, terminal, and PR data.
 type RefreshResult struct {
-	Worktrees      []git.Worktree
-	Agents         agent.DetectionResult
-	IDEs           ide.DetectionResult
-	Terminals      terminal.DetectionResult
-	PRs            provider.PRResult
-	HasPRs         bool
-	CLIAvail       provider.CLIAvailability
-	HasCLIAvail    bool // CLIAvailable is zero, so presence must be explicit
-	Err            error
-	FetchErr       error
-	SandboxStatus  sandbox.Status
-	HasSbxStatus   bool // true when sandbox status was actually checked
-	AllSbxStatuses map[string]sandbox.Status
-	SbxClientVer   string
-	SbxServerVer   string
+	Worktrees       []git.Worktree
+	Agents          agent.DetectionResult
+	IDEs            ide.DetectionResult
+	Terminals       terminal.DetectionResult
+	PRs             provider.PRResult
+	HasPRs          bool
+	CLIAvail        provider.CLIAvailability
+	HasCLIAvail     bool // CLIAvailable is zero, so presence must be explicit
+	Err             error
+	FetchErr        error
+	SandboxStatus   sandbox.Status
+	HasSbxStatus    bool // true when sandbox status was actually checked
+	AllSbxStatuses  map[string]sandbox.Status
+	HasSbxInventory bool // a successful full listing, including an empty one
+	SbxClientVer    string
+	SbxServerVer    string
 	// SbxMatchedName is the candidate that matched a running/stopped sandbox
 	// in sbx ls (empty if none matched). Lets callers reconcile config when
 	// the stored sandbox name differs from what sbx actually reports.
@@ -111,9 +112,11 @@ func LocalRefresh(
 	var sbxMatched string
 	var sbxVer sandbox.VersionInfo
 	var allStatuses map[string]sandbox.Status
+	var hasSbxInventory bool
 	if len(sbxCandidates) > 0 {
-		statusMap := func() map[string]sandbox.Status { statuses, _ := sandbox.ListStatusesContext(ctx); return statuses }()
-		if statusMap != nil {
+		statusMap, listErr := sandbox.ListStatusesContext(ctx)
+		if listErr == nil {
+			hasSbxInventory = true
 			allStatuses = make(map[string]sandbox.Status, len(statusMap))
 			for k, v := range statusMap {
 				allStatuses[k] = v
@@ -127,17 +130,18 @@ func LocalRefresh(
 	}
 
 	return RefreshResult{
-		Worktrees:      wts,
-		Agents:         agents,
-		IDEs:           ides,
-		Terminals:      terms,
-		SandboxStatus:  sbxStatus,
-		HasSbxStatus:   len(sbxCandidates) > 0,
-		AllSbxStatuses: allStatuses,
-		SbxClientVer:   sbxVer.Client,
-		SbxServerVer:   sbxVer.Server,
-		SbxMatchedName: sbxMatched,
-		Generation:     snap.Generation,
+		Worktrees:       wts,
+		Agents:          agents,
+		IDEs:            ides,
+		Terminals:       terms,
+		SandboxStatus:   sbxStatus,
+		HasSbxStatus:    hasSbxInventory,
+		HasSbxInventory: hasSbxInventory,
+		AllSbxStatuses:  allStatuses,
+		SbxClientVer:    sbxVer.Client,
+		SbxServerVer:    sbxVer.Server,
+		SbxMatchedName:  sbxMatched,
+		Generation:      snap.Generation,
 	}
 }
 
@@ -201,9 +205,13 @@ func NetworkRefresh(
 	}
 	var sbxStatus sandbox.Status
 	var sbxMatched string
+	var allStatuses map[string]sandbox.Status
+	var hasSbxInventory bool
 	if len(sbxCandidates) > 0 {
-		statusMap := func() map[string]sandbox.Status { statuses, _ := sandbox.ListStatusesContext(ctx); return statuses }()
-		if statusMap != nil {
+		statusMap, listErr := sandbox.ListStatusesContext(ctx)
+		if listErr == nil {
+			hasSbxInventory = true
+			allStatuses = statusMap
 			if name, s, ok := sandbox.MatchStatus(statusMap, sbxCandidates); ok {
 				sbxStatus = s
 				sbxMatched = name
@@ -212,19 +220,21 @@ func NetworkRefresh(
 	}
 
 	return RefreshResult{
-		Worktrees:      wts,
-		Agents:         agents,
-		IDEs:           ides,
-		Terminals:      terms,
-		PRs:            prs,
-		HasSbxStatus:   len(sbxCandidates) > 0,
-		HasPRs:         true,
-		CLIAvail:       cliAvail,
-		HasCLIAvail:    true,
-		FetchErr:       fetchErr,
-		SandboxStatus:  sbxStatus,
-		SbxMatchedName: sbxMatched,
-		Generation:     snap.Generation,
+		Worktrees:       wts,
+		Agents:          agents,
+		IDEs:            ides,
+		Terminals:       terms,
+		PRs:             prs,
+		HasSbxStatus:    hasSbxInventory,
+		AllSbxStatuses:  allStatuses,
+		HasSbxInventory: hasSbxInventory,
+		HasPRs:          true,
+		CLIAvail:        cliAvail,
+		HasCLIAvail:     true,
+		FetchErr:        fetchErr,
+		SandboxStatus:   sbxStatus,
+		SbxMatchedName:  sbxMatched,
+		Generation:      snap.Generation,
 	}
 }
 

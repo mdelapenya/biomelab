@@ -1,9 +1,13 @@
 package gui
 
 import (
+	"testing"
+
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
-	"testing"
+
+	"github.com/mdelapenya/biomelab/internal/ops"
+	"github.com/mdelapenya/biomelab/internal/sandbox"
 )
 
 func TestTrayVisibilityTracksWindowAcrossHideAndShow(t *testing.T) {
@@ -48,5 +52,18 @@ func TestAsyncStatusAndRefreshStayWithOriginatingRepo(t *testing.T) {
 	a.refreshRepo(origin, func() { refreshes++ })
 	if origin.state.StatusMessage != "created branch" || refreshes != 1 {
 		t.Fatal("removed repository accepted a late completion")
+	}
+}
+
+func TestSandboxInventoryReplacesSuccessfulEmptySnapshot(t *testing.T) {
+	a := &App{sbxStatuses: map[string]sandbox.Status{"removed": sandbox.StatusRunning}}
+	a.applySandboxInventory(ops.RefreshResult{HasSbxInventory: true, AllSbxStatuses: map[string]sandbox.Status{}})
+	if len(a.sbxStatuses) != 0 {
+		t.Fatalf("removed sandbox survived successful empty listing: %v", a.sbxStatuses)
+	}
+	a.sbxStatuses["current"] = sandbox.StatusStopped
+	a.applySandboxInventory(ops.RefreshResult{})
+	if len(a.sbxStatuses) != 1 || a.sbxStatuses["current"] != sandbox.StatusStopped {
+		t.Fatal("failed listing erased the last known inventory")
 	}
 }
