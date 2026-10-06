@@ -32,14 +32,18 @@ func (g *GitHubProvider) CheckCLIContext(ctx context.Context) CLIAvailability {
 	return CLIAvailable
 }
 
-// FetchPRs looks up open PRs for the given branch names using gh.
+// FetchPRs looks up PRs in any state for the given branch names using gh.
 func (g *GitHubProvider) FetchPRs(repoDir string, branches []string) PRResult {
 	return g.FetchPRsContext(context.Background(), repoDir, branches)
 }
 
 func (g *GitHubProvider) FetchPRsContext(ctx context.Context, repoDir string, branches []string) PRResult {
-	return fetchPRsConcurrent(ctx, repoDir, branches, func(dir, branch string) *PRInfo {
-		return fetchGitHubPRContext(ctx, dir, branch)
+	return successfulPRs(g.FetchPRsDetailedContext(ctx, repoDir, branches))
+}
+
+func (g *GitHubProvider) FetchPRsDetailedContext(ctx context.Context, repoDir string, branches []string) PRLookupResult {
+	return fetchPRsDetailedConcurrent(ctx, repoDir, branches, func(dir, branch string) (*PRInfo, error) {
+		return lookupGitHubPRContext(ctx, dir, branch)
 	})
 }
 
@@ -120,23 +124,30 @@ func fetchGitHubPR(repoDir, branch string) *PRInfo {
 }
 
 func fetchGitHubPRContext(ctx context.Context, repoDir, branch string) *PRInfo {
+	pr, _ := lookupGitHubPRContext(ctx, repoDir, branch)
+	return pr
+}
+
+func lookupGitHubPRContext(ctx context.Context, repoDir, branch string) (*PRInfo, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	cmd := command.BackgroundContext(ctx, "gh", "pr", "view", branch,
-		"--json", "number,title,state,isDraft,url,statusCheckRollup,reviews",
+	cmd := command.BackgroundContext(ctx, "gh", "pr", "list", "--head", branch,
+		"--state", "all", "--limit", "100",
+		"--json", "number,title,state,isDraft,url,statusCheckRollup,reviews,headRefName",
 	)
 	cmd.Dir = repoDir
 	out, err := cmd.Output()
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("gh pr list %q: %w", branch, err)
 	}
 
-	var raw struct {
+	var raw []struct {
 		Number            int    `json:"number"`
 		Title             string `json:"title"`
 		State             string `json:"state"`
 		IsDraft           bool   `json:"isDraft"`
 		URL               string `json:"url"`
+		HeadRefName       string `json:"headRefName"`
 		StatusCheckRollup []struct {
 			State      string `json:"state"`
 			Status     string `json:"status"`
@@ -147,20 +158,38 @@ func fetchGitHubPRContext(ctx context.Context, repoDir, branch string) *PRInfo {
 		} `json:"reviews"`
 	}
 	if err := json.Unmarshal(out, &raw); err != nil {
-		return nil
+		return nil, fmt.Errorf("parse gh PR list %q: %w", branch, err)
 	}
+	if raw == nil {
+		return nil, fmt.Errorf("gh PR list %q returned null", branch)
+	}
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	selected := -1
+	for i := range raw {
+		if raw[i].HeadRefName == branch && raw[i].Number > 0 && raw[i].URL != "" {
+			if selected < 0 || raw[i].Number > raw[selected].Number {
+				selected = i
+			}
+		}
+	}
+	if selected < 0 {
+		return nil, fmt.Errorf("gh PR list %q returned no valid matching PR", branch)
+	}
+	r := raw[selected]
 
 	pr := &PRInfo{
-		Number: raw.Number,
-		Title:  raw.Title,
-		State:  strings.ToLower(raw.State),
-		Draft:  raw.IsDraft,
-		URL:    raw.URL,
+		Number: r.Number,
+		Title:  r.Title,
+		State:  strings.ToLower(r.State),
+		Draft:  r.IsDraft,
+		URL:    r.URL,
 	}
 
-	pr.CheckStatus = rollupStatus(raw.StatusCheckRollup)
-	pr.ReviewStatus = githubReviewStatus(raw.Reviews)
-	return pr
+	pr.CheckStatus = rollupStatus(r.StatusCheckRollup)
+	pr.ReviewStatus = githubReviewStatus(r.Reviews)
+	return pr, nil
 }
 
 // githubReviewStatus returns the most significant review state from a list of

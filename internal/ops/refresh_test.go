@@ -15,6 +15,15 @@ type emptyProcessLister struct{}
 
 func (emptyProcessLister) Processes(context.Context) ([]process.Info, error) { return nil, nil }
 
+type detailedRefreshProvider struct {
+	provider.PRProvider
+	lookups provider.PRLookupResult
+}
+
+func (p detailedRefreshProvider) FetchPRsDetailedContext(context.Context, string, []string) provider.PRLookupResult {
+	return p.lookups
+}
+
 func TestQuickRefreshDoesNotReplaceDetection(t *testing.T) {
 	_, repo := newOpsRepo(t, nil)
 	result := QuickRefresh(repo)
@@ -40,17 +49,21 @@ func TestCancelledRefreshDoesNotStartOperations(t *testing.T) {
 	}
 }
 
-func TestNetworkRefreshCarriesCLIAvailability(t *testing.T) {
+func TestNetworkRefreshCarriesCLIAndDetailedPRLookups(t *testing.T) {
 	_, repo := newOpsRepo(t, nil)
 	lister := emptyProcessLister{}
+	want := provider.PRLookupResult{"main": {Info: &provider.PRInfo{Number: 42}}}
 	result := NetworkRefresh(context.Background(), repo,
 		agent.NewDetectorWithLister(lister), ide.NewDetectorWithLister(lister),
 		terminal.NewDetectorWithLister(lister), lister,
-		nil, provider.CLIAvailable, nil)
+		detailedRefreshProvider{lookups: want}, provider.CLIAvailable, nil)
 	if result.Err != nil {
 		t.Fatal(result.Err)
 	}
 	if !result.HasCLIAvail || result.CLIAvail != provider.CLIAvailable {
 		t.Fatalf("CLI availability omitted or wrong: %+v", result)
+	}
+	if !result.HasPRs || !result.HasPRLookups || result.PRLookups["main"].Info == nil || result.PRLookups["main"].Info.Number != 42 {
+		t.Fatalf("detailed PR result omitted: %+v", result)
 	}
 }
