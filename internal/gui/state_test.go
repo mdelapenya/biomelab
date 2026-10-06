@@ -101,3 +101,27 @@ type fakeErr string
 func (e fakeErr) Error() string { return string(e) }
 
 var errFakeRefresh = fakeErr("simulated refresh failure")
+
+func TestRepoStateApplyPreservesSelectedWorktreeAcrossSortedRefresh(t *testing.T) {
+	s := &RepoState{Worktrees: []git.Worktree{
+		{Path: "/repo", Branch: "main"},
+		{Path: "/wt/alpha", Branch: "alpha"},
+		{Path: "/wt/beta", Branch: "beta"},
+	}, SelectedCard: 2}
+	if !s.Apply(ops.RefreshResult{Worktrees: []git.Worktree{
+		{Path: "/repo", Branch: "main"},
+		{Path: "/wt/beta", Branch: "beta"},
+		{Path: "/wt/aardvark", Branch: "aardvark"},
+		{Path: "/wt/alpha", Branch: "alpha"},
+	}}) {
+		t.Fatal("refresh was dropped")
+	}
+	if got := s.Worktrees[s.SelectedCard].Path; got != "/wt/beta" {
+		t.Fatalf("selection moved to %q, want beta", got)
+	}
+	// If the selected worktree disappears, keep the index in range.
+	s.SetWorktrees([]git.Worktree{{Path: "/repo", Branch: "main"}, {Path: "/wt/alpha", Branch: "alpha"}})
+	if s.SelectedCard != 1 {
+		t.Fatalf("selection after removal = %d, want nearest remaining card", s.SelectedCard)
+	}
+}

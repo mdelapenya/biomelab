@@ -130,12 +130,32 @@ func (s *RepoState) Apply(result ops.RefreshResult) bool {
 // SetWorktrees stores worktrees and sorts linked ones alphabetically by branch.
 // This ensures deterministic rendering order that matches navigation order.
 func (s *RepoState) SetWorktrees(wts []git.Worktree) {
+	selectedPath := ""
+	if s.SelectedCard >= 0 && s.SelectedCard < len(s.Worktrees) {
+		selectedPath = s.Worktrees[s.SelectedCard].Path
+	}
+	wts = append([]git.Worktree(nil), wts...)
 	if len(wts) > 1 {
 		slices.SortFunc(wts[1:], func(a, b git.Worktree) int {
 			return strings.Compare(strings.ToLower(a.Branch), strings.ToLower(b.Branch))
 		})
 	}
 	s.Worktrees = wts
+	if len(wts) == 0 {
+		s.SelectedCard = 0
+		return
+	}
+	if selectedPath != "" {
+		for i, wt := range wts {
+			if wt.Path == selectedPath {
+				s.SelectedCard = i
+				return
+			}
+		}
+	}
+	// The selected worktree disappeared. Stay near its former position
+	// without leaving a selection that points beyond the refreshed list.
+	s.SelectedCard = min(max(s.SelectedCard, 0), len(wts)-1)
 }
 
 // MainWorktree returns the first (main) worktree, or nil if none.
