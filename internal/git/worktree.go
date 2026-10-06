@@ -910,6 +910,12 @@ func (r *Repository) FetchPRRef(prNumber int, branchName, remoteURL string) erro
 	if err := r.reopen(); err != nil {
 		return err
 	}
+	branchRef := plumbing.NewBranchReferenceName(branchName)
+	if _, err := r.repo.Reference(branchRef, false); err == nil {
+		return fmt.Errorf("local branch %q already exists", branchName)
+	} else if !errors.Is(err, plumbing.ErrReferenceNotFound) {
+		return fmt.Errorf("check local branch %q: %w", branchName, err)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
