@@ -460,10 +460,7 @@ func (a *App) buildMainLayout() fyne.CanvasObject {
 
 	// The dependency banner starts hidden and appears when the background
 	// probe finds a missing or degraded primary tool.
-	top := fyne.CanvasObject(titleBar)
-	if banner := a.buildDepsBanner(); banner != nil {
-		top = container.NewVBox(titleBar, banner)
-	}
+	top := container.NewVBox(titleBar, a.buildDepsBanner())
 
 	return container.NewBorder(top, nil, nil, nil, split)
 }
