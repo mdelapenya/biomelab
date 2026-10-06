@@ -587,8 +587,6 @@ func (a *App) handleDeleteOrRemoveSandbox() {
 			fyne.Do(func() {
 				if err != nil {
 					a.setStatus(err.Error(), true)
-				} else if re.state.SelectedCard >= len(re.state.Worktrees)-1 {
-					re.state.SelectedCard = max(0, re.state.SelectedCard-1)
 				}
 				a.refreshMgr.TriggerQuick()
 			})
