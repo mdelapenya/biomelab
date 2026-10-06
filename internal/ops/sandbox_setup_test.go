@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -10,6 +11,59 @@ import (
 
 	"github.com/mdelapenya/biomelab/internal/sandbox"
 )
+
+func TestRegisterExistingSandboxRechecksExactMatchedName(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake sbx executable uses a POSIX shell")
+	}
+	dir := t.TempDir()
+	listingFile := filepath.Join(dir, "listing.json")
+	createLog := filepath.Join(dir, "create.log")
+	script := `#!/bin/sh
+case "$1" in
+  ls) cat "$TEST_LIST_FILE" ;;
+  create) printf '%s\n' "$@" >> "$TEST_CREATE_LOG" ;;
+  *) exit 1 ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(dir, "sbx"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("TEST_LIST_FILE", listingFile)
+	t.Setenv("TEST_CREATE_LOG", createLog)
+	writeListing := func(data string) {
+		t.Helper()
+		if err := os.WriteFile(listingFile, []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	const matched = "owner-repo-openclaw"
+	writeListing(`{"sandboxes":[{"name":"owner-repo-openclaw","status":"stopped"}]}`)
+	_, _, err := EnsureSandboxWithKit("owner/repo", "/workspace/repo", matched, "openclaw", "docker.io/sbx/openclaw-kit:latest", nil)
+	var existing *ExistingSandboxWithKitsError
+	if !errors.As(err, &existing) || existing.Name != matched {
+		t.Fatalf("existing kit error = %v, want matched name %q", err, matched)
+	}
+	name, err := RegisterExistingSandbox(existing.Name)
+	if err != nil || name != matched {
+		t.Fatalf("register name=%q err=%v", name, err)
+	}
+	if _, err := os.Stat(createLog); !os.IsNotExist(err) {
+		t.Fatalf("registration invoked sbx create: %v", err)
+	}
+
+	// A different, similarly named sandbox cannot replace the exact one the
+	// user was asked to register if it disappears while the dialog is open.
+	writeListing(`{"sandboxes":[{"name":"openclaw-owner-repo","status":"running"}]}`)
+	if _, err := RegisterExistingSandbox(existing.Name); err == nil || !strings.Contains(err.Error(), "no longer exists") {
+		t.Fatalf("vanished match should fail: %v", err)
+	}
+	if _, err := os.Stat(createLog); !os.IsNotExist(err) {
+		t.Fatalf("vanished match invoked sbx create: %v", err)
+	}
+}
 
 func TestEnsureSandbox(t *testing.T) {
 	if runtime.GOOS == "windows" {
