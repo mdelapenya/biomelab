@@ -302,8 +302,10 @@ func (r *stageViewportRenderer) Layout(size fyne.Size) {
 	v.scroll.Show()
 	v.scroll.Move(fyne.NewPos(left, 0))
 	v.scroll.Resize(fyne.NewSize(right-left, size.Height))
-	v.body.Refresh()
-	v.scroll.Refresh()
+	v.body.Layout.Layout(v.body.Objects, v.body.Size())
+	// Scroll.Refresh also recursively refreshes Content. Its base updates bars
+	// and layout only, which is sufficient for the changed viewport geometry.
+	v.scroll.Base.Refresh()
 	v.scroll.ScrollToOffset(fyne.NewPos(left, v.scroll.Offset.Y))
 }
 func (r *stageViewportRenderer) MinSize() fyne.Size           { return fyne.NewSize(1, 32) }
@@ -338,7 +340,9 @@ type boardViewportRenderer struct{ v *boardViewport }
 func (r *boardViewportRenderer) Layout(size fyne.Size) {
 	r.v.dash.boardScroll.Move(fyne.Position{})
 	r.v.dash.boardScroll.Resize(size)
-	r.v.dash.boardScroll.Refresh()
+	// Also update the renderer's content pointer after a dashboard rebuild,
+	// where the viewport size may be unchanged.
+	r.v.dash.boardScroll.Base.Refresh()
 	r.v.dash.refreshStageViewports()
 }
 func (r *boardViewportRenderer) MinSize() fyne.Size { return r.v.dash.boardScroll.MinSize() }

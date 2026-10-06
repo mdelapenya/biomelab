@@ -3,6 +3,7 @@ package gui
 import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"strings"
 )
@@ -12,9 +13,14 @@ import (
 // selectable/editable route for branch and path context.
 type wrappedValue struct {
 	widget.BaseWidget
-	value string
-	mono  bool
-	muted bool
+	value               string
+	mono                bool
+	muted               bool
+	wrapWidth, wrapSize float32
+	wrapValue           string
+	wrapMono            bool
+	wrapFont            fyne.Resource
+	wrapLines           []string
 }
 
 func newWrappedValue(value string, mono bool) *wrappedValue {
@@ -28,6 +34,10 @@ func (w *wrappedValue) lines(width float32) []string {
 	}
 	style := fyne.TextStyle{Monospace: w.mono}
 	size := scaledSize(12)
+	font := theme.Font(style)
+	if w.wrapLines != nil && w.wrapWidth == width && w.wrapSize == size && w.wrapValue == w.value && w.wrapMono == w.mono && w.wrapFont == font {
+		return w.wrapLines
+	}
 	var lines []string
 	for _, paragraph := range strings.Split(w.value, "\n") {
 		remaining := []rune(paragraph)
@@ -36,14 +46,21 @@ func (w *wrappedValue) lines(width float32) []string {
 			continue
 		}
 		for len(remaining) > 0 {
-			count, lastSpace := 0, 0
-			for i, r := range remaining {
-				if fyne.MeasureText(string(remaining[:i+1]), size, style).Width > width {
-					break
+			// Measure whole prefixes with binary search rather than shaping
+			// every growing prefix; long paths/footer text otherwise cost O(n²).
+			lo, hi := 0, len(remaining)
+			for lo < hi {
+				mid := (lo + hi + 1) / 2
+				if fyne.MeasureText(string(remaining[:mid]), size, style).Width <= width {
+					lo = mid
+				} else {
+					hi = mid - 1
 				}
-				count = i + 1
+			}
+			count, lastSpace := lo, 0
+			for i, r := range remaining[:count] {
 				if r == ' ' {
-					lastSpace = count
+					lastSpace = i + 1
 				}
 			}
 			if count == 0 {
@@ -65,6 +82,7 @@ func (w *wrappedValue) lines(width float32) []string {
 			}
 		}
 	}
+	w.wrapWidth, w.wrapSize, w.wrapValue, w.wrapMono, w.wrapFont, w.wrapLines = width, size, w.value, w.mono, font, lines
 	return lines
 }
 func (w *wrappedValue) lineHeight() float32 {
@@ -85,6 +103,7 @@ func (r *wrappedValueRenderer) MinSize() fyne.Size {
 }
 func (r *wrappedValueRenderer) Layout(size fyne.Size) {
 	lines := r.w.lines(size.Width)
+	lineHeight := r.w.lineHeight()
 	for len(r.texts) < len(lines) {
 		t := canvas.NewText("", colorForeground)
 		if r.w.muted {
@@ -98,8 +117,8 @@ func (r *wrappedValueRenderer) Layout(size fyne.Size) {
 	for i, line := range lines {
 		t := r.texts[i]
 		t.Text = line
-		t.Move(fyne.NewPos(0, scaledSize(4)+float32(i)*r.w.lineHeight()))
-		t.Resize(fyne.NewSize(size.Width, r.w.lineHeight()))
+		t.Move(fyne.NewPos(0, scaledSize(4)+float32(i)*lineHeight))
+		t.Resize(fyne.NewSize(size.Width, lineHeight))
 		t.Refresh()
 	}
 }

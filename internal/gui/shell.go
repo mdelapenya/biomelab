@@ -26,7 +26,10 @@ func newShellLayoutWithWidth(sidebar, workspace, banner fyne.CanvasObject, width
 	body := container.New(layout, sidebar, workspace, divider)
 	divider.onDrag = func(dx float32) {
 		*width = layout.clamp(sidebar.Size().Width+dx, body.Size().Width, workspace.MinSize().Width) / scaledSize(1)
-		body.Refresh()
+		// This is a geometry change, not new content. Container.Refresh walks
+		// every descendant, queuing redundant text/card redraws per mouse event.
+		layout.Layout(body.Objects, body.Size())
+		canvas.Refresh(body)
 	}
 	if banner == nil {
 		return body

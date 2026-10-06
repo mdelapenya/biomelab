@@ -50,7 +50,6 @@ func (l *workspaceRootLayout) Layout(objects []fyne.CanvasObject, size fyne.Size
 		main := objects[1]
 		main.Move(fyne.NewPos(0, h))
 		main.Resize(fyne.NewSize(size.Width, main.MinSize().Height))
-		main.Refresh()
 		mainHeight := main.MinSize().Height
 		main.Resize(fyne.NewSize(size.Width, mainHeight))
 		h += mainHeight
@@ -60,7 +59,6 @@ func (l *workspaceRootLayout) Layout(objects []fyne.CanvasObject, size fyne.Size
 	if l.footer {
 		footer := objects[len(objects)-1]
 		footer.Resize(fyne.NewSize(size.Width, footer.MinSize().Height))
-		footer.Refresh()
 		footerHeight = footer.MinSize().Height
 		footer.Move(fyne.NewPos(0, size.Height-footerHeight))
 		footer.Resize(fyne.NewSize(size.Width, footerHeight))
