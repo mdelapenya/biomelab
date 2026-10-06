@@ -1,6 +1,7 @@
 package regent
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mdelapenya/biomelab/internal/command"
 )
@@ -23,6 +25,16 @@ var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07`)
 // Sets NO_COLOR=1 so well-behaved tools skip color output; the regex
 // strips anything that leaks through.
 func Log(wtPath string, limit int) (string, error) {
+	return LogContext(context.Background(), wtPath, limit)
+}
+
+// LogContext bounds the rgt command and allows callers to cancel stale reads.
+func LogContext(ctx context.Context, wtPath string, limit int) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if wtPath == "" {
 		return "", nil
 	}
@@ -37,12 +49,15 @@ func Log(wtPath string, limit int) (string, error) {
 	if limit > 0 {
 		args = append(args, "--limit", strconv.Itoa(limit))
 	}
-	cmd := command.Background(bin, args...)
+	cmd := command.BackgroundContext(ctx, bin, args...)
 	cmd.Dir = wtPath
 	cmd.Env = append(os.Environ(), "NO_COLOR=1")
 	out, err := cmd.CombinedOutput()
 	clean := stripANSI(string(out))
 	if err != nil {
+		if ctx.Err() != nil {
+			return clean, fmt.Errorf("rgt log: %w", ctx.Err())
+		}
 		return clean, fmt.Errorf("rgt log: %s: %w", strings.TrimSpace(clean), err)
 	}
 	return clean, nil
