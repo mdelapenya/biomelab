@@ -175,6 +175,7 @@ func showSendPRDirtyWarning(parent fyne.Window, branch string, dirty, hasStash b
 
 func showSendPRRemoteSelection(parent fyne.Window, remotes []git.RemoteInfo, onDone func(), onSelect func(idx int)) dialog.Dialog {
 	var d dialog.Dialog
+	advancing := false
 
 	content := container.NewVBox(
 		widget.NewLabel("Select a remote to push to:"),
@@ -186,6 +187,9 @@ func showSendPRRemoteSelection(parent fyne.Window, remotes []git.RemoteInfo, onD
 		idx := i
 		label := fmt.Sprintf("%s  (%s)", r.Name, r.Repo)
 		btn := newDialogButton(label, func() {
+			// Hiding this stage fires OnClosed. The flow still owns a modal
+			// dialog while the final confirmation replaces it.
+			advancing = true
 			d.Hide()
 			onSelect(idx)
 		}, func() { d.Hide() })
@@ -197,7 +201,9 @@ func showSendPRRemoteSelection(parent fyne.Window, remotes []git.RemoteInfo, onD
 
 	d = dialog.NewCustom("Select Remote", "Cancel", content, parent)
 	d.SetOnClosed(func() {
-		onDone()
+		if !advancing {
+			onDone()
+		}
 	})
 	d.Resize(dialogMinSize)
 	d.Show()
