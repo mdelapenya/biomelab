@@ -2,8 +2,8 @@ package gui
 
 import (
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/driver/desktop"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -16,16 +16,15 @@ type dragHandle struct {
 	widget.BaseWidget
 	groupIdx int
 	panel    *RepoPanel
-	icon     *canvas.Text
+	icon     *widget.Icon
 }
 
 func newDragHandle(groupIdx int, panel *RepoPanel) *dragHandle {
 	h := &dragHandle{
 		groupIdx: groupIdx,
 		panel:    panel,
-		icon:     monoText("☰", colorDimGray, true),
+		icon:     widget.NewIcon(theme.MenuIcon()),
 	}
-	h.icon.TextSize = scaledSize(12)
 	h.ExtendBaseWidget(h)
 	return h
 }

@@ -254,7 +254,9 @@ func kitCard(ctx context.Context, k kits.Kit, checked bool, onChanged func(bool)
 	title := widget.NewLabel(kitTitle(k))
 	title.Wrapping = fyne.TextWrapWord
 	title.Truncation = fyne.TextTruncateEllipsis
+	title.TextStyle.Bold = true
 	badge := widget.NewLabel(strings.ToUpper(k.Kind))
+	badge.Importance = widget.LowImportance
 	badge.TextStyle = fyne.TextStyle{Bold: true}
 	desc := widget.NewLabel(k.Description)
 	desc.Wrapping = fyne.TextWrapWord
@@ -282,6 +284,7 @@ func showKitsDialog(parent fyne.Window, repoName string, sandboxKits, mixins []k
 	previous := newDialogButton("Previous", nil, func() { d.Hide() })
 	next := newDialogButton("Next", nil, func() { d.Hide() })
 	continueButton := newDialogButton("Continue", nil, func() { d.Hide() })
+	continueButton.Importance = widget.HighImportance
 	cancelButton := newDialogButton("Cancel", func() { d.Hide() }, func() { d.Hide() })
 	columns := 2
 	windowSize := parent.Canvas().Size()
@@ -375,8 +378,8 @@ func showKitsDialog(parent fyne.Window, repoName string, sandboxKits, mixins []k
 	header := widget.NewLabel("Choose one sandbox kit, then optional mixins for " + repoName + ". Selections remain checked across pages.")
 	header.Wrapping = fyne.TextWrapWord
 	bottom := container.NewVBox(validationViewport, container.NewHBox(previous, pageLabel, next, selectedLabel),
-		container.NewHBox(cancelButton, continueButton))
-	content := container.NewBorder(header, bottom, nil, nil, cardsViewport)
+		dialogFooter(cancelButton, continueButton))
+	content := container.NewPadded(container.NewBorder(header, bottom, nil, nil, cardsViewport))
 	d = dialog.NewCustomWithoutButtons("Choose Kits", content, parent)
 	d.SetOnClosed(func() { cancel(); onDone() })
 	dialogSize := kitsDialogSize

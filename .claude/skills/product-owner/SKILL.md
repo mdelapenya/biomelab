@@ -20,7 +20,7 @@ BiomeLab is a Go/Fyne desktop GUI for managing Git worktrees and coding agents a
 
 Use the maintained user guides as the source for workflows and shortcuts:
 
-- [Dashboard and worktrees](../../../docs/dashboard.md): default five-column kanban, grid, repository ordering, issue and PR/MR workflows, context-sensitive shortcuts, confirmation dialogs, themes, and tray.
+- [Dashboard and worktrees](../../../docs/dashboard.md): default five-column Board, compact List with inspector, optional Grid, repository ordering, issue and PR/MR workflows, context-sensitive shortcuts, confirmation dialogs, themes, and tray.
 - [Sandbox workflows](../../../docs/sandboxes.md): one sandbox per agent per repository, shared host worktrees, optional kits only at creation, lifecycle and registration.
 - [Notes and activity](../../../docs/notes-and-activity.md): issue context and progress handoff, `m` edits notes and PR titles, and `l` opens recorded re_gent activity. Host `rgt` is needed by the viewer.
 - [Installation](../../../docs/installation.md): supported artifacts, build prerequisites, optional tools.
@@ -195,17 +195,11 @@ is automatically registered in regular mode.
 Requiring an explicit add step would be friction for zero benefit. If the repo
 is already registered, the auto-add is a no-op.
 
-### DL-017: Three-tier help system
+### DL-017: Contextual help and visible actions
 
-**Decision:** Help text is split across three locations: left panel footer
-(repo actions), main card contextual help (main-card-only actions), and bottom
-help bar (global/card-general actions).
+**Decision:** Keep repository guidance in the projects panel and navigation/card shortcuts in the bottom help bar. The workspace header exposes New Worktree, Board, List, Grid, Refresh, and Inspector; Add repository stays in the projects panel. The workspace and main-card More menus offer GitHub issue creation and PR checkout alongside their existing `i` and `f` shortcuts.
 
-**Why:** Showing all keybindings in one place would be overwhelming and most
-would be irrelevant to the current context. Splitting by location means the
-user sees only the actions available right now. Main-card actions (create,
-fetch PR, sandbox lifecycle) are distinct from linked-card actions (delete,
-open) and from general actions (navigate, pull, notes, activity).
+**Why:** Common actions should be discoverable with a mouse while established keyboard workflows remain available. Keeping guidance near the relevant panel reduces the amount of unrelated help shown at once.
 
 ### DL-019: Removing last sandbox mode converts to regular
 
@@ -234,7 +228,7 @@ leaves the door open for future providers (Bitbucket, Gitea, etc.).
 
 **Decision:** When a repo/mode is first displayed, the linked worktrees are
 shown in the kanban board (five PR lifecycle columns) rather than the
-responsive card grid. Press `g` to toggle between views. The preference is
+responsive card grid. Board and List are the primary visible views; Grid remains available. Use the controls to choose a view; `g` toggles Board/Grid and returns from List to Board. Narrow boards scroll horizontally while each column scrolls vertically. The preference is
 held in memory in `RepoState.ViewMode`; it is not persisted across launches.
 
 **Why:** The primary use-case for biomelab is running multiple AI agents on
@@ -296,3 +290,9 @@ clear, intentional gesture; the icon plus a vertical-resize cursor on hover
 signals "grab here to move this row" without overloading other row
 interactions. Keeping the handle small also avoids confusing it with the
 worktree-count chip on the right edge.
+
+### DL-026: Prominent main checkout and shared presentation
+
+**Decision:** Keep a prominent Main checkout card at full workspace width above the linked browser and inspector in every view. It shows branch, path, checkout state, and activity, with Terminal, Editor, and Notes actions targeting the main checkout. List excludes a duplicate main row; navigation still reaches the pinned card. Details expands extra main metadata and Hide details collapses it, without adding a shortcut. The selected-item Inspector exposes full checkout and request values plus terminal, editor, notes, activity, and contextual More actions. List initially opens it; each view remembers visibility during the app run. Narrow workspaces put it below the browser. Retain disclosure and view-specific scroll state during dashboard rebuilds. Use proportional type for interface text and monospace for technical values, with shared dark/light theme and zoom across dashboard and dialogs.
+
+**Why:** The main checkout anchors repository context and needs a consistent, readily visible place in Board, List, and Grid. Pinning it above the browser and inspector keeps it available while linked worktrees scroll; disclosure keeps extra metadata available on demand. Consistent neutral surfaces, compact project navigation, and readable typography help distinguish interface guidance from repository data while preserving existing creation, input, and confirmation workflows. Explicit inspector details keep hover free of unsolicited popups.

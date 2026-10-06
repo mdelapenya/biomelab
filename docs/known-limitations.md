@@ -2,7 +2,8 @@
 
 These are implementation follow-ups identified during the documentation audit, not promised functionality.
 
-- **Kanban keyboard navigation:** five columns are rendered, but `navigateKanbanRight` in `internal/gui/shortcuts.go` still bounds its search with `c < 4`. The final PR Merged column cannot be reached by moving right from another column. Select a card with the mouse instead. Fix the bound and add navigation coverage in a separate code change.
+- **View state:** Board/List/Grid selection, inspector visibility, main-card disclosure, scroll offsets, and font zoom are kept for the current app run; they are not saved across restarts. The light/dark theme and repository order are saved.
+- **Board status:** lifecycle columns come from PR/MR provider data. Cards cannot be dragged between columns to change request state.
 - **Nix packaging:** `flake.nix` has a placeholder dependency hash and needs its Fyne build/runtime dependencies validated. It is not advertised as an installation method until verified.
 - **GitLab checkout:** status and creation support GitLab, but fetch-to-worktree uses GitHub helpers. Extend the provider abstraction before advertising MR checkout.
 - **Issue worktree inputs:** issue-created worktrees currently accept only a positive GitHub issue number or `owner/repo#number`. GitHub issue URLs, GitLab issues, and base-branch selection are not supported.

@@ -5,6 +5,9 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -173,4 +176,108 @@ func focusInDialog(parent fyne.Window, target fyne.Focusable) {
 	fyne.Do(func() {
 		parent.Canvas().Focus(target)
 	})
+}
+
+// dialogText uses the installed theme on refresh, including in an open dialog.
+func dialogText(text string) *widget.Label {
+	label := widget.NewLabel(text)
+	label.Wrapping = fyne.TextWrapWord
+	return label
+}
+
+func dialogHeading(text string) *widget.Label {
+	label := dialogText(text)
+	label.TextStyle.Bold = true
+	return label
+}
+
+func dialogHint(text string) *widget.Label {
+	label := dialogText(text)
+	label.Importance = widget.LowImportance
+	return label
+}
+
+func dialogSection(objects ...fyne.CanvasObject) *fyne.Container {
+	return inset(container.NewVBox(objects...), spaceSM, spaceSM)
+}
+
+// Group related fields on the same quiet inset surface as the workspace
+// inspector. Its renderer follows theme and zoom changes in an open window.
+func dialogGroup(objects ...fyne.CanvasObject) *fyne.Container {
+	surface := &dialogGroupSurface{}
+	surface.ExtendBaseWidget(surface)
+	return container.NewStack(surface, dialogSection(objects...))
+}
+
+type dialogGroupSurface struct{ widget.BaseWidget }
+
+func (s *dialogGroupSurface) CreateRenderer() fyne.WidgetRenderer {
+	r := &dialogGroupRenderer{rect: canvas.NewRectangle(colorSecondaryBg)}
+	r.Refresh()
+	return r
+}
+
+type dialogGroupRenderer struct{ rect *canvas.Rectangle }
+
+func (r *dialogGroupRenderer) Layout(size fyne.Size) { r.rect.Resize(size) }
+func (r *dialogGroupRenderer) MinSize() fyne.Size    { return fyne.Size{} }
+func (r *dialogGroupRenderer) Destroy()              {}
+func (r *dialogGroupRenderer) Objects() []fyne.CanvasObject {
+	return []fyne.CanvasObject{r.rect}
+}
+func (r *dialogGroupRenderer) Refresh() {
+	r.rect.FillColor = colorSecondaryBg
+	r.rect.CornerRadius = scaledSize(radiusControl)
+	r.rect.Refresh()
+}
+
+func dialogFooter(objects ...fyne.CanvasObject) *fyne.Container {
+	return container.NewVBox(widget.NewSeparator(), container.NewHBox(append([]fyne.CanvasObject{layout.NewSpacer()}, objects...)...))
+}
+
+// Keep preferred sizes within the parent canvas; scrolling content must supply
+// a small minimum independently, rather than forcing the popup wider.
+func boundedDialogSize(parent fyne.Window, preferred fyne.Size) fyne.Size {
+	if parent == nil {
+		return preferred
+	}
+	size := parent.Canvas().Size()
+	margin := scaledSize(spaceXL)
+	if size.Width > margin {
+		preferred.Width = min(preferred.Width, size.Width-margin)
+	}
+	if size.Height > margin {
+		preferred.Height = min(preferred.Height, size.Height-margin)
+	}
+	return preferred
+}
+
+func dialogTechnical(text string) *container.Scroll {
+	label := widget.NewLabelWithStyle(text, fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
+	label.Selectable = true
+	scroll := container.NewHScroll(label)
+	scroll.SetMinSize(fyne.NewSize(0, scaledSize(textBodySize+spaceLG)))
+	return scroll
+}
+
+func dialogBusy(message string) *fyne.Container {
+	return dialogSection(dialogText(message), widget.NewProgressBarInfinite())
+}
+
+// commandLayout retains the complete canvas command for inspection while
+// refreshing its font and color whenever the themed container is laid out.
+type commandLayout struct{ text *canvas.Text }
+
+func (l commandLayout) MinSize(objects []fyne.CanvasObject) fyne.Size { return objects[0].MinSize() }
+func (l commandLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	l.text.Color = theme.Color(theme.ColorNameForeground)
+	l.text.TextSize = theme.TextSize()
+	l.text.Refresh()
+	objects[0].Resize(size)
+}
+func dialogCommand(command string) *fyne.Container {
+	text := monoText(command, theme.Color(theme.ColorNameForeground), false)
+	scroll := container.NewHScroll(text)
+	scroll.SetMinSize(fyne.NewSize(0, scaledSize(textBodySize+spaceLG)))
+	return container.New(commandLayout{text}, scroll)
 }

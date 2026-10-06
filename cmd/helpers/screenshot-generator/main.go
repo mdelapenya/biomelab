@@ -9,16 +9,17 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
 	"github.com/mdelapenya/biomelab/internal/agent"
 	"github.com/mdelapenya/biomelab/internal/config"
 	"github.com/mdelapenya/biomelab/internal/git"
 	"github.com/mdelapenya/biomelab/internal/gui"
 	"github.com/mdelapenya/biomelab/internal/provider"
+	"github.com/mdelapenya/biomelab/internal/sandbox"
 )
 
 // This helper renders documentation images from the GUI widgets using sample data.
@@ -55,6 +56,21 @@ func run(args []string, stdout, stderr io.Writer) int {
 }
 
 func generate(outputDir string, stdout io.Writer) error {
+	// This developer helper runs from any working directory. Resolve its real
+	// brand asset from the source location, not from the output directory.
+	_, source, _, ok := runtime.Caller(0)
+	if !ok {
+		return fmt.Errorf("locate screenshot helper source for brand asset")
+	}
+	iconPath := filepath.Join(filepath.Dir(source), "..", "..", "biomelab", "icon.png")
+	iconBytes, err := os.ReadFile(iconPath)
+	if err != nil {
+		return fmt.Errorf("read screenshot brand asset: %w", err)
+	}
+	savedIcon := gui.AppIcon
+	gui.AppIcon = fyne.NewStaticResource("icon.png", iconBytes)
+	defer func() { gui.AppIcon = savedIcon }()
+
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return fmt.Errorf("create output directory: %w", err)
 	}
@@ -69,13 +85,14 @@ func generate(outputDir string, stdout io.Writer) error {
 		LastLocalRefresh:   time.Date(2026, 9, 18, 10, 30, 0, 0, time.UTC),
 		LastNetworkRefresh: time.Date(2026, 9, 18, 10, 30, 0, 0, time.UTC),
 	}
+	titles := []string{"Retire the old terminal approach", "Add task notes and progress handoffs", "Choose kits when creating a sandbox", "Keep terminal focus on repeated launch", "Document the first worktree workflow"}
 	branches := []string{"fix/old-approach", "feat/task-notes", "feat/sandbox-kits", "fix/terminal-focus", "docs/getting-started"}
 	states := []string{"closed", "", "open", "open", "merged"}
 	for i, branch := range branches {
 		path := root + "/.biomelab-worktrees/" + branch
 		state.Worktrees = append(state.Worktrees, git.Worktree{Path: path, Branch: branch, IsDirty: i == 1, Sync: git.SyncUpToDate})
 		if states[i] != "" {
-			state.PRs[branch] = &provider.PRInfo{Number: 41 + i, Title: branch, State: states[i], CheckStatus: "success", URL: "https://github.com/example/project/pull/41"}
+			state.PRs[branch] = &provider.PRInfo{Number: 41 + i, Title: titles[i], State: states[i], CheckStatus: "success", URL: "https://github.com/example/project/pull/41"}
 		}
 		if i == 3 {
 			state.PRs[branch].ReviewStatus = "approved"
@@ -87,11 +104,21 @@ func generate(outputDir string, stdout io.Writer) error {
 	for _, variant := range []gui.ThemeVariant{gui.VariantDark, gui.VariantLight} {
 		app.Settings().SetTheme(gui.NewTheme(variant))
 		dashboard := gui.NewDashboard(state)
-		repos := gui.NewRepoPanel([]*gui.RepoGroup{{Path: root, Name: "example/biomelab", Modes: []config.ModeEntry{mode}, LinkedWorktreeCount: 5}}, nil)
-		split := container.NewHSplit(repos.Content(), dashboard.Content())
-		split.Offset = .20
+		dashboard.RepoName = "biomelab"
+		// Fixture callbacks reproduce enabled main-card controls without
+		// launching terminals, editors, or dialogs during offscreen rendering.
+		dashboard.OnMainTerminal = func() {}
+		dashboard.OnMainEditor = func() {}
+		dashboard.OnMainNotes = func() {}
+		dashboard.Rebuild()
+		repos := gui.NewRepoPanel([]*gui.RepoGroup{
+			{Path: root, Name: "biomelab", Modes: []config.ModeEntry{mode, {Type: "sandbox", Agent: "Claude", SandboxName: "biomelab-claude"}}, LinkedWorktreeCount: 5},
+			{Path: "/projects/agent-tools", Name: "agent-tools", Modes: []config.ModeEntry{{Type: "sandbox", Agent: "Codex", SandboxName: "tools-codex"}}},
+			{Path: "/projects/docs", Name: "docs", Modes: []config.ModeEntry{mode}},
+		}, map[string]sandbox.Status{"biomelab-claude": sandbox.StatusRunning, "tools-codex": sandbox.StatusStopped})
 		w := app.NewWindow("BiomeLab")
-		w.SetContent(split)
+		w.SetPadded(false)
+		w.SetContent(gui.NewShellLayout(repos.Content(), dashboard.Content(), nil))
 		w.Resize(fyne.NewSize(1440, 720))
 		w.Show()
 		var encoded bytes.Buffer

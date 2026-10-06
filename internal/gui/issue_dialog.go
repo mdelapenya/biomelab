@@ -28,7 +28,9 @@ func showIssueInput(parent fyne.Window, onClosed func(), onSubmit func(string) e
 	done := func() { once.Do(onClosed) }
 	errLabel := widget.NewLabel("")
 	errLabel.Wrapping = fyne.TextWrapWord
+	errLabel.Importance = widget.DangerImportance
 	entry := newDialogEntry(func() { d.Hide() })
+	entry.TextStyle.Monospace = true
 	entry.SetPlaceHolder("82 or owner/repo#82")
 	submit := func() {
 		if err := onSubmit(entry.Text); err != nil {
@@ -42,39 +44,22 @@ func showIssueInput(parent fyne.Window, onClosed func(), onSubmit func(string) e
 	}
 	entry.OnSubmitted = func(string) { submit() }
 	lookup := newDialogButton("Look Up", submit, func() { d.Hide() })
+	lookup.Importance = widget.HighImportance
 	cancel := newDialogButton("Cancel", func() { d.Hide() }, func() { d.Hide() })
 	prompt := widget.NewLabel("Enter a GitHub issue number for this repository, or owner/repo#number:")
 	prompt.Wrapping = fyne.TextWrapWord
-	content := container.NewVBox(
-		prompt,
-		entry,
-		errLabel,
-		container.NewHBox(lookup, cancel),
-	)
+	content := container.NewBorder(nil, dialogFooter(cancel, lookup), nil, nil, dialogGroup(prompt, entry, errLabel))
 	d = dialog.NewCustomWithoutButtons("Create Worktree from Issue", content, parent)
 	d.SetOnClosed(done)
-	d.Resize(fyne.NewSize(580, 240))
+	d.Resize(boundedDialogSize(parent, fyne.NewSize(580, 240)))
 	d.Show()
 	return issueInputDialog{Dialog: d, entry: entry}
 }
 
 func (a *App) showIssueError(err error) {
-	var d dialog.Dialog
-	done := a.openDialog()
-	message := widget.NewLabel(err.Error())
-	message.Wrapping = fyne.TextWrapWord
-	closeButton := newDialogButton("Close", func() { d.Hide() }, func() { d.Hide() })
-	d = dialog.NewCustomWithoutButtons("Issue Worktree Error", container.NewVBox(message, closeButton), a.window)
-	var once sync.Once
-	d.SetOnClosed(func() { once.Do(done) })
-	d.Resize(fyne.NewSize(580, 220))
-	a.activeDialog = d
-	d.Show()
-	fyne.Do(func() {
-		if a.dialogOpen && a.activeDialog == d {
-			a.window.Canvas().Focus(closeButton)
-		}
-	})
+	if err != nil {
+		a.showInformation("Issue Worktree Error", err.Error())
+	}
 }
 
 func showIssueLoading(parent fyne.Window, issueRef string, onClosed, onCancel func()) dialog.Dialog {
@@ -90,17 +75,13 @@ func showIssueLoading(parent fyne.Window, issueRef string, onClosed, onCancel fu
 	})
 	lookupLabel := widget.NewLabel("Looking up GitHub issue " + issueRef + "…")
 	lookupLabel.Wrapping = fyne.TextWrapWord
-	content := container.NewVBox(
-		lookupLabel,
-		widget.NewProgressBarInfinite(),
-		cancel,
-	)
+	content := container.NewBorder(nil, dialogFooter(cancel), nil, nil, dialogBusy(lookupLabel.Text))
 	d = dialog.NewCustomWithoutButtons("Loading Issue", content, parent)
 	d.SetOnClosed(func() {
 		onCancel()
 		done()
 	})
-	d.Resize(fyne.NewSize(500, 180))
+	d.Resize(boundedDialogSize(parent, fyne.NewSize(500, 180)))
 	d.Show()
 	return d
 }
@@ -121,11 +102,15 @@ func showIssuePreview(parent fyne.Window, issue github.IssueInfo, sourceRepo, de
 	done := func() { once.Do(onClosed) }
 
 	branch := newDialogEntry(func() { d.Hide() })
+	branch.TextStyle.Monospace = true
 	branch.SetText(ops.SuggestedIssueBranch(issue))
 	errorLabel := widget.NewLabel("")
 	errorLabel.Wrapping = fyne.TextWrapWord
+	errorLabel.Importance = widget.DangerImportance
+	errorLabel.Hide()
 	status := widget.NewLabel("")
 	status.Wrapping = fyne.TextWrapWord
+	status.Hide()
 
 	body := issue.Body
 	if strings.TrimSpace(body) == "" {
@@ -133,21 +118,14 @@ func showIssuePreview(parent fyne.Window, issue github.IssueInfo, sourceRepo, de
 	}
 	bodyLabel := widget.NewLabel(body)
 	bodyLabel.Wrapping = fyne.TextWrapWord
-	bodyScroll := container.NewVScroll(bodyLabel)
-	bodyScroll.SetMinSize(fyne.NewSize(740, 100))
-	wrapped := func(text string) *widget.Label {
-		label := widget.NewLabel(text)
-		label.Wrapping = fyne.TextWrapWord
+	boundedLine := func(text string) *widget.Label {
+		label := widget.NewLabelWithStyle(text, fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
+		label.Wrapping = fyne.TextWrapBreak
+		label.Selectable = true
 		return label
 	}
-	boundedLine := func(text string) *container.Scroll {
-		line := container.NewHScroll(widget.NewLabel(text))
-		line.SetMinSize(fyne.NewSize(740, 36))
-		return line
-	}
-	titleLabel := wrapped(fmt.Sprintf("#%d  %s", issue.Number, issue.Title))
-	title := container.NewVScroll(titleLabel)
-	title.SetMinSize(fyne.NewSize(740, 55))
+	wrapped := dialogText
+	title := dialogHeading(fmt.Sprintf("#%d  %s", issue.Number, issue.Title))
 
 	metadata := container.NewVBox(
 		title,
@@ -163,36 +141,38 @@ func showIssuePreview(parent fyne.Window, issue github.IssueInfo, sourceRepo, de
 	var create, cancel *dialogButton
 	submit := func() {
 		errorLabel.SetText("")
+		errorLabel.Hide()
 		if err := onCreate(branch.Text); err != nil {
 			errorLabel.SetText(err.Error())
+			errorLabel.Show()
 			return
 		}
 		branch.Disable()
 		create.Disable()
 		cancel.SetText("Close")
 		status.SetText("Creating worktree and saving issue context… You may close this dialog; creation will continue.")
+		status.Show()
 	}
 	branch.OnSubmitted = func(string) { submit() }
 	create = newDialogButton("Create", submit, func() { d.Hide() })
+	create.Importance = widget.HighImportance
 	cancel = newDialogButton("Cancel", func() { d.Hide() }, func() { d.Hide() })
 	details := container.NewVBox(
 		metadata,
 		widget.NewSeparator(),
-		widget.NewLabel("Issue description:"),
-		bodyScroll,
+		dialogHeading("Issue description"),
+		bodyLabel,
 		widget.NewSeparator(),
 		boundedLine("Destination repository: "+destination),
 		boundedLine("Base: the main checkout's current local HEAD when Create is pressed (currently "+currentHead+")."),
 		wrapped("Issue context, progress notes, and agent instructions will be added. Existing tracked instruction files may change."),
-		wrapped("Branch (letters, digits, and hyphens; 100 characters maximum):"),
-		branch,
-		errorLabel,
-		status,
 	)
-	content := container.NewBorder(nil, container.NewHBox(create, cancel), nil, nil, details)
+	branchSection := dialogGroup(dialogHeading("Branch name"), dialogHint("Letters, digits, and hyphens; 100 characters maximum."), branch, errorLabel, status)
+	footer := container.NewVBox(branchSection, dialogFooter(cancel, create))
+	content := container.NewBorder(nil, footer, nil, nil, container.NewVScroll(dialogSection(details)))
 	d = dialog.NewCustomWithoutButtons("Create Worktree from GitHub Issue", content, parent)
 	d.SetOnClosed(done)
-	d.Resize(issueDialogSize)
+	d.Resize(boundedDialogSize(parent, issueDialogSize))
 	d.Show()
 	return issuePreviewDialog{Dialog: d, branch: branch, create: create, cancel: cancel, error: errorLabel, status: status}
 }

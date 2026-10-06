@@ -85,17 +85,20 @@ func (a *App) openNoteDialog(wt git.Worktree) {
 	titleEntry.SetPlaceHolder("Conventional Commits title — feat(scope): description")
 	titleEntry.SetText(initialTitle)
 
-	titleLabel := monoText("# PR title", colorBranch, true)
-	titleLabel.TextSize = scaledSize(11)
+	titleLabel := dialogHeading("PR title")
 	errorLabel := widget.NewLabel("")
 	errorLabel.Wrapping = fyne.TextWrapWord
+	errorLabel.Importance = widget.DangerImportance
 	errorLabel.Hide()
-	titleSection := container.NewVBox(titleLabel, titleEntry, errorLabel)
+	worktreeContext := widget.NewLabelWithStyle("Branch: "+wt.Branch+"\nPath: "+wt.Path, fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
+	worktreeContext.Wrapping = fyne.TextWrapBreak
+	worktreeContext.Selectable = true
+	contextScroll := container.NewVScroll(worktreeContext)
+	contextScroll.SetMinSize(fyne.NewSize(0, scaledSize(64)))
+	titleSection := container.NewVBox(contextScroll, titleLabel, titleEntry, errorLabel)
 
-	editorLabel := monoText("✎ Markdown", colorBranch, true)
-	editorLabel.TextSize = scaledSize(11)
-	previewLabel := monoText("👁 Preview", colorBranch, true)
-	previewLabel.TextSize = scaledSize(11)
+	editorLabel := dialogHeading("Markdown")
+	previewLabel := dialogHeading("Preview")
 
 	editorPane := container.NewBorder(editorLabel, nil, nil, nil, entry)
 	previewPane := container.NewBorder(previewLabel, nil, nil, nil, previewScroll)
@@ -166,12 +169,12 @@ func (a *App) openNoteDialog(wt git.Worktree) {
 				w,
 			)
 		})
-		deleteBtn.Importance = widget.LowImportance
+		deleteBtn.Importance = widget.DangerImportance
 		leftSide = deleteBtn
 	}
 	bottomRow := container.NewBorder(nil, nil, leftSide, rightButtons, nil)
 
-	content := container.NewBorder(titleSection, bottomRow, nil, nil, split)
+	content := container.NewPadded(container.NewBorder(dialogGroup(titleSection), container.NewVBox(widget.NewSeparator(), bottomRow), nil, nil, split))
 	w.SetContent(content)
 	w.Resize(noteWindowInitialSize)
 	w.CenterOnScreen()

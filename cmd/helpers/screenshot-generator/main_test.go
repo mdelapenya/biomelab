@@ -148,6 +148,13 @@ func readDashboard(t *testing.T, path string) image.Image {
 	if img.Bounds().Dx() != 1440 || img.Bounds().Dy() != 720 {
 		t.Fatalf("unexpected image dimensions: %v", img.Bounds())
 	}
+	// The production shell reserves a 190px rail at default zoom. Reject a
+	// regression to the old percentage splitter without depending on text pixels.
+	rail := color.RGBAModel.Convert(img.At(189, 350)).(color.RGBA)
+	divider := color.RGBAModel.Convert(img.At(190, 350)).(color.RGBA)
+	if rail == divider {
+		t.Fatal("screenshot does not use the compact production shell rail")
+	}
 	// Reject blank output without relying on platform-specific font rasterization.
 	colors := make(map[color.RGBA]bool)
 	for y := 0; y < 720; y += 8 {

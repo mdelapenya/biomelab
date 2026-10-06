@@ -9,7 +9,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/widget"
 
 	"github.com/mdelapenya/biomelab/internal/config"
 	"github.com/mdelapenya/biomelab/internal/kits"
@@ -72,12 +71,13 @@ func newSandboxMode(repoPath, agent string) config.ModeEntry {
 func (a *App) loadSetupKits(repoName string, onSubmit func([]kits.Kit)) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	done := a.openDialog()
-	loading := dialog.NewCustom("Loading Kits", "Cancel", widget.NewLabel("Loading available kits…"), a.window)
+	loading := dialog.NewCustom("Loading Kits", "Cancel", dialogBusy("Loading available kits…"), a.window)
 	loading.SetOnClosed(func() {
 		cancel()
 		done()
 	})
 	a.activeDialog = loading
+	loading.Resize(boundedDialogSize(a.window, dialogMinSize))
 	loading.Show()
 	go func() {
 		sandboxKits, mixins, err := kits.FetchAvailable(ctx)
@@ -87,7 +87,7 @@ func (a *App) loadSetupKits(repoName string, onSubmit func([]kits.Kit)) {
 			}
 			loading.Hide()
 			if err != nil {
-				dialog.ShowError(fmt.Errorf("load kits: %w", err), a.window)
+				a.showError(fmt.Errorf("load kits: %w", err))
 				return
 			}
 			pickerDone := a.openDialog()
@@ -101,7 +101,7 @@ func (a *App) createProjectSandbox(repoPath, repoName string, mode config.ModeEn
 		a.creatingSandboxes = make(map[string]bool)
 	}
 	if a.creatingSandboxes[mode.SandboxName] {
-		dialog.ShowInformation("Creating Sandbox", mode.SandboxName+" is already being created.", a.window)
+		a.showInformation("Creating Sandbox", mode.SandboxName+" is already being created.")
 		return
 	}
 	a.creatingSandboxes[mode.SandboxName] = true
@@ -126,7 +126,7 @@ func (a *App) createProjectSandbox(repoPath, repoName string, mode config.ModeEn
 					return
 				}
 				a.setProjectStatus(repoPath, ops.FirstNonEmptyLine(err.Error()), true)
-				dialog.ShowError(err, a.window)
+				a.showError(err)
 				return
 			}
 			a.completeProjectSandbox(repoPath, repoName, mode, name, created, selected)
@@ -140,8 +140,8 @@ func (a *App) createProjectSandbox(repoPath, repoName string, mode config.ModeEn
 func showConfirmRegisterExistingSandbox(parent fyne.Window, name, repoPath string, onDone, onRegister, onCancel func()) dialog.Dialog {
 	var d *dialog.ConfirmDialog
 	keyCap := newDialogKeyCapture(func() { d.Confirm() }, func() { d.Hide() })
-	content := container.NewStack(widget.NewLabel(
-		"Sandbox "+name+" already exists for "+repoPath+". Register it without changing its kits?\n\nSelected kits will not be installed or recorded."), keyCap)
+	content := container.NewStack(container.NewVScroll(dialogSection(dialogText(
+		"Sandbox "+name+" already exists for "+repoPath+". Register it without changing its kits?\n\nSelected kits will not be installed or recorded."))), keyCap)
 	d = dialog.NewCustomConfirm("Register Existing Sandbox", "Register Existing", "Cancel", content, func(ok bool) {
 		onDone()
 		if ok {
@@ -150,7 +150,7 @@ func showConfirmRegisterExistingSandbox(parent fyne.Window, name, repoPath strin
 			onCancel()
 		}
 	}, parent)
-	d.Resize(dialogMinSize)
+	d.Resize(boundedDialogSize(parent, dialogMinSize))
 	d.Show()
 	focusInDialog(parent, keyCap)
 	return d
@@ -161,7 +161,7 @@ func (a *App) registerExistingProjectSandbox(repoPath, repoName string, mode con
 		a.creatingSandboxes = make(map[string]bool)
 	}
 	if a.creatingSandboxes[matchedName] {
-		dialog.ShowInformation("Registering Sandbox", matchedName+" is already being registered.", a.window)
+		a.showInformation("Registering Sandbox", matchedName+" is already being registered.")
 		return
 	}
 	a.creatingSandboxes[matchedName] = true
@@ -172,7 +172,7 @@ func (a *App) registerExistingProjectSandbox(repoPath, repoName string, mode con
 			delete(a.creatingSandboxes, matchedName)
 			if err != nil {
 				a.setProjectStatus(repoPath, ops.FirstNonEmptyLine(err.Error()), true)
-				dialog.ShowError(err, a.window)
+				a.showError(err)
 				return
 			}
 			a.completeProjectSandbox(repoPath, repoName, mode, name, false, nil)

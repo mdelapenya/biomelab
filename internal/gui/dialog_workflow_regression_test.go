@@ -2,6 +2,7 @@ package gui
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -156,5 +157,67 @@ func TestRegentExportCancellationDropsCompletion(t *testing.T) {
 	case <-called:
 		t.Fatal("closed window accepted export completion")
 	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestRemoteSelectionScrollsToLastOptionInsideWindow(t *testing.T) {
+	fa := test.NewApp()
+	defer fa.Quit()
+	fa.Settings().SetTheme(NewTheme(VariantDark))
+	w := fa.NewWindow("many remotes")
+	defer w.Close()
+	w.Resize(fyne.NewSize(640, 460))
+	remotes := make([]git.RemoteInfo, 40)
+	for i := range remotes {
+		remotes[i] = git.RemoteInfo{Name: fmt.Sprintf("remote-%02d", i), Repo: "example/project"}
+	}
+	selected, closed := -1, 0
+	d := showSendPRRemoteSelection(w, remotes, func() { closed++ }, func(index int) { selected = index })
+	defer d.Hide()
+	popup := w.Canvas().Overlays().Top().(*widget.PopUp)
+	if popup.Size().Height > w.Canvas().Size().Height {
+		t.Fatal("remote list grew beyond the window")
+	}
+	var scroll *container.Scroll
+	var last *dialogButton
+	walkPolish(popup.Content, func(obj fyne.CanvasObject) {
+		if s, ok := obj.(*container.Scroll); ok {
+			scroll = s
+		}
+		if button, ok := obj.(*dialogButton); ok && strings.HasPrefix(button.Text, "remote-39") {
+			last = button
+		}
+	})
+	if scroll == nil || last == nil {
+		t.Fatal("bounded remote list missing")
+	}
+	scroll.ScrollToBottom()
+	pos := fa.Driver().AbsolutePositionForObject(last).Add(fyne.NewPos(8, 8))
+	if pos.Y < 0 || pos.Y >= w.Canvas().Size().Height {
+		t.Fatal("last remote is unreachable after scrolling")
+	}
+	test.TapCanvas(w.Canvas(), pos)
+	if selected != 39 || closed != 0 {
+		t.Fatalf("last remote selected=%d cleanup=%d", selected, closed)
+	}
+}
+
+func TestNoteEditorExposesCompleteLinkedWorktreeContext(t *testing.T) {
+	fa := test.NewApp()
+	defer fa.Quit()
+	fa.Settings().SetTheme(NewTheme(VariantDark))
+	wt := git.Worktree{Branch: "feature/" + strings.Repeat("long-branch/", 12), Path: t.TempDir()}
+	a := &App{fyneApp: fa}
+	a.openNoteDialog(wt)
+	w := a.noteWindows[wt.Path]
+	defer w.Close()
+	found := false
+	walkPolish(w.Content(), func(obj fyne.CanvasObject) {
+		if label, ok := obj.(*widget.Label); ok && label.Text == "Branch: "+wt.Branch+"\nPath: "+wt.Path {
+			found = label.TextStyle.Monospace && label.Wrapping == fyne.TextWrapBreak && label.Selectable
+		}
+	})
+	if !found {
+		t.Fatal("existing note editor does not expose complete selectable branch/path")
 	}
 }

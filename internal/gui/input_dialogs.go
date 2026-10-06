@@ -17,11 +17,12 @@ func showBranchInput(parent fyne.Window, onDone func(), onSubmit func(name strin
 	var d *dialog.ConfirmDialog
 
 	entry := newDialogEntry(func() { d.Hide() })
+	entry.TextStyle.Monospace = true
 	entry.SetPlaceHolder("branch-name")
 	entry.OnSubmitted = func(_ string) { d.Confirm() }
 
-	content := container.NewVBox(
-		widget.NewLabel("Create a new worktree:"),
+	content := dialogGroup(
+		dialogHeading("Branch name"),
 		entry,
 	)
 
@@ -31,7 +32,7 @@ func showBranchInput(parent fyne.Window, onDone func(), onSubmit func(name strin
 			onSubmit(entry.Text)
 		}
 	}, parent)
-	d.Resize(dialogMinSize)
+	d.Resize(boundedDialogSize(parent, dialogMinSize))
 	d.Show()
 	focusInDialog(parent, entry)
 	return d
@@ -41,11 +42,12 @@ func showFetchPRInput(parent fyne.Window, onDone func(), onSubmit func(input str
 	var d *dialog.ConfirmDialog
 
 	entry := newDialogEntry(func() { d.Hide() })
+	entry.TextStyle.Monospace = true
 	entry.SetPlaceHolder("123 or owner/repo#123")
 	entry.OnSubmitted = func(_ string) { d.Confirm() }
 
-	content := container.NewVBox(
-		widget.NewLabel("Fetch a pull request:"),
+	content := dialogGroup(
+		dialogHeading("Pull request number or reference"),
 		entry,
 	)
 
@@ -55,7 +57,7 @@ func showFetchPRInput(parent fyne.Window, onDone func(), onSubmit func(input str
 			onSubmit(entry.Text)
 		}
 	}, parent)
-	d.Resize(dialogMinSize)
+	d.Resize(boundedDialogSize(parent, dialogMinSize))
 	d.Show()
 	focusInDialog(parent, entry)
 	return d
@@ -65,11 +67,12 @@ func showAddRepoInput(parent fyne.Window, onDone func(), onSubmit func(path stri
 	var d *dialog.ConfirmDialog
 
 	entry := newDialogEntry(func() { d.Hide() })
+	entry.TextStyle.Monospace = true
 	entry.SetPlaceHolder("/path/to/repository")
 	entry.OnSubmitted = func(_ string) { d.Confirm() }
 
-	content := container.NewVBox(
-		widget.NewLabel("Add a repository:"),
+	content := dialogGroup(
+		dialogHeading("Repository path"),
 		entry,
 	)
 
@@ -79,7 +82,7 @@ func showAddRepoInput(parent fyne.Window, onDone func(), onSubmit func(path stri
 			onSubmit(entry.Text)
 		}
 	}, parent)
-	d.Resize(dialogMinSize)
+	d.Resize(boundedDialogSize(parent, dialogMinSize))
 	d.Show()
 	focusInDialog(parent, entry)
 	return d
@@ -94,32 +97,33 @@ func showModeSelection(parent fyne.Window, onDone func(), onRegular func(), onSa
 		onSandbox()
 	}, func() { d.Hide() })
 
+	sbxBtn.Importance = widget.HighImportance
 	regBtn := newDialogButton("Regular (host)", func() {
 		d.Hide()
 		onRegular()
 	}, func() { d.Hide() })
 
 	content := container.NewVBox(
-		widget.NewLabel("Select mode:"),
+		dialogHeading("Select mode"),
 		sbxBtn,
 	)
 
 	if !sbxAvailable {
 		sbxBtn.Disable()
 		installURL, _ := url.Parse(sbxInstallURL)
-		content.Add(container.NewHBox(
-			widget.NewLabel("sbx CLI not found in PATH —"),
+		content.Add(container.NewVBox(
+			dialogText("sbx CLI not found in PATH"),
 			widget.NewHyperlink("install sbx", installURL),
 		))
 	}
 
 	content.Add(regBtn)
 
-	d = dialog.NewCustom("Select Mode", "Cancel", content, parent)
+	d = dialog.NewCustom("Select Mode", "Cancel", dialogSection(content), parent)
 	d.SetOnClosed(func() {
 		onDone()
 	})
-	d.Resize(dialogMinSize)
+	d.Resize(boundedDialogSize(parent, dialogMinSize))
 	d.Show()
 
 	// Focus the recommended option when available so Enter accepts it; fall
@@ -145,10 +149,11 @@ func showAgentInput(parent fyne.Window, onDone func(), onSubmit func(agent strin
 	addKits := newDialogSelect([]string{"No", "Yes"}, nil, func() { d.Hide() })
 	addKits.SetSelected("No")
 
-	content := container.NewVBox(
-		widget.NewLabel("Built-in agent (used when kits are skipped):"),
+	content := dialogGroup(
+		dialogHeading("Built-in agent"),
 		sel,
-		widget.NewLabel("Do you want to add kits?"),
+		dialogHint("Used when kits are skipped."),
+		dialogHeading("Do you want to add kits?"),
 		addKits,
 	)
 
@@ -158,7 +163,7 @@ func showAgentInput(parent fyne.Window, onDone func(), onSubmit func(agent strin
 			onSubmit(sel.Selected, addKits.Selected == "Yes")
 		}
 	}, parent)
-	d.Resize(dialogMinSize)
+	d.Resize(boundedDialogSize(parent, dialogMinSize))
 	d.Show()
 	focusInDialog(parent, sel)
 	return d

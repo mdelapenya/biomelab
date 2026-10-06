@@ -26,6 +26,10 @@ var sysDepsDialogSize = fyne.NewSize(760, 600)
 // with a status dot, version, action buttons, and an "Optional tools"
 // expander for opt-in tools that aren't installed.
 func (a *App) showSysDepsDialog() dialog.Dialog {
+	if a.dialogOpen || a.activeDialog != nil {
+		return nil
+	}
+	done := a.openDialog()
 	var d *dialog.CustomDialog
 	body := container.NewVBox()
 	closed := false
@@ -45,23 +49,28 @@ func (a *App) showSysDepsDialog() dialog.Dialog {
 	if raw, ok := a.sysdepsCache.Peek(); ok {
 		show(a.visibleSysDeps(raw))
 	} else {
-		body.Objects = []fyne.CanvasObject{widget.NewLabel("Checking dependencies…")}
+		body.Objects = []fyne.CanvasObject{dialogBusy("Checking dependencies…")}
 	}
 
-	recheck := widget.NewButton("Re-check", func() { refresh(true) })
+	recheck := newDialogButton("Re-check", func() { refresh(true) }, func() { d.Hide() })
 	recheck.Importance = widget.HighImportance
-	footer := container.NewBorder(nil, nil, recheck, nil)
-
-	// No keyCap overlay here: dialog.NewCustom already dismisses on Escape
-	// via its own dismiss button, and a transparent Stack overlay would sit
-	// on top of the Copy/Docs/Re-check buttons and starve them of hover
-	// feedback. Buttons inside the content need a clear path to the cursor.
+	closeButton := newDialogButton("Close", func() { d.Hide() }, func() { d.Hide() })
+	footer := dialogFooter(closeButton, recheck)
 	content := container.NewBorder(nil, footer, nil, nil, container.NewVScroll(body))
 
-	d = dialog.NewCustom("System Dependencies", "Close", content, a.window)
-	d.SetOnClosed(func() { closed = true })
-	d.Resize(sysDepsDialogSize)
+	d = dialog.NewCustomWithoutButtons("System Dependencies", content, a.window)
+	d.SetOnClosed(func() {
+		closed = true
+		done()
+	})
+	a.activeDialog = d
+	d.Resize(boundedDialogSize(a.window, sysDepsDialogSize))
 	d.Show()
+	fyne.Do(func() {
+		if a.dialogOpen && a.activeDialog == d {
+			a.window.Canvas().Focus(closeButton)
+		}
+	})
 	refresh(false)
 	return d
 }
@@ -113,8 +122,7 @@ func (a *App) buildSysDepsContent(reps []sysdeps.Reported) fyne.CanvasObject {
 
 	if len(optional) > 0 {
 		items = append(items, widget.NewSeparator())
-		heading := monoText("Optional tools", colorGray, true)
-		heading.TextSize = scaledSize(11)
+		heading := dialogHeading("Optional tools")
 		items = append(items, heading)
 		for i, r := range optional {
 			if i > 0 {
@@ -138,38 +146,39 @@ func (a *App) buildSysDepsContent(reps []sysdeps.Reported) fyne.CanvasObject {
 // still and dimmer. Both indent slightly so they read as belonging to the
 // name above them.
 func (a *App) buildSysDepsRow(r sysdeps.Reported) fyne.CanvasObject {
-	dot := monoText(statusDot(r.Result.Status), statusColor(r.Result.Status), true)
-	dot.TextSize = scaledSize(14)
-
-	name := monoText(r.Check.DisplayName, colorForeground, true)
-
-	header := container.NewHBox(dot, name)
+	dot := dialogText(statusDot(r.Result.Status))
+	switch r.Result.Status {
+	case sysdeps.StatusOK:
+		dot.Importance = widget.SuccessImportance
+	case sysdeps.StatusMissing:
+		dot.Importance = widget.DangerImportance
+	case sysdeps.StatusDegraded:
+		dot.Importance = widget.WarningImportance
+	}
+	name := dialogHeading(r.Check.DisplayName)
+	dot.Wrapping = fyne.TextWrapOff
+	header := container.NewBorder(nil, nil, dot, nil, name)
 	actions := a.buildSysDepsActions(r)
-	top := container.NewBorder(nil, nil, header, actions)
-
-	rows := []fyne.CanvasObject{top}
-
+	rows := []fyne.CanvasObject{header}
 	if metaStr := rowMetaText(r); metaStr != "" {
-		metaColor := colorDimGray
-		if r.Result.Status == sysdeps.StatusOK {
-			metaColor = colorGray
+		meta := dialogHint(metaStr)
+		if r.Result.Version != "" {
+			meta.TextStyle.Monospace = true
 		}
-		meta := monoText(metaStr, metaColor, false)
-		meta.TextSize = scaledSize(12)
 		rows = append(rows, indented(meta))
 	}
+	rows = append(rows, indented(actions))
 
 	noteStr := r.Result.Note
 	if noteStr == "" {
 		noteStr = r.Check.Reason
 	}
 	if noteStr != "" {
-		note := monoText(noteStr, colorGray, false)
-		note.TextSize = scaledSize(11)
+		note := dialogHint(noteStr)
 		rows = append(rows, indented(note))
 	}
 
-	return container.NewVBox(rows...)
+	return dialogGroup(rows...)
 }
 
 // indented returns o wrapped with a left gutter so secondary row lines
@@ -210,17 +219,21 @@ func (a *App) buildSysDepsActions(r sysdeps.Reported) fyne.CanvasObject {
 		(r.Result.Status == sysdeps.StatusMissing || r.Result.Status == sysdeps.StatusDegraded)
 	if wantsCopy {
 		hint := r.Check.InstallHint
-		copyBtn := widget.NewButton("Copy install cmd", func() {
+		copyBtn := newDialogButton("Copy install cmd", func() {
 			if a.fyneApp != nil && a.fyneApp.Clipboard() != nil {
 				a.fyneApp.Clipboard().SetContent(hint)
 			}
-		})
+		}, a.dismissSysDepsDialog)
 		btns = append(btns, copyBtn)
 	}
 
 	if r.Check.DocsURL != "" {
 		if u, err := url.Parse(r.Check.DocsURL); err == nil {
-			btns = append(btns, widget.NewHyperlink("Docs", u))
+			btns = append(btns, newDialogButton("Docs", func() {
+				if a.fyneApp != nil {
+					_ = a.fyneApp.OpenURL(u)
+				}
+			}, a.dismissSysDepsDialog))
 		}
 	}
 
@@ -228,6 +241,13 @@ func (a *App) buildSysDepsActions(r sysdeps.Reported) fyne.CanvasObject {
 		return container.NewHBox()
 	}
 	return container.NewHBox(btns...)
+}
+
+// Every focusable dependency action routes Escape through the modal owner.
+func (a *App) dismissSysDepsDialog() {
+	if a.dialogOpen && a.activeDialog != nil {
+		a.activeDialog.Hide()
+	}
 }
 
 // statusDot returns the glyph for a given status, mapping to the dot palette
@@ -244,24 +264,6 @@ func statusDot(s sysdeps.Status) string {
 		return "–"
 	default:
 		return "?"
-	}
-}
-
-// statusColor returns the palette color for a given status. Kept in sync
-// with the rest of the GUI: green=ok, yellow=degraded, red=missing,
-// dimGray=n/a.
-func statusColor(s sysdeps.Status) color.Color {
-	switch s {
-	case sysdeps.StatusOK:
-		return colorGreen
-	case sysdeps.StatusDegraded:
-		return colorYellow
-	case sysdeps.StatusMissing:
-		return colorRed
-	case sysdeps.StatusNA:
-		return colorDimGray
-	default:
-		return colorGray
 	}
 }
 
@@ -298,8 +300,8 @@ func (a *App) updateSysdepsBanner(reps []sysdeps.Reported) {
 	}
 	msg := "⚠ " + strings.Join(bits, "; ") + " — some biomelab features will be limited."
 
-	text := monoText(msg, colorYellow, false)
-	text.TextSize = scaledSize(11)
+	text := dialogText(msg)
+	text.Importance = widget.WarningImportance
 
 	open := widget.NewButton("Open Dependencies", func() {
 		a.showSysDepsDialog()

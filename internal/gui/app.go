@@ -6,9 +6,9 @@ import (
 
 	"fyne.io/fyne/v2"
 	fyneapp "fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/driver/desktop"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/mdelapenya/biomelab/internal/agent"
@@ -48,15 +48,11 @@ type App struct {
 	repos             []*repoEntry
 	active            int // active repo entry index
 	dashSlot          *fyne.Container
+	shellSlot         *fyne.Container
 	dashboard         *Dashboard
 	refreshMgr        *RefreshManager
 	sbxStatuses       map[string]sandbox.Status
 	creatingSandboxes map[string]bool // UI-thread owned, keyed by globally unique sandbox name
-
-	// Title bar primitives that capture theme colors at construction time.
-	// Held so toggleTheme can refresh them without rebuilding the window.
-	titleBg   *canvas.Rectangle
-	titleText *canvas.Text
 
 	configPath      string
 	detector        *agent.Detector
@@ -65,9 +61,10 @@ type App struct {
 	procLister      process.Lister
 	refreshInterval time.Duration
 
-	focus        focusPanel
-	dialogOpen   bool
-	activeDialog interface{ Hide() } // current dialog, for Escape dismissal
+	focus            focusPanel
+	dialogGeneration uint64
+	dialogOpen       bool
+	activeDialog     interface{ Hide() } // current dialog, for Escape dismissal
 	// noteWindows tracks the currently-open note editor windows keyed by
 	// the worktree path so a repeated 'm' or Review click raises the
 	// existing window instead of spawning duplicates.
@@ -138,7 +135,8 @@ func (a *App) Run() {
 
 	a.window = a.fyneApp.NewWindow("biomelab")
 	a.window.SetIcon(AppIcon)
-	a.window.Resize(fyne.NewSize(1200, 700))
+	a.window.Resize(fyne.NewSize(1200, 760))
+	a.window.SetPadded(false)
 
 	content := a.buildContent()
 	a.window.SetContent(content)
@@ -150,6 +148,7 @@ func (a *App) Run() {
 
 	// Ctrl+/Ctrl- zoom (uses AddShortcut which works with modifiers).
 	registerZoomShortcuts(a.window.Canvas(), a.theme, a.fyneApp, func() {
+		a.refreshShellLayout()
 		if a.repoPanel != nil {
 			a.repoPanel.RebuildFull()
 		}
@@ -254,13 +253,8 @@ func (a *App) buildRepoEntry(entry config.RepoEntry) *repoEntry {
 	}
 
 	dash := NewDashboard(state)
-	dash.OnCardSelected = func(_ int) {
-		a.focus = focusRight // clicking a card means right panel has focus
-	}
-	dash.OnNoteRequested = func(wt git.Worktree) {
-		a.focus = focusRight
-		a.openNoteDialog(wt)
-	}
+	dash.RepoName = entry.Name
+	a.wireDashboardActions(dash)
 
 	rm := NewRefreshManager(repo, a.detector, a.ideDetector, a.termDetector, a.procLister, prProv, a.refreshInterval)
 	rm.SetSandboxCandidates(sbxCandidates)
@@ -428,7 +422,7 @@ func (a *App) reconcileSandboxName(re *repoEntry, oldName, newName string) {
 
 // buildMainLayout assembles the two-panel window layout from the current
 // a.repos slice. Assumes len(a.repos) >= 1. Starts the first repo's refresh
-// manager and initializes the title bar, repo panel, and dashboard slot.
+// manager and initializes the shell, repo panel, and dashboard slot.
 func (a *App) buildMainLayout() fyne.CanvasObject {
 	// Build repo panel (left side).
 	a.repoPanel = NewRepoPanel(a.collectGroups(), a.sbxStatuses)
@@ -437,32 +431,24 @@ func (a *App) buildMainLayout() fyne.CanvasObject {
 		a.switchMode(gi, mi)
 	}
 	a.repoPanel.OnReorder = a.reorderRepos
+	a.repoPanel.OnAddRepository = func() {
+		if !a.dialogOpen {
+			a.handleAddRepo()
+		}
+	}
 
 	// Active dashboard (right side).
 	a.active = 0
 	a.dashboard = a.repos[0].dashboard
 	a.refreshMgr = a.repos[0].refreshMgr
 	a.dashSlot = container.NewStack(a.dashboard.Content())
+	a.updatePanelFocus()
 
 	// Start the active repo's refresh manager.
 	a.repos[0].refreshMgr.Start()
 
-	// Title bar. Kept on the App so toggleTheme can recolor without rebuild.
-	a.titleText = monoText("biomelab", colorSelected, true)
-	a.titleText.TextSize = scaledSize(11)
-	a.titleText.Alignment = fyne.TextAlignCenter
-	a.titleBg = canvas.NewRectangle(colorPanelBg)
-	titleBar := container.NewStack(a.titleBg, container.NewPadded(a.titleText))
-
-	// Two-panel layout.
-	split := container.NewHSplit(a.repoPanel.Content(), a.dashSlot)
-	split.Offset = 0.18
-
-	// The dependency banner starts hidden and appears when the background
-	// probe finds a missing or degraded primary tool.
-	top := container.NewVBox(titleBar, a.buildDepsBanner())
-
-	return container.NewBorder(top, nil, nil, nil, split)
+	a.shellSlot = container.NewStack(newShellLayout(a.repoPanel.Content(), a.dashSlot, a.buildDepsBanner()))
+	return a.shellSlot
 }
 
 func (a *App) switchMode(groupIdx, modeIdx int) {
@@ -496,6 +482,7 @@ func (a *App) switchMode(groupIdx, modeIdx int) {
 
 	a.dashboard = re.dashboard
 	a.refreshMgr = re.refreshMgr
+	a.updatePanelFocus()
 	a.dashboard.Rebuild()
 	a.dashSlot.Objects = []fyne.CanvasObject{a.dashboard.Content()}
 	a.dashSlot.Refresh()
@@ -570,20 +557,13 @@ func (a *App) applyThemeVariant(v ThemeVariant) {
 	a.theme.SetVariant(v)
 	a.fyneApp.Settings().SetTheme(a.theme)
 
-	if a.titleBg != nil {
-		a.titleBg.FillColor = colorPanelBg
-		a.titleBg.Refresh()
-	}
-	if a.titleText != nil {
-		a.titleText.Color = colorSelected
-		a.titleText.Refresh()
-	}
 	if a.repoPanel != nil {
 		a.repoPanel.RebuildFull()
 	}
 	if a.dashboard != nil {
 		a.dashboard.Rebuild()
 	}
+	a.refreshShellLayout()
 	a.refreshTrayTheme()
 
 	cfg, err := config.Load(a.configPath)
@@ -610,5 +590,29 @@ func (a *App) refreshTrayTheme() {
 func (a *App) emptyState() fyne.CanvasObject {
 	msg := widget.NewLabel("No repositories registered.\nPress [a] to add one, or run biomelab from a git repository to auto-add it.")
 	msg.Alignment = fyne.TextAlignCenter
-	return container.NewCenter(msg)
+	msg.Wrapping = fyne.TextWrapWord
+	add := newActionControl("Add repository", theme.ContentAddIcon(), true, func() {
+		if !a.dialogOpen {
+			a.handleAddRepo()
+		}
+	})
+	return container.NewCenter(inset(container.NewVBox(uiText("BiomeLab", colorForeground, true), msg, add), spaceXL, spaceXL))
+}
+
+func (a *App) refreshShellLayout() {
+	if a.shellSlot == nil || a.repoPanel == nil || a.dashSlot == nil {
+		return
+	}
+	a.shellSlot.Objects = []fyne.CanvasObject{newShellLayout(a.repoPanel.Content(), a.dashSlot, a.sysdepsBanner)}
+	a.shellSlot.Refresh()
+}
+
+func (a *App) updatePanelFocus() {
+	if a.dashboard != nil {
+		a.dashboard.keyboardActive = a.focus == focusRight
+	}
+	if a.repoPanel != nil {
+		a.repoPanel.keyboardActive = a.focus == focusLeft
+		a.repoPanel.RebuildFull()
+	}
 }

@@ -58,35 +58,22 @@ func (tc *tappableCard) CreateRenderer() fyne.WidgetRenderer {
 }
 
 // makeCard wraps content in a bordered, tappable card container.
-// When selected, the card gets a cyan border, thicker stroke, and a left-edge bar.
+// Selection uses a restrained accent border on the shared card surface.
 func makeCard(content fyne.CanvasObject, selected bool, isMain bool, onTap func()) *tappableCard {
-	borderColor := colorBorder
-	strokeWidth := float32(1)
-	if isMain {
-		strokeWidth = 2
-	}
+	bg := canvas.NewRectangle(colorCardBg)
+	bg.CornerRadius = scaledSize(radiusCard)
+	bg.StrokeColor = colorBorder
+	bg.StrokeWidth = 1
 	if selected {
-		borderColor = colorSelected
-		strokeWidth += 1
+		bg.StrokeColor = colorSelected
+		bg.StrokeWidth = 1.5
 	}
-
-	bg := canvas.NewRectangle(colorBackground)
-	bg.CornerRadius = 6
-
-	border := canvas.NewRectangle(color.Transparent)
-	border.StrokeColor = borderColor
-	border.StrokeWidth = strokeWidth
-	border.CornerRadius = 6
-
-	padded := container.NewPadded(container.NewPadded(content))
-	visual := container.NewStack(bg, border, padded)
-
-	return newTappableCard(visual, onTap)
+	return newTappableCard(container.NewStack(bg, inset(content, spaceMD, spaceMD)), onTap)
 }
 
 // buildCardContent builds the visual content for a single worktree card.
-// selected adds a "▸ " prefix to the branch name.
-// pathMax controls max path characters (use maxLinkedPathChars or maxMainPathChars).
+// Legacy pathMax and selection parameters remain compatible with callers;
+// technical values now truncate by measured width at layout time.
 func buildCardContent(
 	wt git.Worktree,
 	agents []agent.Info,
@@ -100,191 +87,119 @@ func buildCardContent(
 	selected bool,
 ) fyne.CanvasObject {
 	var items []fyne.CanvasObject
-
-	// Branch line with selection indicator.
-	branchPrefix := ""
-	branchColor := colorBranch
-	if selected {
-		branchPrefix = "▸ "
-		branchColor = colorSelected
-	}
-	branchText := monoText(branchPrefix+wt.Branch, branchColor, true)
-	branchText.TextSize = scaledSize(13)
-	row := []fyne.CanvasObject{branchText}
-	if notes.Exists(wt.Path) {
-		noteIcon := monoText(" 📝", colorYellow, false)
-		noteIcon.TextSize = scaledSize(11)
-		row = append(row, noteIcon)
-	}
+	branch := newMeasuredText(wt.Branch, colorBranch, true, true, false)
+	var badge fyne.CanvasObject
 	if wt.IsMain {
-		row = append(row, makeBadge("main"))
-	} else if wt.Detached {
-		row = append(row, monoText(" (detached)", colorDimGray, false))
-	}
-	branchRow := container.NewHBox(row...)
-	if !wt.IsMain {
-		items = append(items, container.NewBorder(nil, nil, nil,
-			makeStagePill(kanbanStageOf(pr)), branchRow))
+		badge = makeBadge("Main")
 	} else {
-		items = append(items, branchRow)
+		badge = makeStagePill(kanbanStageOf(pr))
 	}
-
-	// Path: prefix-truncated dynamically so it never overflows the card,
-	// regardless of how narrow the card becomes when the window is resized.
-	items = append(items, newTruncMonoText(wt.Path, colorDimGray, false, true))
-
-	// Sandbox info.
-	if sbx != nil && sbx.Name != "" {
-		var label string
-		var c color.Color
-		switch sbx.Status {
-		case sandbox.StatusRunning:
-			label = "\U0001F40B sandbox: " + sbx.Name + " (running)"
-			c = colorGreen
-		case sandbox.StatusStopped:
-			label = "\U0001F40B sandbox: " + sbx.Name + " (stopped)"
-			c = colorYellow
-		default:
-			label = "\U0001F40B sandbox: " + sbx.Name + " (not found)"
-			c = colorRed
-		}
-		items = append(items, monoText(truncateStr(label, pathMax), c, false))
-		if sbx.ClientVersion != "" {
-			ver := "sbx: client " + sbx.ClientVersion
-			if sbx.ServerVersion != "" {
-				ver += "  server " + sbx.ServerVersion
-			}
-			items = append(items, monoText(ver, colorDimGray, false))
-		}
-		for _, k := range sbx.Kits {
-			label := "🧩 " + k.Name
-			if k.Ref != "" {
-				label += "@" + k.Ref
-			}
-			line := monoText(truncateStr(label, pathMax), colorPurple, false)
-			line.TextSize = scaledSize(11)
-			items = append(items, line)
-		}
-	}
-
-	// Separator before status section.
-	items = append(items, widget.NewSeparator())
-
-	// PR/MR status.
+	items = append(items, container.NewBorder(nil, nil, nil, badge, branch))
+	path := newMeasuredText(wt.Path, colorDimGray, false, true, true)
+	path.txt.TextSize = scaledSize(textSecondarySize)
+	items = append(items, path)
 	if pr != nil {
 		items = append(items, buildPRLine(pr, prov))
 	} else if cliAvail != provider.CLIAvailable && cliAvail != 0 {
 		items = append(items, buildCLIWarning(cliAvail, prov))
 	}
-
-	// Agent status.
-	if len(agents) > 0 {
-		for _, a := range agents {
-			prefix := "● "
-			if a.IsSubAgent {
-				prefix = "  ↳ "
-			}
-			line := fmt.Sprintf("%s%s (PID %s)", prefix, string(a.Kind), a.PID)
-			items = append(items, monoText(line, colorGreen, false))
-			// Agent detail line: process state and start time.
-			if a.State != "" || a.Started != "" {
-				detail := fmt.Sprintf("  state: %s  started: %s", a.State, a.Started)
-				detailText := monoText(detail, colorGreen, false)
-				detailText.TextSize = scaledSize(10)
-				items = append(items, detailText)
-			}
+	if sbx != nil && sbx.Name != "" {
+		status := "not found"
+		c := colorRed
+		switch sbx.Status {
+		case sandbox.StatusRunning:
+			status, c = "running", colorGreen
+		case sandbox.StatusStopped:
+			status, c = "stopped", colorYellow
 		}
-	} else if sbx != nil && sbx.Agent != "" && sbx.Status == sandbox.StatusRunning {
-		line := fmt.Sprintf("● %s (sandbox)", sbx.Agent)
-		items = append(items, monoText(line, colorGreen, false))
-	} else {
-		items = append(items, monoText("○ no agent", colorDimGray, false))
-	}
-
-	// IDE status.
-	if len(ides) > 0 {
-		for _, i := range ides {
-			line := fmt.Sprintf("■ %s (PID %d)", string(i.Kind), i.PID)
-			items = append(items, monoText(line, colorBlue, false))
+		items = append(items, newMeasuredText("Sandbox "+sbx.Name+" · "+status, c, false, false, false))
+		if sbx.ClientVersion != "" {
+			items = append(items, secondaryText("Client "+sbx.ClientVersion+" · Server "+sbx.ServerVersion))
 		}
-	} else {
-		items = append(items, monoText("□ no IDE", colorDimGray, false))
-	}
-
-	// Terminal status.
-	if len(terminals) > 0 {
-		for _, t := range terminals {
-			line := fmt.Sprintf("▶ %s (PID %d)", string(t.Kind), t.ShellPID)
-			items = append(items, monoText(line, colorPurple, false))
+		for _, kit := range sbx.Kits {
+			items = append(items, newMeasuredText("Kit "+kit.Name+"@"+kit.Ref, colorGray, false, false, false))
 		}
-	} else {
-		items = append(items, monoText("▷ no terminal", colorDimGray, false))
 	}
-
-	// Dirty + sync status on one line.
-	var statusItems []fyne.CanvasObject
+	for _, a := range agents {
+		line := newMeasuredText(fmt.Sprintf("%s · PID %s · %s %s", agentDisplayName(a), a.PID, a.State, a.Started), colorGreen, false, false, false)
+		line.txt.TextSize = scaledSize(textSecondarySize)
+		items = append(items, line)
+	}
+	if len(agents) == 0 && sbx != nil && sbx.Agent != "" && sbx.Status == sandbox.StatusRunning {
+		items = append(items, secondaryText(sbx.Agent+" · sandbox"))
+	}
+	for _, i := range ides {
+		items = append(items, secondaryText(fmt.Sprintf("%s · PID %d", i.Kind, i.PID)))
+	}
+	for _, t := range terminals {
+		items = append(items, secondaryText(fmt.Sprintf("%s · PID %d", t.Kind, t.ShellPID)))
+	}
+	status := "Clean"
 	if wt.IsDirty {
-		statusItems = append(statusItems, monoText("~ dirty", colorYellow, false))
-	} else {
-		statusItems = append(statusItems, monoText("✓ clean", colorGreen, false))
+		status = "Uncommitted changes"
 	}
-	statusItems = append(statusItems, monoText("  ", colorForeground, false))
-	statusItems = append(statusItems, syncStatusText(wt.Sync))
-	items = append(items, container.NewHBox(statusItems...))
-
+	if wt.Detached {
+		status += " · Detached HEAD"
+	}
+	if notes.Exists(wt.Path) {
+		status += " · Notes"
+	}
+	items = append(items, secondaryText(status+" · "+syncLabel(wt.Sync)))
 	return container.NewVBox(items...)
 }
 
 func buildPRLine(pr *provider.PRInfo, prov provider.Provider) fyne.CanvasObject {
-	label := "PR"
+	kind := "PR"
 	if prov == provider.ProviderGitLab {
-		label = "MR"
+		kind = "MR"
 	}
-
-	title := truncateStr(pr.Title, 30)
-	stateLabel := pr.State
-	c := colorBlue
-
-	switch {
-	case pr.Draft:
-		c = colorDimGray
-		stateLabel = "draft"
-	case pr.State == "merged":
-		c = colorPurple
-	case pr.State == "closed":
-		c = colorRed
+	state := pr.State
+	if pr.Draft {
+		state = "draft"
 	}
+	link := newPRLink(fmt.Sprintf("%s #%d", kind, pr.Number), pr.URL, colorBlue)
+	title := newMeasuredText(pr.Title, colorForeground, false, false, false)
+	title.txt.TextSize = scaledSize(textSecondarySize)
+	titleRow := container.NewBorder(nil, nil, link, nil, title)
+	status := secondaryText(state)
+	items := []fyne.CanvasObject{titleRow, status}
+	items = append(items, prStatusLabels(pr)...)
+	return container.NewVBox(items...)
+}
 
-	text := fmt.Sprintf("%s #%d %s (%s)", label, pr.Number, title, stateLabel)
-	parts := []fyne.CanvasObject{monoText(truncateStr(text, 36), c, false)}
-
-	// Review status icon (shown before the CI icon).
-	switch pr.ReviewStatus {
-	case "approved":
-		parts = append(parts, monoText(" ✓", colorGreen, false))
-	case "changes_requested":
-		parts = append(parts, monoText(" !", colorRed, false))
-	case "commented":
-		parts = append(parts, monoText(" ●", colorYellow, false))
+func prStatusLabels(pr *provider.PRInfo) []fyne.CanvasObject {
+	var items []fyne.CanvasObject
+	if pr.ReviewStatus != "" {
+		label := pr.ReviewStatus
+		c := colorGray
+		switch label {
+		case "approved":
+			c = colorGreen
+		case "changes_requested":
+			label = "changes requested"
+			c = colorRed
+		case "commented":
+			c = colorYellow
+		}
+		hint := newStatusText("Review: "+label, c)
+		hint.txt.TextSize = scaledSize(textSecondarySize)
+		items = append(items, hint)
 	}
-
 	if pr.CheckStatus != "" {
-		icon := provider.StatusIcon(pr.CheckStatus)
-		var iconColor color.Color
+		c := colorGray
 		switch pr.CheckStatus {
 		case "success":
-			iconColor = colorGreen
+			c = colorGreen
 		case "failure":
-			iconColor = colorRed
+			c = colorRed
 		case "pending":
-			iconColor = colorYellow
+			c = colorYellow
 		}
-		if iconColor != nil {
-			parts = append(parts, monoText(" "+icon, iconColor, false))
-		}
+		hint := newStatusText("CI: "+pr.CheckStatus, c)
+		hint.txt.TextSize = scaledSize(textSecondarySize)
+		items = append(items, hint)
 	}
-
-	return container.NewHBox(parts...)
+	return items
 }
 
 func buildCLIWarning(avail provider.CLIAvailability, prov provider.Provider) fyne.CanvasObject {
@@ -305,33 +220,33 @@ func buildCLIWarning(avail provider.CLIAvailability, prov provider.Provider) fyn
 	case provider.CLIUnsupportedProvider:
 		msg = fmt.Sprintf("PR status: %s not yet supported", prov.String())
 	}
-	return monoText(msg, colorDimGray, false)
+	return newMeasuredText(msg, colorDimGray, false, false, false)
 }
 
-func syncStatusText(sync git.SyncStatus) fyne.CanvasObject {
+func syncLabel(sync git.SyncStatus) string {
 	switch sync {
 	case git.SyncUpToDate:
-		return monoText("↕ up-to-date", colorGreen, false)
+		return "Up to date"
 	case git.SyncAhead:
-		return monoText("↑ ahead", colorYellow, false)
+		return "Ahead"
 	case git.SyncBehind:
-		return monoText("↓ behind", colorYellow, false)
+		return "Behind"
 	case git.SyncDiverged:
-		return monoText("↕ diverged", colorRed, false)
+		return "Diverged"
 	case git.SyncNoUpstream:
-		return monoText("- no upstream", colorGray, false)
+		return "No upstream"
 	default:
-		return monoText("? unknown", colorDimGray, false)
+		return "Sync unknown"
 	}
 }
 
 // makeBadge creates a small colored badge (e.g., "main" tag).
 func makeBadge(text string) fyne.CanvasObject {
 	bg := canvas.NewRectangle(colorBorder)
-	bg.CornerRadius = 3
+	bg.CornerRadius = scaledSize(radiusControl)
 
-	label := monoText(text, colorGray, false)
-	label.TextSize = scaledSize(9)
+	label := uiText(text, colorGray, false)
+	label.TextSize = scaledSize(textSecondarySize)
 
 	return container.NewStack(bg, container.NewPadded(label))
 }
@@ -341,10 +256,10 @@ func makeBadge(text string) fyne.CanvasObject {
 // a glance.
 func countChip(n int, bgColor color.Color) fyne.CanvasObject {
 	bg := canvas.NewRectangle(bgColor)
-	bg.CornerRadius = 8
+	bg.CornerRadius = scaledSize(radiusCard)
 
-	label := monoText(fmt.Sprintf("%d", n), colorForeground, true)
-	label.TextSize = scaledSize(10)
+	label := uiText(fmt.Sprintf("%d", n), colorForeground, true)
+	label.TextSize = scaledSize(textSecondarySize)
 	label.Alignment = fyne.TextAlignCenter
 
 	return container.NewStack(bg, container.NewPadded(label))
@@ -365,86 +280,25 @@ func scaledSize(base float32) float32 {
 	return base * theme.TextSize() / 14
 }
 
-func truncateStr(s string, max int) string {
-	runes := []rune(s)
-	if len(runes) <= max {
-		return s
+// Board selection uses the same solid surface as the selected List item.
+func makeKanbanCard(content fyne.CanvasObject, selected bool, onTap func()) *tappableCard {
+	bg := canvas.NewRectangle(colorCardBg)
+	bg.CornerRadius = scaledSize(radiusCard)
+	bg.StrokeColor = colorBorder
+	bg.StrokeWidth = 1
+	if selected {
+		bg.FillColor = colorActionBg
+		bg.StrokeColor = colorActionBg
 	}
-	return string(runes[:max-1]) + "…"
+	return newTappableCard(container.NewStack(bg, inset(content, spaceSM, spaceSM)), onTap)
 }
 
-// truncatePath trims a path from the left (prefix), keeping the unique suffix.
-// Example: "/Users/foo/src/github.com/org/repo/.biomelab-worktrees/feat" → "…rg/repo/.biomelab-worktrees/feat"
-func truncatePath(s string, max int) string {
-	runes := []rune(s)
-	if len(runes) <= max {
-		return s
+// agentDisplayName retains the detected parent/child distinction in compact
+// process rows without adding another property or control.
+func agentDisplayName(info agent.Info) string {
+	name := string(info.Kind)
+	if info.IsSubAgent {
+		name = "↳ " + name
 	}
-	return "…" + string(runes[len(runes)-max+1:])
+	return name
 }
-
-// truncMonoText is a canvas.Text wrapper that re-truncates its content to fit
-// the width assigned by the parent layout. canvas.Text alone does not clip, so
-// long paths spill past their card's border; this widget recomputes how many
-// runes fit each time the renderer is laid out.
-//
-// prefixTrunc chooses the truncation style: true for prefix truncation
-// (truncatePath — keeps the suffix), false for suffix truncation (truncateStr).
-type truncMonoText struct {
-	widget.BaseWidget
-	fullText    string
-	prefixTrunc bool
-	txt         *canvas.Text
-}
-
-func newTruncMonoText(full string, c color.Color, bold, prefixTrunc bool) *truncMonoText {
-	t := &truncMonoText{
-		fullText:    full,
-		prefixTrunc: prefixTrunc,
-		txt:         monoText(full, c, bold),
-	}
-	t.ExtendBaseWidget(t)
-	return t
-}
-
-func (t *truncMonoText) CreateRenderer() fyne.WidgetRenderer {
-	return &truncMonoTextRenderer{t: t}
-}
-
-type truncMonoTextRenderer struct {
-	t *truncMonoText
-}
-
-// charWidth is an approximation of a monospace glyph width as a fraction of
-// the font size. 0.6 matches most monospace faces; using a conservative value
-// guarantees the truncated string fits inside size.Width.
-const charWidth = 0.6
-
-func (r *truncMonoTextRenderer) Layout(size fyne.Size) {
-	cw := r.t.txt.TextSize * charWidth
-	if cw <= 0 {
-		cw = 8
-	}
-	maxChars := int(size.Width / cw)
-	if maxChars < 2 {
-		maxChars = 2
-	}
-	if r.t.prefixTrunc {
-		r.t.txt.Text = truncatePath(r.t.fullText, maxChars)
-	} else {
-		r.t.txt.Text = truncateStr(r.t.fullText, maxChars)
-	}
-	r.t.txt.Resize(size)
-	r.t.txt.Refresh()
-}
-
-// MinSize reports a tiny width so the parent VBox/Border can assign any width
-// it likes without being forced to grow to the full string. Height tracks the
-// text size.
-func (r *truncMonoTextRenderer) MinSize() fyne.Size {
-	return fyne.NewSize(20, r.t.txt.TextSize*1.4)
-}
-
-func (r *truncMonoTextRenderer) Refresh()                     { r.t.txt.Refresh() }
-func (r *truncMonoTextRenderer) Destroy()                     {}
-func (r *truncMonoTextRenderer) Objects() []fyne.CanvasObject { return []fyne.CanvasObject{r.t.txt} }

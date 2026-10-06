@@ -4,7 +4,6 @@ import (
 	"math"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 
 	"github.com/mdelapenya/biomelab/internal/config"
@@ -38,12 +37,15 @@ func (a *App) handleKeyName(key fyne.KeyName) {
 	// never reached on an Escape dismissal. We mirror the cleanup here so
 	// the next keypress isn't swallowed by a stale dialogOpen guard.
 	if a.dialogOpen && key == fyne.KeyEscape {
-		if a.activeDialog != nil {
-			a.activeDialog.Hide()
-			a.activeDialog = nil
+		dismissed := a.activeDialog
+		if dismissed != nil {
+			dismissed.Hide()
 		}
-		a.dialogOpen = false
-		a.window.Canvas().Unfocus()
+		if a.activeDialog == dismissed || a.activeDialog == nil {
+			a.activeDialog = nil
+			a.dialogOpen = false
+			a.window.Canvas().Unfocus()
+		}
 		return
 	}
 	if a.dialogOpen {
@@ -149,11 +151,34 @@ func (a *App) handleRune(r rune) {
 // openDialog marks a dialog as open and returns a cleanup function.
 // The cleanup MUST be called when the dialog closes (confirm OR cancel).
 func (a *App) openDialog() func() {
+	previous, previousOpen := a.activeDialog, a.dialogOpen
+	previousGeneration := a.dialogGeneration
+	previousOverlay := a.window.Canvas().Overlays().Top()
+	previousFocus := a.window.Canvas().Focused()
+	a.dialogGeneration++
+	generation := a.dialogGeneration
 	a.dialogOpen = true
 	return func() {
+		if a.dialogGeneration != generation {
+			if recovery, ok := a.activeDialog.(interface{ restoreOverlay() }); ok {
+				recovery.restoreOverlay()
+			}
+			return
+		}
 		a.dialogOpen = false
 		a.activeDialog = nil
+		for _, overlay := range a.window.Canvas().Overlays().List() {
+			if previous != nil && overlay == previousOverlay {
+				a.activeDialog = previous
+				a.dialogOpen = previousOpen
+				a.dialogGeneration = previousGeneration
+				break
+			}
+		}
 		a.window.Canvas().Unfocus()
+		if a.dialogOpen && previousFocus != nil {
+			a.window.Canvas().Focus(previousFocus)
+		}
 	}
 }
 
@@ -169,6 +194,16 @@ func (a *App) openDialog() func() {
 // the formula used by flexGridLayout so keyboard navigation tracks the
 // actual on-screen layout.
 func (a *App) gridColumns() int {
+	if a.dashboard != nil && a.dashboard.state.ViewMode == ViewGrid && a.dashboard.scroll != nil {
+		section, ok := a.dashboard.scroll.Content.(*fyne.Container)
+		if ok && len(section.Objects) > 1 {
+			if grid, ok := section.Objects[1].(*fyne.Container); ok {
+				if layout, ok := grid.Layout.(*flexGridLayout); ok {
+					return max(1, layout.colCount)
+				}
+			}
+		}
+	}
 	if a.dashSlot == nil {
 		return 2 // safe default
 	}
@@ -205,6 +240,9 @@ func (a *App) navigateUp() {
 		return // already at main
 	}
 	cols := a.gridColumns()
+	if a.dashboard.state.ViewMode == ViewList {
+		cols = 1
+	}
 	linkedIdx := s.SelectedCard - 1 // 0-based within linked grid
 	if linkedIdx-cols >= 0 {
 		s.SelectedCard -= cols // move up one row
@@ -233,10 +271,14 @@ func (a *App) navigateDown() {
 		if len(s.Worktrees) > 1 {
 			s.SelectedCard = 1
 			a.dashboard.Rebuild()
+			a.dashboard.EnsureVisible()
 		}
 		return
 	}
 	cols := a.gridColumns()
+	if a.dashboard.state.ViewMode == ViewList {
+		cols = 1
+	}
 	last := len(s.Worktrees) - 1
 	if s.SelectedCard+cols <= last {
 		s.SelectedCard += cols // move down one row
@@ -251,6 +293,9 @@ func (a *App) navigateDown() {
 }
 
 func (a *App) navigateLeft() {
+	if a.dashboard != nil && a.dashboard.state.ViewMode == ViewList {
+		return
+	}
 	if a.focus != focusRight || a.dashboard == nil {
 		return
 	}
@@ -270,6 +315,9 @@ func (a *App) navigateLeft() {
 }
 
 func (a *App) navigateRight() {
+	if a.dashboard != nil && a.dashboard.state.ViewMode == ViewList {
+		return
+	}
 	if a.focus != focusRight || a.dashboard == nil {
 		return
 	}
@@ -307,9 +355,6 @@ func (a *App) toggleView() {
 	}
 	if a.dashboard != nil {
 		a.dashboard.Rebuild()
-		if re.state.ViewMode == ViewGrid {
-			a.dashboard.EnsureVisible()
-		}
 	}
 }
 
@@ -329,6 +374,7 @@ func (a *App) navigateKanbanUp() {
 		s.SelectedCard = 0 // top of column → back to main
 	}
 	a.dashboard.Rebuild()
+	a.dashboard.EnsureVisible()
 }
 
 func (a *App) navigateKanbanDown() {
@@ -340,6 +386,7 @@ func (a *App) navigateKanbanDown() {
 			if len(colCards) > 0 {
 				s.SelectedCard = colCards[0]
 				a.dashboard.Rebuild()
+				a.dashboard.EnsureVisible()
 				return
 			}
 		}
@@ -350,6 +397,7 @@ func (a *App) navigateKanbanDown() {
 	if row < len(stages[col])-1 {
 		s.SelectedCard = stages[col][row+1]
 		a.dashboard.Rebuild()
+		a.dashboard.EnsureVisible()
 	}
 }
 
@@ -369,6 +417,7 @@ func (a *App) navigateKanbanLeft() {
 			}
 			s.SelectedCard = stages[c][targetRow]
 			a.dashboard.Rebuild()
+			a.dashboard.EnsureVisible()
 			return
 		}
 	}
@@ -383,6 +432,7 @@ func (a *App) navigateKanbanRight() {
 			if len(colCards) > 0 {
 				s.SelectedCard = colCards[0]
 				a.dashboard.Rebuild()
+				a.dashboard.EnsureVisible()
 				return
 			}
 		}
@@ -390,7 +440,7 @@ func (a *App) navigateKanbanRight() {
 	}
 	col := a.dashboard.KanbanColumnOf(s.SelectedCard)
 	row := a.dashboard.KanbanRowOf(s.SelectedCard, stages)
-	for c := col + 1; c < 4; c++ {
+	for c := col + 1; c < len(stages); c++ {
 		if len(stages[c]) > 0 {
 			targetRow := row
 			if targetRow >= len(stages[c]) {
@@ -398,6 +448,7 @@ func (a *App) navigateKanbanRight() {
 			}
 			s.SelectedCard = stages[c][targetRow]
 			a.dashboard.Rebuild()
+			a.dashboard.EnsureVisible()
 			return
 		}
 	}
@@ -409,6 +460,7 @@ func (a *App) toggleFocus() {
 	} else {
 		a.focus = focusRight
 	}
+	a.updatePanelFocus()
 	if a.dashboard != nil {
 		a.dashboard.Rebuild()
 	}
@@ -417,6 +469,7 @@ func (a *App) toggleFocus() {
 func (a *App) handleEnter() {
 	if a.focus == focusLeft {
 		a.focus = focusRight
+		a.updatePanelFocus()
 		if a.dashboard != nil {
 			a.dashboard.Rebuild()
 		}
@@ -447,6 +500,7 @@ func (a *App) handleEscape() {
 	}
 	if a.focus == focusLeft {
 		a.focus = focusRight
+		a.updatePanelFocus()
 		if a.dashboard != nil {
 			a.dashboard.Rebuild()
 		}
@@ -975,12 +1029,12 @@ func (a *App) handleAddRepo() {
 	a.activeDialog = showAddRepoInput(a.window, done, func(path string) {
 		repoRoot, err := git.RepoRoot(path)
 		if err != nil {
-			dialog.ShowError(err, a.window)
+			a.showError(err)
 			return
 		}
 		repo, err := git.OpenRepository(repoRoot)
 		if err != nil {
-			dialog.ShowError(err, a.window)
+			a.showError(err)
 			return
 		}
 
@@ -997,7 +1051,7 @@ func (a *App) handleAddRepo() {
 func (a *App) addRepoToConfig(repoRoot, repoName string, mode config.ModeEntry) bool {
 	cfg, err := config.Load(a.configPath)
 	if err != nil {
-		dialog.ShowError(err, a.window)
+		a.showError(err)
 		return false
 	}
 	cfg.Add(repoRoot, repoName, mode)
@@ -1005,7 +1059,7 @@ func (a *App) addRepoToConfig(repoRoot, repoName string, mode config.ModeEntry) 
 		cfg.SetSandboxKits(repoRoot, mode.SandboxName, mode.Kits)
 	}
 	if err := config.Save(a.configPath, cfg); err != nil {
-		dialog.ShowError(err, a.window)
+		a.showError(err)
 		return false
 	}
 
