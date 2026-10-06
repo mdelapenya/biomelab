@@ -1,6 +1,7 @@
 package regent
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -51,7 +52,12 @@ type ToolCall struct {
 // matching rgt's own ordering). Empty slice + nil error when there's
 // no .regent/ or no activity yet.
 func LogJSON(wtPath string, limit int) (sessionID string, steps []Step, err error) {
-	data, err := LogJSONRaw(wtPath, limit)
+	return LogJSONContext(context.Background(), wtPath, limit)
+}
+
+// LogJSONContext fetches and parses a log within the caller's cancellation scope.
+func LogJSONContext(ctx context.Context, wtPath string, limit int) (sessionID string, steps []Step, err error) {
+	data, err := LogJSONRawContext(ctx, wtPath, limit)
 	if err != nil || data == nil {
 		return "", nil, err
 	}
@@ -64,6 +70,16 @@ func LogJSON(wtPath string, limit int) (sessionID string, steps []Step, err erro
 // caller treats that as "nothing to export". Errors from rgt itself
 // propagate as non-nil err.
 func LogJSONRaw(wtPath string, limit int) ([]byte, error) {
+	return LogJSONRawContext(context.Background(), wtPath, limit)
+}
+
+// LogJSONRawContext bounds rgt execution and accepts caller cancellation.
+func LogJSONRawContext(ctx context.Context, wtPath string, limit int) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if wtPath == "" {
 		return nil, nil
 	}
@@ -78,11 +94,14 @@ func LogJSONRaw(wtPath string, limit int) ([]byte, error) {
 	if limit > 0 {
 		args = append(args, "--limit", strconv.Itoa(limit))
 	}
-	cmd := command.Background(bin, args...)
+	cmd := command.BackgroundContext(ctx, bin, args...)
 	cmd.Dir = wtPath
 	cmd.Env = append(os.Environ(), "NO_COLOR=1")
 	out, err := cmd.Output()
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("rgt log: %w", ctx.Err())
+		}
 		return nil, fmt.Errorf("rgt log: %w", err)
 	}
 	return out, nil

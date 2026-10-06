@@ -1,11 +1,13 @@
 package regent
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/mdelapenya/biomelab/internal/git"
 
@@ -33,6 +35,16 @@ const regentExcludeLine = "/.regent/"
 // itself fails (or the exclude write fails). Callers typically log and
 // continue — this is a best-effort capability bootstrap.
 func EnsureInit(wtPath string) error {
+	return EnsureInitContext(context.Background(), wtPath)
+}
+
+// EnsureInitContext bounds the external rgt init and accepts cancellation.
+func EnsureInitContext(ctx context.Context, wtPath string) error {
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if wtPath == "" {
 		return nil
 	}
@@ -57,11 +69,14 @@ func EnsureInit(wtPath string) error {
 		// from a GUI process, so we ask rgt to set up only the .regent/
 		// store and write the Claude Code hooks ourselves via
 		// EnsureClaudeHooks below.
-		cmd := command.Background(bin, "init", "--skip-hook", "--skip-skills")
+		cmd := command.BackgroundContext(ctx, bin, "init", "--skip-hook", "--skip-skills")
 		cmd.Dir = wtPath
 		cmd.Env = append(os.Environ(), "NO_COLOR=1")
 		out, err := cmd.CombinedOutput()
 		if err != nil {
+			if ctx.Err() != nil {
+				return fmt.Errorf("rgt init: %w", ctx.Err())
+			}
 			return fmt.Errorf("rgt init: %s: %w", strings.TrimSpace(string(out)), err)
 		}
 	}

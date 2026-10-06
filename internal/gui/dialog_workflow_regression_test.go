@@ -1,15 +1,19 @@
 package gui
 
 import (
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/test"
-	"fyne.io/fyne/v2/widget"
-	"github.com/mdelapenya/biomelab/internal/git"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
+
+	"github.com/mdelapenya/biomelab/internal/git"
 )
 
 func TestSendPRRemoteSelectionRetainsModalGuardThroughConfirmation(t *testing.T) {
@@ -94,5 +98,63 @@ func TestNoteSaveFailureKeepsEditorAndOriginatingRepo(t *testing.T) {
 	}
 	if !strings.Contains(origin.state.StatusMessage, "Note save failed") || other.state.StatusMessage != "" {
 		t.Fatalf("save error went to wrong repo: origin=%q other=%q", origin.state.StatusMessage, other.state.StatusMessage)
+	}
+}
+
+func TestRegentLogSessionDiscardsOlderAndClosedCompletions(t *testing.T) {
+	fa := test.NewApp()
+	defer fa.Quit()
+	oldStarted := make(chan struct{})
+	releaseOld := make(chan struct{})
+	got := make(chan string, 3)
+	s := newRegentLogSession()
+	s.fetch = func(_ context.Context, path string) regentLogData {
+		if path == "old" {
+			close(oldStarted)
+			<-releaseOld
+		}
+		return regentLogData{sessionID: path}
+	}
+	s.load("old", func(data regentLogData) { got <- data.sessionID })
+	<-oldStarted
+	s.load("new", func(data regentLogData) { got <- data.sessionID })
+	select {
+	case value := <-got:
+		if value != "new" {
+			t.Fatalf("stale completion rendered: %q", value)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("new load blocked behind older command")
+	}
+	close(releaseOld)
+	s.close()
+	select {
+	case value := <-got:
+		t.Fatalf("completion rendered after close: %q", value)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestRegentExportCancellationDropsCompletion(t *testing.T) {
+	fa := test.NewApp()
+	defer fa.Quit()
+	started := make(chan struct{})
+	finished := make(chan struct{})
+	called := make(chan struct{}, 1)
+	s := newRegentLogSession()
+	s.fetchRaw = func(ctx context.Context, _ string) ([]byte, error) {
+		close(started)
+		<-ctx.Done()
+		defer close(finished)
+		return []byte("stale"), nil
+	}
+	s.export("branch", func([]byte, error) { called <- struct{}{} })
+	<-started
+	s.close()
+	<-finished
+	select {
+	case <-called:
+		t.Fatal("closed window accepted export completion")
+	case <-time.After(50 * time.Millisecond):
 	}
 }

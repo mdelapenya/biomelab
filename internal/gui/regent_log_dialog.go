@@ -1,11 +1,13 @@
 package gui
 
 import (
+	"context"
 	"fmt"
 	"image/color"
 	"os/exec"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -27,6 +29,112 @@ var regentLogWindowInitialSize = fyne.NewSize(900, 640)
 // rgt's own default; we surface a Refresh button rather than paging.
 const regentLogLimit = 50
 
+type regentLogData struct {
+	sessionID string
+	steps     []Step
+	err       error
+	missing   bool
+}
+
+// regentLogSession owns the in-flight commands for one window. Its methods
+// and completion callbacks run on the UI thread; only fetch runs in a worker.
+type regentLogSession struct {
+	mu               sync.Mutex
+	generation       uint64
+	cancel           context.CancelFunc
+	exportGeneration uint64
+	exportCancel     context.CancelFunc
+	closed           bool
+	fetch            func(context.Context, string) regentLogData
+	fetchRaw         func(context.Context, string) ([]byte, error)
+}
+
+func newRegentLogSession() *regentLogSession {
+	return &regentLogSession{
+		fetch: func(ctx context.Context, path string) regentLogData {
+			if _, err := exec.LookPath("rgt"); err != nil {
+				return regentLogData{missing: true}
+			}
+			id, steps, err := regent.LogJSONContext(ctx, path, regentLogLimit)
+			return regentLogData{sessionID: id, steps: steps, err: err}
+		},
+		fetchRaw: func(ctx context.Context, path string) ([]byte, error) {
+			return regent.LogJSONRawContext(ctx, path, regentLogLimit)
+		},
+	}
+}
+
+func (s *regentLogSession) load(path string, done func(regentLogData)) {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
+	s.generation++
+	if s.cancel != nil {
+		s.cancel()
+	}
+	// A refresh or target switch invalidates any pending export as well.
+	s.exportGeneration++
+	if s.exportCancel != nil {
+		s.exportCancel()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancel = cancel
+	generation := s.generation
+	s.mu.Unlock()
+	go func() {
+		data := s.fetch(ctx, path)
+		fyne.Do(func() {
+			s.mu.Lock()
+			valid := !s.closed && s.generation == generation && ctx.Err() == nil
+			s.mu.Unlock()
+			if valid {
+				done(data)
+			}
+		})
+	}()
+}
+
+func (s *regentLogSession) export(path string, done func([]byte, error)) {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
+	s.exportGeneration++
+	if s.exportCancel != nil {
+		s.exportCancel()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.exportCancel = cancel
+	generation := s.exportGeneration
+	s.mu.Unlock()
+	go func() {
+		data, err := s.fetchRaw(ctx, path)
+		fyne.Do(func() {
+			s.mu.Lock()
+			valid := !s.closed && s.exportGeneration == generation && ctx.Err() == nil
+			s.mu.Unlock()
+			if valid {
+				done(data, err)
+			}
+		})
+	}()
+}
+
+func (s *regentLogSession) close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.closed = true
+	if s.cancel != nil {
+		s.cancel()
+	}
+	if s.exportCancel != nil {
+		s.exportCancel()
+	}
+}
+
 // showRegentLogModal opens (or reuses) a single top-level window showing
 // `rgt log` for the given worktree. Subsequent presses of 'l' — same or
 // different card — repopulate this same window rather than spawning new
@@ -47,26 +155,28 @@ func (a *App) showRegentLogModal(wt git.Worktree) {
 
 	body := container.NewVBox()
 	scroll := container.NewVScroll(body)
+	session := newRegentLogSession()
 
 	current := wt
 	render := func(target git.Worktree) {
 		current = target
 		w.SetTitle("Regent activity — " + target.Branch)
-		body.Objects = a.buildRegentLogContent(target)
+		body.Objects = []fyne.CanvasObject{monoText("Loading regent activity…", colorGray, false)}
 		body.Refresh()
-		// Force the VScroll to recompute its content min-size. Without
-		// this, Fyne sometimes paints the new VBox at the previous
-		// layout dimensions until the user resizes the window — looks
-		// like a corrupt redraw with overlapping text.
-		scroll.Refresh()
-		scroll.ScrollToTop()
+		session.load(target.Path, func(data regentLogData) {
+			body.Objects = a.buildRegentLogContent(data)
+			body.Refresh()
+			// Recompute the scroll content's dimensions after replacing rows.
+			scroll.Refresh()
+			scroll.ScrollToTop()
+		})
 	}
 	render(wt)
 
 	refresh := widget.NewButton("Refresh", func() { render(current) })
 	refresh.Importance = widget.HighImportance
 	exportBtn := widget.NewButton("Export JSON…", func() {
-		a.exportRegentLog(current, w)
+		a.exportRegentLog(session, current, w)
 	})
 	closeBtn := widget.NewButton("Close", func() { w.Close() })
 	footer := container.NewBorder(nil, nil,
@@ -80,6 +190,7 @@ func (a *App) showRegentLogModal(wt git.Worktree) {
 
 	a.regentLogReload = render
 	w.SetOnClosed(func() {
+		session.close()
 		a.regentLogWindow = nil
 		a.regentLogReload = nil
 	})
@@ -92,8 +203,8 @@ func (a *App) showRegentLogModal(wt git.Worktree) {
 // body: a session header followed by a step row per Step. Handles all
 // "no data" states (rgt missing, no .regent/, no activity) with a
 // friendly inline message.
-func (a *App) buildRegentLogContent(wt git.Worktree) []fyne.CanvasObject {
-	if _, err := exec.LookPath("rgt"); err != nil {
+func (a *App) buildRegentLogContent(data regentLogData) []fyne.CanvasObject {
+	if data.missing {
 		// OS-agnostic message — install hints live in the deps dialog.
 		return []fyne.CanvasObject{
 			monoText("re_gent (rgt) is not installed.", colorYellow, true),
@@ -102,27 +213,26 @@ func (a *App) buildRegentLogContent(wt git.Worktree) []fyne.CanvasObject {
 		}
 	}
 
-	sessionID, steps, err := regent.LogJSON(wt.Path, regentLogLimit)
-	if err != nil {
+	if data.err != nil {
 		return []fyne.CanvasObject{
 			monoText("rgt log failed:", colorRed, true),
-			monoText(err.Error(), colorRed, false),
+			monoText(data.err.Error(), colorRed, false),
 		}
 	}
-	if len(steps) == 0 {
+	if len(data.steps) == 0 {
 		return []fyne.CanvasObject{
 			monoText("No regent activity yet.", colorGray, true),
 			monoText("Run an agent in this worktree and the log will populate here.", colorDimGray, false),
 		}
 	}
 
-	items := make([]fyne.CanvasObject, 0, len(steps)+1)
-	header := monoText(fmt.Sprintf("Session %s · %d steps", sessionID, len(steps)), colorBranch, true)
+	items := make([]fyne.CanvasObject, 0, len(data.steps)+1)
+	header := monoText(fmt.Sprintf("Session %s · %d steps", data.sessionID, len(data.steps)), colorBranch, true)
 	header.TextSize = scaledSize(11)
 	items = append(items, header)
 	items = append(items, widget.NewSeparator())
 
-	for i, s := range steps {
+	for i, s := range data.steps {
 		if i > 0 {
 			items = append(items, widget.NewSeparator())
 		}
@@ -210,9 +320,9 @@ func colorBubbleTools() color.Color { return colorPanelBg }
 // look.
 func colorBubbleToolInner() color.Color { return colorBackground }
 
-func colorBubbleHumanStroke() color.Color    { return tintAlpha(colorBlue, bubbleStrokeAlpha) }
-func colorBubbleAgentStroke() color.Color    { return tintAlpha(colorPurple, bubbleStrokeAlpha) }
-func colorBubbleToolsStroke() color.Color    { return colorBorder }
+func colorBubbleHumanStroke() color.Color     { return tintAlpha(colorBlue, bubbleStrokeAlpha) }
+func colorBubbleAgentStroke() color.Color     { return tintAlpha(colorPurple, bubbleStrokeAlpha) }
+func colorBubbleToolsStroke() color.Color     { return colorBorder }
 func colorBubbleToolInnerStroke() color.Color { return colorBorder }
 
 // tintAlpha returns base with its alpha replaced by a (so the same RGB
@@ -498,28 +608,24 @@ type (
 	ToolCall = regent.ToolCall
 )
 
-// exportRegentLog runs `rgt log --json` once more and writes the raw
-// bytes to a user-chosen file. Errors surface via the dashboard's status
-// line and dialog.ShowError so failures aren't silent. Empty results
-// (no .regent/, no rgt) short-circuit with an informational dialog —
-// there's nothing useful to write.
-func (a *App) exportRegentLog(wt git.Worktree, parent fyne.Window) {
-	data, err := regent.LogJSONRaw(wt.Path, regentLogLimit)
-	if err != nil {
-		dialog.ShowError(err, parent)
-		return
-	}
-	if len(data) == 0 {
-		dialog.ShowInformation("No data", "There is no regent activity to export for this worktree.", parent)
-		return
-	}
-
-	defaultName := fmt.Sprintf("regent-log-%s-%s.json",
-		sanitizeFilename(wt.Branch),
-		time.Now().Format("20060102-150405"),
-	)
-
-	a.saveBytesNative(parent, defaultName, data)
+// exportRegentLog fetches raw JSON in the background. The session discards
+// results if the window closes, refreshes, or switches worktrees meanwhile.
+func (a *App) exportRegentLog(session *regentLogSession, wt git.Worktree, parent fyne.Window) {
+	session.export(wt.Path, func(data []byte, err error) {
+		if err != nil {
+			dialog.ShowError(err, parent)
+			return
+		}
+		if len(data) == 0 {
+			dialog.ShowInformation("No data", "There is no regent activity to export for this worktree.", parent)
+			return
+		}
+		defaultName := fmt.Sprintf("regent-log-%s-%s.json",
+			sanitizeFilename(wt.Branch),
+			time.Now().Format("20060102-150405"),
+		)
+		a.saveBytesNative(parent, defaultName, data)
+	})
 }
 
 // sanitizeFilename strips characters that are awkward in filenames
@@ -540,4 +646,3 @@ func sanitizeFilename(s string) string {
 	}
 	return string(out)
 }
-
