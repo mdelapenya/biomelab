@@ -6,9 +6,9 @@ import (
 	"github.com/mdelapenya/biomelab/internal/sandbox"
 )
 
-// EnsureSandbox creates a sandbox or reuses one discovered under a supported
-// name. Kits are supported only during initial creation; setup never modifies
-// an existing sandbox's agent container or deletes the sandbox.
+// EnsureSandbox creates a sandbox or reuses an explicitly stored or
+// repo-specific generated name. Kits are supported only during initial
+// creation; setup never modifies an existing sandbox's agent container.
 func EnsureSandbox(repoName, repoPath, name, agent string, kitRefs []string) (actualName string, created bool, err error) {
 	return EnsureSandboxWithKit(repoName, repoPath, name, agent, "", kitRefs)
 }
@@ -16,6 +16,12 @@ func EnsureSandbox(repoName, repoPath, name, agent string, kitRefs []string) (ac
 // EnsureSandboxWithKit creates with a selected sandbox kit as its positional
 // workload and optional mixins as --kit flags. An empty sandboxRef uses agent.
 func EnsureSandboxWithKit(repoName, repoPath, name, agent, sandboxRef string, mixinRefs []string) (actualName string, created bool, err error) {
+	if name == "" {
+		name = sandbox.GeneratedName(repoPath, agent)
+	}
+	if name == "" {
+		return "", false, fmt.Errorf("sandbox requires a repository path and agent")
+	}
 	if err := sandbox.Preflight(); err != nil {
 		return "", false, err
 	}

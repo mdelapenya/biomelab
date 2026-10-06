@@ -2,11 +2,13 @@ package sandbox
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -129,41 +131,60 @@ func SanitizeName(parts ...string) string {
 	return name
 }
 
-// Candidates returns the ordered, deduplicated set of sandbox names that may
-// correspond to a given repo+agent. The list covers both orderings observed
-// in the wild:
-//   - biomelab's "<repo>-<agent>" (e.g. "mdelapenya-pay2class-claude")
-//   - sbx's default "<agent>-<repo>" (e.g. "claude-pay2class")
-//
-// For each ordering we try both the full "<owner>/<repo>" name and the bare
-// directory basename, so we match regardless of whether origin was configured
-// when the sandbox was created. The stored (config) name comes first.
+var generatedNamePart = regexp.MustCompile(`[^a-z0-9-]+`)
+
+// GeneratedName is a stable, repo-specific name for a new sandbox. A readable
+// path basename is followed by a digest of the canonical absolute repo path,
+// so two unrelated repositories named "project" cannot adopt each other.
+func GeneratedName(repoPath, agent string) string {
+	if repoPath == "" || agent == "" {
+		return ""
+	}
+	path, err := filepath.Abs(repoPath)
+	if err != nil {
+		return ""
+	}
+	path = filepath.Clean(path)
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+	if runtime.GOOS == "windows" {
+		path = strings.ToLower(path)
+	}
+	label := safeGeneratedPart(filepath.Base(path), 30)
+	actor := safeGeneratedPart(agent, 16)
+	digest := sha256.Sum256([]byte(path))
+	return fmt.Sprintf("%s-%s-%x", label, actor, digest[:6])
+}
+
+func safeGeneratedPart(value string, limit int) string {
+	value = generatedNamePart.ReplaceAllString(strings.ToLower(value), "-")
+	value = strings.Trim(value, "-")
+	if len(value) > limit {
+		value = strings.TrimRight(value[:limit], "-")
+	}
+	if value == "" {
+		return "repo"
+	}
+	return value
+}
+
+// Candidates contains only an explicitly stored association and the
+// repo-specific generated name. Bare/full repository names are ambiguous and
+// must never be auto-adopted from the daemon's name-only listing.
 func Candidates(storedName, repoName, repoPath, agent string) []string {
-	seen := make(map[string]struct{})
-	var out []string
-	add := func(n string) {
-		if n == "" {
-			return
+	_ = repoName // retained in the API for callers with stored legacy entries.
+	generated := GeneratedName(repoPath, agent)
+	if storedName == "" {
+		if generated == "" {
+			return nil
 		}
-		if _, ok := seen[n]; ok {
-			return
-		}
-		seen[n] = struct{}{}
-		out = append(out, n)
+		return []string{generated}
 	}
-	add(storedName)
-	if agent != "" {
-		if repoName != "" {
-			add(SanitizeName(repoName, agent))
-			add(SanitizeName(agent, repoName))
-		}
-		if repoPath != "" {
-			base := filepath.Base(repoPath)
-			add(SanitizeName(base, agent))
-			add(SanitizeName(agent, base))
-		}
+	if generated == "" || generated == storedName {
+		return []string{storedName}
 	}
-	return out
+	return []string{storedName, generated}
 }
 
 // MatchStatus returns the first candidate that exists in statusMap along with

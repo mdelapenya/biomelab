@@ -31,8 +31,7 @@ func (a *App) beginSandboxSetup(repoPath, repoName string) {
 					break
 				}
 			}
-			mode := config.ModeEntry{Type: "sandbox", Agent: chosenAgent,
-				SandboxName: sandbox.SanitizeName(repoName, chosenAgent)}
+			mode := newSandboxMode(repoPath, chosenAgent)
 			// Preserve a reconciled name when registering an existing mode.
 			for _, re := range a.repos {
 				if re.group.Path == repoPath {
@@ -56,6 +55,10 @@ func (a *App) beginSandboxSetup(repoPath, repoName string) {
 			confirm(nil)
 		}
 	})
+}
+
+func newSandboxMode(repoPath, agent string) config.ModeEntry {
+	return config.ModeEntry{Type: "sandbox", Agent: agent, SandboxName: sandbox.GeneratedName(repoPath, agent)}
 }
 
 // loadSetupKits is reached only after an explicit Yes. The loading dialog
