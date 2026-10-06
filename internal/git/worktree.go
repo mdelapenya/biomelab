@@ -687,11 +687,11 @@ func readWorktreeBranch(wtMetaDir string) string {
 		return ""
 	}
 	headStr := strings.TrimSpace(string(data))
-	ref, ok := strings.CutPrefix(headStr, "ref: ")
+	ref, ok := strings.CutPrefix(headStr, "ref: refs/heads/")
 	if !ok {
 		return ""
 	}
-	return strings.TrimPrefix(ref, "refs/heads/")
+	return ref
 }
 
 // worktreesDir returns the directory where biomelab stores linked worktrees.
@@ -999,9 +999,6 @@ func (r *Repository) RemoveWorktree(name string) error {
 		wtPath = filepath.Join(r.worktreesDir(), name)
 	}
 	branchName := readWorktreeBranch(wtMetaDir)
-	if branchName == "" {
-		branchName = name
-	}
 
 	// Remove the worktree directory from disk.
 	if err := os.RemoveAll(wtPath); err != nil {
@@ -1015,11 +1012,13 @@ func (r *Repository) RemoveWorktree(name string) error {
 		return fmt.Errorf("remove worktree metadata: %w", err)
 	}
 
-	// Delete the local branch (config may not exist; ignore errors).
-	_ = r.repo.DeleteBranch(branchName)
-	// Also delete the branch reference itself (may not exist; ignore errors).
-	refName := plumbing.NewBranchReferenceName(branchName)
-	_ = r.repo.Storer.RemoveReference(refName)
+	// A detached worktree has no attached branch. Its metadata name may match
+	// an unrelated branch, so only delete a branch named explicitly by HEAD.
+	if branchName != "" {
+		_ = r.repo.DeleteBranch(branchName)
+		refName := plumbing.NewBranchReferenceName(branchName)
+		_ = r.repo.Storer.RemoveReference(refName)
+	}
 
 	// Prune stale worktree entries by removing any metadata dirs
 	// whose gitdir points to a non-existent path.
