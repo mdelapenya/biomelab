@@ -31,3 +31,22 @@ func TestTrayVisibilityTracksWindowAcrossHideAndShow(t *testing.T) {
 		t.Fatal("tray toggle failed to restore a window hidden by close")
 	}
 }
+
+func TestAsyncStatusAndRefreshStayWithOriginatingRepo(t *testing.T) {
+	origin := &repoEntry{state: &RepoState{}}
+	other := &repoEntry{state: &RepoState{}}
+	a := &App{repos: []*repoEntry{origin, other}, active: 1}
+	refreshes := 0
+	a.setRepoStatus(origin, "created branch", false)
+	a.refreshRepo(origin, func() { refreshes++ })
+	if origin.state.StatusMessage != "created branch" || other.state.StatusMessage != "" || refreshes != 1 {
+		t.Fatalf("completion routed incorrectly: origin=%q other=%q refreshes=%d",
+			origin.state.StatusMessage, other.state.StatusMessage, refreshes)
+	}
+	a.repos = []*repoEntry{other}
+	a.setRepoStatus(origin, "late error", true)
+	a.refreshRepo(origin, func() { refreshes++ })
+	if origin.state.StatusMessage != "created branch" || refreshes != 1 {
+		t.Fatal("removed repository accepted a late completion")
+	}
+}
