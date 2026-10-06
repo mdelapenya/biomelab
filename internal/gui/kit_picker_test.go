@@ -303,11 +303,11 @@ func TestKitDialogPagesAndContinuesWithFullSelection(t *testing.T) {
 		t.Fatalf("fallback logos=%d, want %d", fallbackLogos, kitPageSize)
 	}
 	checks[0].SetChecked(true)
-	_, checks, buttons, _ = kitDialogControls(win)
+	_, checks, _, _ = kitDialogControls(win)
 	checks[1].SetChecked(true)
 	_, _, buttons, _ = kitDialogControls(win)
 	buttons["Next"].Tapped(nil)
-	_, checks, buttons, labels = kitDialogControls(win)
+	_, checks, _, labels = kitDialogControls(win)
 	if len(checks) != 1 || !containsString(labels, "Page 2 of 2") {
 		t.Fatalf("second page checks=%d labels=%v", len(checks), labels)
 	}
@@ -389,7 +389,7 @@ func TestKitDialogBoundsStayStableAcrossUnevenPages(t *testing.T) {
 			t.Fatal(err)
 		}
 		if err := png.Encode(file, win.Canvas().Capture()); err != nil {
-			file.Close()
+			_ = file.Close()
 			t.Fatal(err)
 		}
 		if err := file.Close(); err != nil {
@@ -470,7 +470,7 @@ func TestKitDialogScreenshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	if err := png.Encode(file, win.Canvas().Capture()); err != nil {
 		t.Fatal(err)
 	}

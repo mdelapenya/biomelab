@@ -188,7 +188,7 @@ func listRepositories(ctx context.Context, client *http.Client, hub string) ([]r
 	var repos []repository
 	for next != "" {
 		if seen[next] {
-			return nil, fmt.Errorf("Docker Hub catalog pagination loop at %s", next)
+			return nil, fmt.Errorf("catalog pagination loop at %s", next)
 		}
 		seen[next] = true
 		body, err := getBytes(ctx, client, next, "", "")
@@ -321,7 +321,7 @@ func getBytes(ctx context.Context, client *http.Client, target, bearer, accept s
 	if err != nil {
 		return nil, fmt.Errorf("GET %s: %w", target, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		brief, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return nil, fmt.Errorf("GET %s: HTTP %d: %s", target, resp.StatusCode, strings.TrimSpace(string(brief)))

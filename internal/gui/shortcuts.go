@@ -860,9 +860,10 @@ func kitURLs(selected []kits.Kit) []string {
 // kitSelectionRefs separates the one sandbox workload from optional mixins.
 func kitSelectionRefs(selected []kits.Kit) (sandboxRef string, mixinRefs []string) {
 	for _, k := range selected {
-		if k.Kind == kits.KindSandbox {
+		switch k.Kind {
+		case kits.KindSandbox:
 			sandboxRef = k.OCIReference()
-		} else if k.Kind == kits.KindMixin {
+		case kits.KindMixin:
 			mixinRefs = append(mixinRefs, k.OCIReference())
 		}
 	}

@@ -224,7 +224,7 @@ func readEntry(filename, requestURL string, maxBody int64) (entry, error) {
 	if err != nil {
 		return e, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	// JSON adds base64 overhead; the cap also bounds malformed files.
 	data, err := io.ReadAll(io.LimitReader(f, maxBody*2+4096))
 	if err != nil || int64(len(data)) >= maxBody*2+4096 {
@@ -271,17 +271,17 @@ func writeEntry(filename string, e entry) error {
 		return err
 	}
 	tempName := f.Name()
-	defer os.Remove(tempName)
+	defer func() { _ = os.Remove(tempName) }()
 	if err := f.Chmod(0600); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if _, err := f.Write(data); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if err := f.Sync(); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if err := f.Close(); err != nil {

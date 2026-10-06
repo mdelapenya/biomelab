@@ -71,7 +71,7 @@ func readSnapshot(path string) (catalogSnapshot, error) {
 	if err != nil {
 		return catalogSnapshot{}, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	body, err := io.ReadAll(io.LimitReader(f, maxSnapshotSize+1))
 	if err != nil {
 		return catalogSnapshot{}, fmt.Errorf("read catalog snapshot: %w", err)
@@ -129,17 +129,17 @@ func writeSnapshot(path string, sandboxes, mixins []Kit, now time.Time) error {
 		return fmt.Errorf("create catalog snapshot: %w", err)
 	}
 	tempName := f.Name()
-	defer os.Remove(tempName)
+	defer func() { _ = os.Remove(tempName) }()
 	if err := f.Chmod(0600); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if _, err := f.Write(body); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if err := f.Sync(); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if err := f.Close(); err != nil {

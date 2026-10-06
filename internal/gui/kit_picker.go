@@ -186,7 +186,7 @@ func kitLogoWithClient(ctx context.Context, k kits.Kit, client *http.Client) fyn
 		if err != nil {
 			return
 		}
-		defer response.Body.Close()
+		defer func() { _ = response.Body.Close() }()
 		if response.StatusCode != http.StatusOK {
 			return
 		}
@@ -304,8 +304,7 @@ func showKitsDialog(parent fyne.Window, repoName string, sandboxKits, mixins []k
 			continueButton.Disable()
 		}
 	}
-	var render func()
-	render = func() {
+	render := func() {
 		objects := make([]fyne.CanvasObject, 0, kitPageSize)
 		currentChecks = make(map[string]*dialogCheck)
 		var first *dialogCheck

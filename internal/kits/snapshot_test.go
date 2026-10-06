@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,7 +28,9 @@ func TestCatalogSnapshotWarmReadAndFailedRefresh(t *testing.T) {
 	var state atomic.Int32
 	server := kitFixtureServer(t, specs, func(w http.ResponseWriter, r *http.Request) bool {
 		if state.Load() == 1 && r.URL.Path == "/v2/repositories/sbx/" {
-			fmt.Fprint(w, `{"next":null,"results":[{"name":"kiro-kit","content_types":["sbx_kit"]},{"name":"new-kit","content_types":["sbx_kit"]}]}`)
+			if _, err := fmt.Fprint(w, `{"next":null,"results":[{"name":"kiro-kit","content_types":["sbx_kit"]},{"name":"new-kit","content_types":["sbx_kit"]}]}`); err != nil {
+				t.Errorf("write catalog fixture: %v", err)
+			}
 			return true
 		}
 		if state.Load() == 1 && r.URL.Path == "/v2/sbx/new-kit/manifests/latest" {
@@ -145,8 +146,7 @@ func TestCatalogSnapshotCancellationAndMissingSnapshotTimeout(t *testing.T) {
 		t.Fatal(err)
 	}
 	started := make(chan struct{}, 1)
-	var server *httptest.Server
-	server = kitFixtureServer(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+	server := kitFixtureServer(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
 		if r.URL.Path == "/v2/repositories/sbx/" {
 			select {
 			case started <- struct{}{}:

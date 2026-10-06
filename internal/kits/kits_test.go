@@ -108,14 +108,20 @@ func kitFixtureServer(t *testing.T, specs map[string]string, fail func(http.Resp
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.URL.Path == "/v2/repositories/sbx/" && r.URL.Query().Get("page") == "2":
-			fmt.Fprint(w, `{"next":null,"results":[{"name":"code-server-kit","content_types":["sbx_kit"],"description":"Hub fallback"},{"name":"future-kit","content_types":["sbx_kit"]}]}`)
+			if _, err := fmt.Fprint(w, `{"next":null,"results":[{"name":"code-server-kit","content_types":["sbx_kit"],"description":"Hub fallback"},{"name":"future-kit","content_types":["sbx_kit"]}]}`); err != nil {
+				t.Errorf("write catalog fixture: %v", err)
+			}
 		case r.URL.Path == "/v2/repositories/sbx/":
-			json.NewEncoder(w).Encode(map[string]any{"next": server.URL + "/v2/repositories/sbx/?page=2", "results": []map[string]any{{"name": "kiro-image", "content_types": []string{"image"}}, {"name": "kiro-kit", "content_types": []string{"sbx_kit"}}}})
+			if err := json.NewEncoder(w).Encode(map[string]any{"next": server.URL + "/v2/repositories/sbx/?page=2", "results": []map[string]any{{"name": "kiro-image", "content_types": []string{"image"}}, {"name": "kiro-kit", "content_types": []string{"sbx_kit"}}}}); err != nil {
+				t.Errorf("encode catalog fixture: %v", err)
+			}
 		case r.URL.Path == "/token":
 			if strings.Contains(r.URL.Query().Get("scope"), "kiro-image") {
 				t.Error("ordinary image requested registry token")
 			}
-			fmt.Fprint(w, `{"token":"fixture-token"}`)
+			if _, err := fmt.Fprint(w, `{"token":"fixture-token"}`); err != nil {
+				t.Errorf("write token fixture: %v", err)
+			}
 		case strings.HasPrefix(r.URL.Path, "/v2/sbx/"):
 			if r.Header.Get("Authorization") != "Bearer fixture-token" {
 				t.Errorf("missing registry bearer for %s", r.URL.Path)
@@ -135,9 +141,13 @@ func kitFixtureServer(t *testing.T, specs map[string]string, fail func(http.Resp
 			hash := sha256.Sum256([]byte(spec))
 			digest := "sha256:" + hex.EncodeToString(hash[:])
 			if action == "manifests" {
-				json.NewEncoder(w).Encode(map[string]any{"artifactType": artifactType, "config": map[string]any{"mediaType": configType, "digest": digest}, "annotations": map[string]string{"org.opencontainers.image.description": "Manifest fallback"}})
+				if err := json.NewEncoder(w).Encode(map[string]any{"artifactType": artifactType, "config": map[string]any{"mediaType": configType, "digest": digest}, "annotations": map[string]string{"org.opencontainers.image.description": "Manifest fallback"}}); err != nil {
+					t.Errorf("encode manifest fixture: %v", err)
+				}
 			} else if action == "blobs" && parts[5] == digest {
-				fmt.Fprint(w, spec)
+				if _, err := fmt.Fprint(w, spec); err != nil {
+					t.Errorf("write spec fixture: %v", err)
+				}
 			} else {
 				http.NotFound(w, r)
 			}

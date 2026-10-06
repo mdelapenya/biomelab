@@ -39,7 +39,7 @@ func read(t *testing.T, client *http.Client, url string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d", resp.StatusCode)
 	}
@@ -226,7 +226,7 @@ func TestPublicHubCookieStrippedFromDisk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if calls.Load() != 1 || resp.Header.Get("Set-Cookie") != "" {
 		t.Fatalf("cached cookie response: calls = %d, cookie = %q", calls.Load(), resp.Header.Get("Set-Cookie"))
 	}
@@ -278,7 +278,7 @@ func TestSignedBlobRedirectCachesUnderPublicURL(t *testing.T) {
 			t.Fatal(err)
 		}
 		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if err != nil || string(body) != `{"kind":"sandbox"}` {
 			t.Fatalf("blob body = %q, err = %v", body, err)
 		}
@@ -321,7 +321,7 @@ func TestAuthTokenAndUnsafeRequestsBypassCache(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 	if calls.Load() != 4 {
 		t.Fatalf("network calls = %d", calls.Load())
@@ -377,7 +377,7 @@ func TestBoundedBodyAndErrorResponsesNotStored(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Fatal(resp.StatusCode)
 		}
@@ -413,7 +413,7 @@ func TestCanceledWaiterAndConcurrentRequests(t *testing.T) {
 	go func() {
 		resp, err := client.Get(catalogURL)
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 		firstDone <- err
 	}()
@@ -442,7 +442,7 @@ func TestCanceledWaiterAndConcurrentRequests(t *testing.T) {
 				results <- err
 				return
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
 				results <- err
