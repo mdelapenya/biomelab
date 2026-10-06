@@ -1,6 +1,12 @@
 package terminal
 
-import "testing"
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"testing"
+)
 
 func TestTitle(t *testing.T) {
 	got := Title("feature-branch")
@@ -23,7 +29,7 @@ func TestBuildShellCmdWithTitle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "printf '\\033]0;%s\\007' 'biomelab: my-branch'; cd '/project'; exec $SHELL"
+	want := "printf '\\033]0;%s\\007' 'biomelab: my-branch'; cd '/project' && exec $SHELL"
 	if got != want {
 		t.Errorf("buildShellCmdWithTitle() = %q, want %q", got, want)
 	}
@@ -35,7 +41,7 @@ func TestBuildShellCmdWithTitle_EmptyIdentifier(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// No title prefix when identifier is empty.
-	want := "cd '/project'; exec $SHELL"
+	want := "cd '/project' && exec $SHELL"
 	if got != want {
 		t.Errorf("buildShellCmdWithTitle() = %q, want %q", got, want)
 	}
@@ -120,9 +126,9 @@ func TestBuildShellCmd(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{"dir only", "/project", "", "cd '/project'; exec $SHELL", false},
+		{"dir only", "/project", "", "cd '/project' && exec $SHELL", false},
 		{"command only", "", "sbx run mybox", "sbx run mybox; exec $SHELL", false},
-		{"command takes precedence", "/project", "sbx run mybox", "sbx run mybox; exec $SHELL", false},
+		{"command runs in directory", "/project", "sbx run mybox", "cd '/project' && { sbx run mybox; exec $SHELL; }", false},
 		{"neither", "", "", "", true},
 	}
 	for _, tt := range tests {
@@ -135,5 +141,27 @@ func TestBuildShellCmd(t *testing.T) {
 				t.Errorf("buildShellCmd() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestGeneratedShellScriptStopsOnMissingDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell script")
+	}
+	marker := filepath.Join(t.TempDir(), "ran")
+	missing := filepath.Join(t.TempDir(), "missing")
+	for _, command := range []string{"", "touch " + shellQuote(marker)} {
+		script, err := buildShellCmd(missing, command)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("sh", "-c", script)
+		cmd.Env = append(os.Environ(), "SHELL=/bin/sh")
+		if err := cmd.Run(); err == nil {
+			t.Fatalf("missing directory succeeded for command %q", command)
+		}
+		if _, err := os.Lstat(marker); !os.IsNotExist(err) {
+			t.Fatalf("command ran despite missing directory: %v", err)
+		}
 	}
 }
