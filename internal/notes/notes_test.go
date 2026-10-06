@@ -90,6 +90,52 @@ func TestDraftWriteDoesNotCreateUnexcludedFile(t *testing.T) {
 	}
 }
 
+func TestDraftMutationsRejectSymlinkPaths(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		write  func(string) error
+		delete func(string) error
+		file   string
+	}{
+		{"note", func(dir string) error { return Write(dir, "changed") }, Delete, noteFile},
+		{"title", func(dir string) error { return WriteTitle(dir, "changed") }, DeleteTitle, prTitleFile},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, parentLink := range []bool{false, true} {
+				root := t.TempDir()
+				outside := t.TempDir()
+				outsideFile := filepath.Join(outside, tc.file)
+				if err := os.WriteFile(outsideFile, []byte("keep"), filePerm); err != nil {
+					t.Fatal(err)
+				}
+				dir := filepath.Join(root, noteDir)
+				if parentLink {
+					if err := os.Symlink(outside, dir); err != nil {
+						t.Skipf("symlinks unavailable: %v", err)
+					}
+				} else {
+					if err := os.Mkdir(dir, dirPerm); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Symlink(outsideFile, filepath.Join(dir, tc.file)); err != nil {
+						t.Skipf("symlinks unavailable: %v", err)
+					}
+				}
+				if err := tc.write(root); err == nil {
+					t.Fatalf("write accepted symlink (parent=%v)", parentLink)
+				}
+				if err := tc.delete(root); err == nil {
+					t.Fatalf("delete accepted symlink (parent=%v)", parentLink)
+				}
+				got, err := os.ReadFile(outsideFile)
+				if err != nil || string(got) != "keep" {
+					t.Fatalf("outside file changed: %q, %v", got, err)
+				}
+			}
+		})
+	}
+}
+
 func TestReadTitle(t *testing.T) {
 	cases := []struct {
 		name    string

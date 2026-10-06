@@ -51,27 +51,13 @@ func WriteTitle(worktreeDir, title string) error {
 	if title == "" {
 		return DeleteTitle(worktreeDir)
 	}
-	dir := filepath.Join(worktreeDir, noteDir)
-	if err := os.MkdirAll(dir, dirPerm); err != nil {
-		return fmt.Errorf("create note dir: %w", err)
-	}
-	if err := ensureExcluded(worktreeDir); err != nil {
-		return fmt.Errorf("ensure excluded: %w", err)
-	}
-	if err := os.WriteFile(TitlePath(worktreeDir), []byte(title+"\n"), filePerm); err != nil {
-		return fmt.Errorf("write title: %w", err)
-	}
-	return nil
+	return writeDraft(worktreeDir, prTitleFile, []byte(title+"\n"))
 }
 
 // DeleteTitle removes the PR title file. Returns nil if the file doesn't
 // exist.
 func DeleteTitle(worktreeDir string) error {
-	err := os.Remove(TitlePath(worktreeDir))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	return err
+	return deleteDraft(worktreeDir, prTitleFile)
 }
 
 // ReadTitle returns the trimmed first non-empty line of the PR title file.
@@ -105,11 +91,14 @@ func ReadTitle(worktreeDir string) (title string, ok bool, err error) {
 // other tools to write files into the directory (e.g. pr-title.md, future
 // metadata files) without needing to create the directory themselves.
 func EnsureDir(worktreeDir string) error {
-	dir := filepath.Join(worktreeDir, noteDir)
-	if err := os.MkdirAll(dir, dirPerm); err != nil {
-		return fmt.Errorf("create note dir: %w", err)
+	root, err := safeBootstrapRoot(worktreeDir)
+	if err != nil {
+		return err
 	}
-	if err := ensureExcluded(worktreeDir); err != nil {
+	if err := ensureContextDir(filepath.Join(root, noteDir)); err != nil {
+		return err
+	}
+	if err := ensureExcluded(root); err != nil {
 		return fmt.Errorf("ensure excluded: %w", err)
 	}
 	return nil
@@ -145,22 +134,94 @@ func Write(worktreeDir, content string) error {
 		return Delete(worktreeDir)
 	}
 	content += "\n"
-	dir := filepath.Join(worktreeDir, noteDir)
-	if err := os.MkdirAll(dir, dirPerm); err != nil {
-		return fmt.Errorf("create note dir: %w", err)
-	}
-	if err := ensureExcluded(worktreeDir); err != nil {
-		return fmt.Errorf("ensure excluded: %w", err)
-	}
-	if err := os.WriteFile(Path(worktreeDir), []byte(content), filePerm); err != nil {
-		return fmt.Errorf("write note: %w", err)
-	}
-	return nil
+	return writeDraft(worktreeDir, noteFile, []byte(content))
 }
 
 // Delete removes the note file. Returns nil if the note doesn't exist.
 func Delete(worktreeDir string) error {
-	err := os.Remove(Path(worktreeDir))
+	return deleteDraft(worktreeDir, noteFile)
+}
+
+// writeDraft replaces a regular draft without following an existing symlink.
+// The exclusion is installed before the first draft byte is made visible.
+func writeDraft(worktreeDir, name string, content []byte) error {
+	root, err := safeBootstrapRoot(worktreeDir)
+	if err != nil {
+		return err
+	}
+	dir := filepath.Join(root, noteDir)
+	if err := ensureContextDir(dir); err != nil {
+		return err
+	}
+	target := filepath.Join(dir, name)
+	perm, err := draftPerm(target)
+	if err != nil {
+		return err
+	}
+	if err := ensureExcluded(root); err != nil {
+		return fmt.Errorf("ensure excluded: %w", err)
+	}
+	f, err := os.CreateTemp(dir, ".biomelab-draft-*")
+	if err != nil {
+		return fmt.Errorf("create draft: %w", err)
+	}
+	defer func() { _ = os.Remove(f.Name()) }()
+	if err := f.Chmod(perm); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("set draft permissions: %w", err)
+	}
+	if _, err := f.Write(content); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("write draft: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close draft: %w", err)
+	}
+	// Recheck before replacement so a target swapped to a symlink is rejected.
+	if _, err := draftPerm(target); err != nil {
+		return err
+	}
+	if err := os.Rename(f.Name(), target); err != nil {
+		return fmt.Errorf("replace draft: %w", err)
+	}
+	return nil
+}
+
+func draftPerm(target string) (os.FileMode, error) {
+	info, err := os.Lstat(target)
+	if errors.Is(err, os.ErrNotExist) {
+		return filePerm, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("inspect draft: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return 0, fmt.Errorf("draft path is not a regular file")
+	}
+	return info.Mode().Perm(), nil
+}
+
+func deleteDraft(worktreeDir, name string) error {
+	root, err := safeBootstrapRoot(worktreeDir)
+	if err != nil {
+		return err
+	}
+	dir := filepath.Join(root, noteDir)
+	info, err := os.Lstat(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect note directory: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return fmt.Errorf("note directory is not a regular directory")
+	}
+	target := filepath.Join(dir, name)
+	if _, err := draftPerm(target); err != nil {
+		return err
+	}
+	err = os.Remove(target)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
