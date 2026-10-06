@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 )
@@ -35,15 +36,29 @@ func (p Provider) String() string {
 // Supports both SSH (git@host:owner/repo.git) and HTTPS (https://host/owner/repo.git) formats.
 // Self-hosted instances are detected via hostname patterns (e.g., gitlab.mycompany.com).
 func DetectProvider(remoteURL string) Provider {
-	lower := strings.ToLower(remoteURL)
+	host := remoteHost(remoteURL)
 	switch {
-	case strings.Contains(lower, "github.com"):
+	case host == "github.com":
 		return ProviderGitHub
-	case strings.Contains(lower, "gitlab.com"), strings.Contains(lower, "gitlab."):
+	case host == "gitlab.com", strings.HasPrefix(host, "gitlab."), strings.HasSuffix(host, ".gitlab.com"):
 		return ProviderGitLab
 	default:
 		return ProviderUnknown
 	}
+}
+
+func remoteHost(remote string) string {
+	if u, err := url.Parse(remote); err == nil && u.Scheme != "" && u.Hostname() != "" {
+		return strings.ToLower(u.Hostname())
+	}
+	// Git's SCP-style remotes have no URL scheme: user@host:path.
+	if before, _, ok := strings.Cut(remote, ":"); ok && !strings.ContainsAny(before, `/\\`) {
+		if _, host, hasUser := strings.Cut(before, "@"); hasUser {
+			return strings.ToLower(host)
+		}
+		return strings.ToLower(before)
+	}
+	return ""
 }
 
 // CLIAvailability represents whether a provider's CLI tool is usable.

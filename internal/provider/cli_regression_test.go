@@ -119,3 +119,20 @@ func TestGitHubLookupDistinguishesAbsenceAndErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestDetectProviderUsesHostOnly(t *testing.T) {
+	for _, tt := range []struct {
+		remote string
+		want   Provider
+	}{
+		{"https://gitlab.com/team/github.com-mirror.git", ProviderGitLab},
+		{"git@gitlab.com:team/github.com-mirror.git", ProviderGitLab},
+		{"ssh://git@github.com:2222/team/gitlab.com-mirror.git", ProviderGitHub},
+		{"https://github.com.evil.example/team/repo.git", ProviderUnknown},
+		{"https://example.com/github.com/team/repo", ProviderUnknown},
+	} {
+		if got := DetectProvider(tt.remote); got != tt.want {
+			t.Errorf("DetectProvider(%q) = %v, want %v", tt.remote, got, tt.want)
+		}
+	}
+}
