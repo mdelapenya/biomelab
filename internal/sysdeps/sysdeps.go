@@ -163,6 +163,12 @@ func Partition(reps []Reported) (primary, optional []Reported) {
 // installed, since users on one provider don't need the other. Returns
 // a new slice; the input is not mutated.
 func ApplySuppression(reps []Reported) []Reported {
+	return ApplySuppressionForRequired(reps, nil)
+}
+
+// ApplySuppressionForRequired keeps a missing CLI visible when a registered
+// repository needs it, even if the other provider's CLI is installed.
+func ApplySuppressionForRequired(reps []Reported, required map[string]bool) []Reported {
 	satisfied := make(map[string]bool, len(reps))
 	for _, r := range reps {
 		if r.Result.Status == StatusOK || r.Result.Status == StatusDegraded {
@@ -171,7 +177,7 @@ func ApplySuppression(reps []Reported) []Reported {
 	}
 	out := make([]Reported, 0, len(reps))
 	for _, r := range reps {
-		if r.Result.Status == StatusMissing && hasSatisfied(r.Check.SuppressIfAny, satisfied) {
+		if r.Result.Status == StatusMissing && !required[r.Check.Name] && hasSatisfied(r.Check.SuppressIfAny, satisfied) {
 			continue
 		}
 		out = append(out, r)

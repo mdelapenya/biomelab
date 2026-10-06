@@ -12,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/mdelapenya/biomelab/internal/config"
+	"github.com/mdelapenya/biomelab/internal/provider"
 	"github.com/mdelapenya/biomelab/internal/sysdeps"
 )
 
@@ -78,7 +79,22 @@ func (a *App) loadConfigForSysDeps() *config.Config {
 }
 
 func (a *App) visibleSysDeps(raw []sysdeps.Reported) []sysdeps.Reported {
-	return sysdeps.ApplyVisibility(sysdeps.ApplySuppression(raw), a.loadConfigForSysDeps())
+	required := make(map[string]bool, 2)
+	for _, re := range a.repos {
+		if re == nil || re.state == nil {
+			continue
+		}
+		switch re.state.Provider {
+		case provider.ProviderGitHub:
+			required["gh"] = true
+		case provider.ProviderGitLab:
+			required["glab"] = true
+		}
+	}
+	return sysdeps.ApplyVisibility(
+		sysdeps.ApplySuppressionForRequired(raw, required),
+		a.loadConfigForSysDeps(),
+	)
 }
 
 // buildSysDepsContent assembles the dialog body from a probed Reported list:
