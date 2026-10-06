@@ -122,6 +122,42 @@ func TestCreateWorktree_WithSeparateGitDir(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(gitDir, "worktrees", "topic")); err != nil {
 		t.Fatalf("worktree metadata: %v", err)
 	}
+	for _, listing := range []struct {
+		name string
+		list func() ([]Worktree, error)
+	}{
+		{"quick", repo.ListWorktreesQuick},
+		{"full", repo.ListWorktrees},
+	} {
+		t.Run(listing.name, func(t *testing.T) {
+			wts, err := listing.list()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(wts) != 2 || wts[1].Name != "topic" || wts[1].Branch != "topic" {
+				t.Fatalf("worktrees = %+v, want main and topic", wts)
+			}
+		})
+	}
+
+	staleMeta := filepath.Join(gitDir, "worktrees", "stale")
+	if err := os.MkdirAll(staleMeta, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staleMeta, "gitdir"), []byte(filepath.Join(parent, "missing", ".git")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RemoveWorktree("topic"); err != nil {
+		t.Fatalf("RemoveWorktree: %v", err)
+	}
+	for _, path := range []string{filepath.Join(repoDir, ".biomelab-worktrees", "topic"), filepath.Join(gitDir, "worktrees", "topic"), staleMeta} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("path %q remains after removal/prune: %v", path, err)
+		}
+	}
+	if _, err := repo.repo.Reference(plumbing.NewBranchReferenceName("topic"), false); err != plumbing.ErrReferenceNotFound {
+		t.Errorf("topic branch reference remains: %v", err)
+	}
 }
 
 func TestCreateWorktree_NoCommits(t *testing.T) {
