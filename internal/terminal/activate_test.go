@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -29,7 +30,7 @@ func TestBuildShellCmdWithTitle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "printf '\\033]0;%s\\007' 'biomelab: my-branch'; cd '/project' && exec $SHELL"
+	want := `printf '\033]0;%s\007' 'biomelab: my-branch'; cd '/project' && exec "${SHELL:-/bin/sh}"`
 	if got != want {
 		t.Errorf("buildShellCmdWithTitle() = %q, want %q", got, want)
 	}
@@ -41,7 +42,7 @@ func TestBuildShellCmdWithTitle_EmptyIdentifier(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// No title prefix when identifier is empty.
-	want := "cd '/project' && exec $SHELL"
+	want := `cd '/project' && exec "${SHELL:-/bin/sh}"`
 	if got != want {
 		t.Errorf("buildShellCmdWithTitle() = %q, want %q", got, want)
 	}
@@ -52,7 +53,7 @@ func TestBuildShellCmdWithTitle_WithCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "printf '\\033]0;%s\\007' 'biomelab: my-branch'; sbx run mybox; exec $SHELL"
+	want := `printf '\033]0;%s\007' 'biomelab: my-branch'; sbx run mybox; exec "${SHELL:-/bin/sh}"`
 	if got != want {
 		t.Errorf("buildShellCmdWithTitle() = %q, want %q", got, want)
 	}
@@ -126,9 +127,9 @@ func TestBuildShellCmd(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{"dir only", "/project", "", "cd '/project' && exec $SHELL", false},
-		{"command only", "", "sbx run mybox", "sbx run mybox; exec $SHELL", false},
-		{"command runs in directory", "/project", "sbx run mybox", "cd '/project' && { sbx run mybox; exec $SHELL; }", false},
+		{"dir only", "/project", "", `cd '/project' && exec "${SHELL:-/bin/sh}"`, false},
+		{"command only", "", "sbx run mybox", `sbx run mybox; exec "${SHELL:-/bin/sh}"`, false},
+		{"command runs in directory", "/project", "sbx run mybox", `cd '/project' && { sbx run mybox; exec "${SHELL:-/bin/sh}"; }`, false},
 		{"neither", "", "", "", true},
 	}
 	for _, tt := range tests {
@@ -163,5 +164,34 @@ func TestGeneratedShellScriptStopsOnMissingDirectory(t *testing.T) {
 		if _, err := os.Lstat(marker); !os.IsNotExist(err) {
 			t.Fatalf("command ran despite missing directory: %v", err)
 		}
+	}
+}
+
+func TestGeneratedShellScriptUsesFallbackAndQuotesShellPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell script")
+	}
+	script, err := buildShellCmd("", ":")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", "-c", script)
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH")}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("unset SHELL failed: %v (%s)", err, out)
+	}
+	marker := filepath.Join(t.TempDir(), "ran")
+	shellPath := filepath.Join(t.TempDir(), "shell with space")
+	if err := os.WriteFile(shellPath, []byte("#!/bin/sh\nprintf ran > "+shellQuote(marker)+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd = exec.Command("sh", "-c", script)
+	cmd.Env = append(os.Environ(), "SHELL="+shellPath)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("shell path with spaces failed: %v (%s)", err, out)
+	}
+	data, err := os.ReadFile(marker)
+	if err != nil || strings.TrimSpace(string(data)) != "ran" {
+		t.Fatalf("configured shell not invoked: %q, %v", data, err)
 	}
 }

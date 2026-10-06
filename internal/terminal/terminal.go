@@ -117,14 +117,15 @@ func linuxOpen(dir, command string) error {
 
 // buildShellCmd constructs a shell command string from dir and/or command.
 func buildShellCmd(dir, command string) (string, error) {
+	const shell = `exec "${SHELL:-/bin/sh}"`
 	if command != "" {
 		if dir != "" {
-			return "cd " + shellQuote(dir) + " && { " + command + "; exec $SHELL; }", nil
+			return "cd " + shellQuote(dir) + " && { " + command + "; " + shell + "; }", nil
 		}
-		return command + "; exec $SHELL", nil
+		return command + "; " + shell, nil
 	}
 	if dir != "" {
-		return "cd " + shellQuote(dir) + " && exec $SHELL", nil
+		return "cd " + shellQuote(dir) + " && " + shell, nil
 	}
 	return "", fmt.Errorf("terminal: nothing to run (no dir or command)")
 }
