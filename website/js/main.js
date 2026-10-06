@@ -688,18 +688,29 @@ function hideModal(id, onHide) {
     var kitsChoice = sandboxDemo.querySelector('input[name="sbx-demo-kits"]:checked');
     if (agentSelect) sandboxDemoConfig.agent = agentSelect.value;
     if (kitsChoice) sandboxDemoConfig.addKits = kitsChoice.value === 'yes';
-    var kitInputs = sandboxDemo.querySelectorAll('input[name="sbx-demo-kit"]');
-    if (kitInputs.length) {
-      sandboxDemoConfig.kits = Array.prototype.map.call(
-        sandboxDemo.querySelectorAll('input[name="sbx-demo-kit"]:checked'), function (input) { return input.value; }
-      );
+    if (!sandboxDemoConfig.addKits) {
+      sandboxDemoConfig.kits = [];
+    } else {
+      var kitInputs = sandboxDemo.querySelectorAll('input[name="sbx-demo-kit"]');
+      if (kitInputs.length) {
+        var compatibleKits = SANDBOX_AGENTS[sandboxDemoConfig.agent].kits;
+        sandboxDemoConfig.kits = Array.prototype.filter.call(
+          sandboxDemo.querySelectorAll('input[name="sbx-demo-kit"]:checked'), function (input) {
+            return compatibleKits.indexOf(input.value) !== -1;
+          }
+        ).map(function (input) { return input.value; });
+      } else {
+        sandboxDemoConfig.kits = sandboxDemoConfig.kits.filter(function (kit) {
+          return SANDBOX_AGENTS[sandboxDemoConfig.agent].kits.indexOf(kit) !== -1;
+        });
+      }
     }
     return sandboxDemoConfig;
   }
   function renderSandboxDemo(step) {
     var state = sandboxState();
     var agent = SANDBOX_AGENTS[state.agent];
-    var kitArgs = state.kits.map(function (kit) { return '--kit ' + kit; }).join(' ');
+    var kitArgs = state.addKits ? state.kits.map(function (kit) { return '--kit ' + kit; }).join(' ') : '';
     var body = sandboxDemo.querySelector('.sbx-demo-body');
     if (step === 'success') {
       body.innerHTML = '<div class="sbx-demo-success" role="status">'
