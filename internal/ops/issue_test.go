@@ -191,8 +191,8 @@ func TestCreateWorktreeFromIssue_ReportsPartialWriteFailure(t *testing.T) {
 	if _, err := os.Stat(result.WtPath); err != nil {
 		t.Fatalf("created worktree not preserved: %v", err)
 	}
-	if _, err := os.Stat(notes.TitlePath(result.WtPath)); err != nil {
-		t.Errorf("title artifact was not retained after exclusion failure: %v", err)
+	if _, err := os.Lstat(notes.TitlePath(result.WtPath)); !os.IsNotExist(err) {
+		t.Errorf("title artifact remained visible after exclusion failure: %v", err)
 	}
 }
 
