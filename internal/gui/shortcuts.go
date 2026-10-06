@@ -502,14 +502,36 @@ func (a *App) selectedWorktree() (int, bool) {
 }
 
 func (a *App) setStatus(msg string, isErr bool) {
-	re := a.activeRepo()
+	a.setRepoStatus(a.activeRepo(), msg, isErr)
+}
+
+func (a *App) hasRepoEntry(re *repoEntry) bool {
 	if re == nil {
+		return false
+	}
+	for _, candidate := range a.repos {
+		if candidate == re {
+			return true
+		}
+	}
+	return false
+}
+
+// setRepoStatus routes an asynchronous completion to the repo that started it.
+func (a *App) setRepoStatus(re *repoEntry, msg string, isErr bool) {
+	if !a.hasRepoEntry(re) {
 		return
 	}
 	re.state.StatusMessage = msg
 	re.state.StatusIsError = isErr
-	if a.dashboard != nil {
-		a.dashboard.Rebuild()
+	if a.activeRepo() == re && re.dashboard != nil {
+		re.dashboard.Rebuild()
+	}
+}
+
+func (a *App) refreshRepo(re *repoEntry, refresh func()) {
+	if a.hasRepoEntry(re) && refresh != nil {
+		refresh()
 	}
 }
 
@@ -532,9 +554,9 @@ func (a *App) handleCreate() {
 			result := ops.CreateWorktree(re.repo, name)
 			fyne.Do(func() {
 				if result.Err != nil {
-					a.setStatus(result.ErrorMessage(), true)
+					a.setRepoStatus(re, result.ErrorMessage(), true)
 				}
-				a.refreshMgr.TriggerQuick()
+				a.refreshRepo(re, re.refreshMgr.TriggerQuick)
 			})
 		}()
 	})
@@ -564,11 +586,11 @@ func (a *App) handleDeleteOrRemoveSandbox() {
 				result := ops.RemoveSandbox(sbxName)
 				fyne.Do(func() {
 					if result.Err != nil {
-						a.setStatus(result.ErrorMessage(), true)
+						a.setRepoStatus(re, result.ErrorMessage(), true)
 					} else {
-						a.setStatus("Removed "+sbxName, false)
+						a.setRepoStatus(re, "Removed "+sbxName, false)
 					}
-					a.refreshMgr.TriggerLocal()
+					a.refreshRepo(re, re.refreshMgr.TriggerLocal)
 				})
 			}()
 		})
@@ -585,10 +607,13 @@ func (a *App) handleDeleteOrRemoveSandbox() {
 		go func() {
 			err := ops.RemoveWorktree(re.repo, wt.Name)
 			fyne.Do(func() {
-				if err != nil {
-					a.setStatus(err.Error(), true)
+				if !a.hasRepoEntry(re) {
+					return
 				}
-				a.refreshMgr.TriggerQuick()
+				if err != nil {
+					a.setRepoStatus(re, err.Error(), true)
+				}
+				a.refreshRepo(re, re.refreshMgr.TriggerQuick)
 			})
 		}()
 	})
@@ -605,9 +630,9 @@ func (a *App) handleFetchPR() {
 			result := ops.FetchPR(re.repo, input)
 			fyne.Do(func() {
 				if result.Err != nil {
-					a.setStatus(result.Err.Error(), true)
+					a.setRepoStatus(re, result.Err.Error(), true)
 				}
-				a.refreshMgr.TriggerQuick()
+				a.refreshRepo(re, re.refreshMgr.TriggerQuick)
 			})
 		}()
 	})
@@ -618,16 +643,16 @@ func (a *App) handlePull() {
 	if re == nil {
 		return
 	}
-	a.setStatus("Pulling...", false)
+	a.setRepoStatus(re, "Pulling...", false)
 	go func() {
 		err := ops.Pull(re.repo)
 		fyne.Do(func() {
 			if err != nil {
-				a.setStatus("Pull failed: "+err.Error(), true)
+				a.setRepoStatus(re, "Pull failed: "+err.Error(), true)
 			} else {
-				a.setStatus("Pull complete", false)
+				a.setRepoStatus(re, "Pull complete", false)
 			}
-			a.refreshMgr.TriggerLocal()
+			a.refreshRepo(re, re.refreshMgr.TriggerLocal)
 		})
 	}()
 }
@@ -674,7 +699,7 @@ func (a *App) handleOpenEditor() {
 		err := ops.OpenEditor(wt.Path)
 		if err != nil {
 			fyne.Do(func() {
-				a.setStatus("Editor failed: "+err.Error(), true)
+				a.setRepoStatus(re, "Editor failed: "+err.Error(), true)
 			})
 		}
 	}()
@@ -758,9 +783,9 @@ func (a *App) sendPRConfirm(re *repoEntry, wt git.Worktree, remote git.RemoteInf
 	a.activeDialog = showSendPRConfirm(a.window, wt.Branch, remote, existingPR, hasNotes, done, func(useNotes bool) {
 		pushOnly := existingPR != nil
 		if pushOnly {
-			a.setStatus("Pushing...", false)
+			a.setRepoStatus(re, "Pushing...", false)
 		} else {
-			a.setStatus("Pushing and creating PR...", false)
+			a.setRepoStatus(re, "Pushing and creating PR...", false)
 		}
 		title := ""
 		bodyFile := ""
@@ -777,21 +802,21 @@ func (a *App) sendPRConfirm(re *repoEntry, wt git.Worktree, remote git.RemoteInf
 				err := ops.PushBranch(re.repo, wt.Branch, remote)
 				fyne.Do(func() {
 					if err != nil {
-						a.setStatus("Push failed: "+err.Error(), true)
+						a.setRepoStatus(re, "Push failed: "+err.Error(), true)
 					} else {
-						a.setStatus("Pushed successfully", false)
+						a.setRepoStatus(re, "Pushed successfully", false)
 					}
-					a.refreshMgr.TriggerNetwork()
+					a.refreshRepo(re, re.refreshMgr.TriggerNetwork)
 				})
 			} else {
 				result := ops.SendPR(re.repo, re.prProv, wt.Branch, remote, title, bodyFile)
 				fyne.Do(func() {
 					if result.Err != nil {
-						a.setStatus("PR creation failed: "+result.Err.Error(), true)
+						a.setRepoStatus(re, "PR creation failed: "+result.Err.Error(), true)
 					} else {
-						a.setStatus("PR created: "+result.URL, false)
+						a.setRepoStatus(re, "PR created: "+result.URL, false)
 					}
-					a.refreshMgr.TriggerNetwork()
+					a.refreshRepo(re, re.refreshMgr.TriggerNetwork)
 				})
 			}
 		}()
@@ -809,16 +834,17 @@ func (a *App) handleStartSandbox() {
 	if mode == nil || mode.Type != "sandbox" || mode.SandboxName == "" || re.state.SandboxStatus != sandbox.StatusStopped {
 		return
 	}
-	a.setStatus("Starting sandbox "+mode.SandboxName+"…", false)
+	sbxName := mode.SandboxName
+	a.setRepoStatus(re, "Starting sandbox "+sbxName+"…", false)
 	go func() {
-		result := ops.StartSandbox(mode.SandboxName)
+		result := ops.StartSandbox(sbxName)
 		fyne.Do(func() {
 			if result.Err != nil {
-				a.setStatus(result.ErrorMessage(), true)
+				a.setRepoStatus(re, result.ErrorMessage(), true)
 			} else {
-				a.setStatus("Started "+result.SandboxName, false)
+				a.setRepoStatus(re, "Started "+result.SandboxName, false)
 			}
-			a.refreshMgr.TriggerLocal()
+			a.refreshRepo(re, re.refreshMgr.TriggerLocal)
 		})
 	}()
 }
@@ -832,16 +858,17 @@ func (a *App) handleStopSandbox() {
 	if mode == nil || mode.Type != "sandbox" || mode.SandboxName == "" || re.state.SandboxStatus != sandbox.StatusRunning {
 		return
 	}
-	a.setStatus("Stopping sandbox "+mode.SandboxName+"…", false)
+	sbxName := mode.SandboxName
+	a.setRepoStatus(re, "Stopping sandbox "+sbxName+"…", false)
 	go func() {
-		result := ops.StopSandbox(mode.SandboxName)
+		result := ops.StopSandbox(sbxName)
 		fyne.Do(func() {
 			if result.Err != nil {
-				a.setStatus(result.ErrorMessage(), true)
+				a.setRepoStatus(re, result.ErrorMessage(), true)
 			} else {
-				a.setStatus("Stopped "+result.SandboxName, false)
+				a.setRepoStatus(re, "Stopped "+result.SandboxName, false)
 			}
-			a.refreshMgr.TriggerLocal()
+			a.refreshRepo(re, re.refreshMgr.TriggerLocal)
 		})
 	}()
 }
