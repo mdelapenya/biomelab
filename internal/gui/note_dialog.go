@@ -86,7 +86,10 @@ func (a *App) openNoteDialog(wt git.Worktree) {
 
 	titleLabel := monoText("# PR title", colorBranch, true)
 	titleLabel.TextSize = scaledSize(11)
-	titleSection := container.NewVBox(titleLabel, titleEntry)
+	errorLabel := widget.NewLabel("")
+	errorLabel.Wrapping = fyne.TextWrapWord
+	errorLabel.Hide()
+	titleSection := container.NewVBox(titleLabel, titleEntry, errorLabel)
 
 	editorLabel := monoText("✎ Markdown", colorBranch, true)
 	editorLabel.TextSize = scaledSize(11)
@@ -100,21 +103,28 @@ func (a *App) openNoteDialog(wt git.Worktree) {
 	split.Offset = 0.5
 
 	saveAndClose := func() {
-		var titleErr, bodyErr error
-		titleErr = notes.WriteTitle(wt.Path, titleEntry.Text)
+		titleErr := notes.WriteTitle(wt.Path, titleEntry.Text)
+		var bodyErr error
 		if strings.TrimSpace(entry.Text) == "" {
 			bodyErr = notes.Delete(wt.Path)
 		} else {
 			bodyErr = notes.Write(wt.Path, entry.Text)
 		}
+		var message string
 		switch {
 		case titleErr != nil:
-			a.setStatus("Note save failed (title): "+titleErr.Error(), true)
+			message = "Note save failed (title): " + titleErr.Error()
 		case bodyErr != nil:
-			a.setStatus("Note save failed (body): "+bodyErr.Error(), true)
+			message = "Note save failed (body): " + bodyErr.Error()
 		}
 		if a.dashboard != nil {
 			a.dashboard.Rebuild()
+		}
+		if message != "" {
+			errorLabel.SetText(message)
+			errorLabel.Show()
+			a.setStatus(message, true)
+			return
 		}
 		w.Close()
 	}
