@@ -218,6 +218,7 @@ tasks:
       CGO_ENABLED: "1"
     cmds:
       - '{{.GO}} test -v ./...'
+      - '{{.GO}} test github.com/fyne-io/terminal/...'
 
   test-race:
     desc: Run all tests with race detector
@@ -226,6 +227,7 @@ tasks:
       CGO_ENABLED: "1"
     cmds:
       - '{{.GO}} test -race -v ./...'
+      - '{{.GO}} test -race github.com/fyne-io/terminal/... -run TestEmbedded'
 
   install:
     desc: Install biomelab to $GOPATH/bin

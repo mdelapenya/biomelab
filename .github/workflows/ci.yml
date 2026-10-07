@@ -84,6 +84,11 @@ jobs:
             go test -race -count=1 -v ./...
           fi
 
+      - name: Test embedded terminal compatibility patch
+        run: |
+          go test github.com/fyne-io/terminal/...
+          go test -race github.com/fyne-io/terminal/... -run TestEmbedded
+
       - name: Validate native Windows terminal integration
         if: always() && runner.os == 'Windows'
         run: |
