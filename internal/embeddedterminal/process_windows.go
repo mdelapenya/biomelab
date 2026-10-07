@@ -32,6 +32,8 @@ type Process struct {
 	cleaned   bool
 	force     sync.Once
 	finish    sync.Once
+	terminate sync.Once
+	members   []windows.Handle // SYNCHRONIZE handles captured before the job is terminated
 	readEnd   sync.Once
 	done      chan struct{}
 	stopped   chan struct{}
@@ -283,7 +285,7 @@ func (p *Process) Stop() {
 		close(p.forced)
 		go func() {
 			defer close(p.forceDone)
-			_ = windows.TerminateJobObject(p.job, 1)
+			p.terminateJob()
 			_ = p.input.Close()
 			_ = p.output.Close()
 			p.beginTeardown()
@@ -300,7 +302,7 @@ func (p *Process) teardown() {
 	// The root can exit while a background child keeps the job and ConPTY
 	// alive. Request termination before waiting for the job to empty. Keep
 	// output open so the reader can consume the root's final frame.
-	_ = windows.TerminateJobObject(p.job, 1)
+	p.terminateJob()
 	p.mu.Lock()
 	windows.ClosePseudoConsole(p.console)
 	p.console = 0
@@ -315,9 +317,13 @@ func (p *Process) teardown() {
 	// TerminateJobObject may return before a descendant releases its cwd.
 	// WaitStopped is the worktree-deletion barrier, so do not signal it until
 	// every member process object is signaled and the job reports no active
-	// members. Accounting drops before the process object is signaled, so the
-	// count alone can release the barrier a moment too early.
-	waitJobProcesses(p.job)
+	// members. Accounting and the job PID list both drop before the process
+	// object is signaled, so wait on handles captured while members were alive.
+	for _, h := range p.members {
+		_, _ = windows.WaitForSingleObject(h, 5000)
+		windows.CloseHandle(h)
+	}
+	p.members = nil
 	for {
 		var accounting jobBasicAccounting
 		if err := windows.QueryInformationJobObject(p.job, windows.JobObjectBasicAccountingInformation,
@@ -343,28 +349,27 @@ func (p *Process) teardown() {
 	close(p.stopped)
 }
 
-// waitJobProcesses blocks until each process currently assigned to job has
-// terminated, bounded per process so a stuck kernel teardown cannot hang the
-// drawer forever. Members the fixed list cannot hold are covered by the
-// accounting loop in teardown.
-func waitJobProcesses(job windows.Handle) {
-	var list struct {
-		assigned, listed uint32
-		ids              [256]uintptr
-	}
-	err := windows.QueryInformationJobObject(job, windows.JobObjectBasicProcessIdList,
-		uintptr(unsafe.Pointer(&list)), uint32(unsafe.Sizeof(list)), nil)
-	if err != nil && !errors.Is(err, windows.ERROR_MORE_DATA) {
-		return
-	}
-	for _, pid := range list.ids[:min(list.listed, uint32(len(list.ids)))] {
-		h, err := windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(pid))
-		if err != nil {
-			continue // already gone
+// terminateJob captures SYNCHRONIZE handles for the job's current members and
+// then terminates the job, exactly once. Teardown waits on those handles,
+// bounded per process, before releasing WaitStopped. Members beyond the fixed
+// list are still covered by the accounting loop.
+func (p *Process) terminateJob() {
+	p.terminate.Do(func() {
+		var list struct {
+			assigned, listed uint32
+			ids              [256]uintptr
 		}
-		_, _ = windows.WaitForSingleObject(h, 5000)
-		windows.CloseHandle(h)
-	}
+		err := windows.QueryInformationJobObject(p.job, windows.JobObjectBasicProcessIdList,
+			uintptr(unsafe.Pointer(&list)), uint32(unsafe.Sizeof(list)), nil)
+		if err == nil || errors.Is(err, windows.ERROR_MORE_DATA) {
+			for _, pid := range list.ids[:min(list.listed, uint32(len(list.ids)))] {
+				if h, err := windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(pid)); err == nil {
+					p.members = append(p.members, h)
+				}
+			}
+		}
+		_ = windows.TerminateJobObject(p.job, 1)
+	})
 }
 
 func (p *Process) Close() error { p.Stop(); return nil }
