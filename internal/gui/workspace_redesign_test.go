@@ -6,6 +6,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
 	"github.com/mdelapenya/biomelab/internal/agent"
 	"github.com/mdelapenya/biomelab/internal/config"
 	"github.com/mdelapenya/biomelab/internal/git"
@@ -16,7 +17,6 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -90,9 +90,6 @@ func TestWorkspaceListSelectionNavigationAndPerViewState(t *testing.T) {
 	}
 }
 func TestWorkspaceInspectorUsesCurrentTerminalAndNoteTarget(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows uses external terminal fallback")
-	}
 	app := test.NewApp()
 	defer app.Quit()
 	app.Settings().SetTheme(NewTheme(VariantDark))
@@ -522,9 +519,6 @@ func TestWorkspaceMainCardPinnedAcrossViewsAndNarrowInspector(t *testing.T) {
 	}
 }
 func TestWorkspaceMainActionsTargetCurrentMainAndRespectGuards(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows uses external terminal fallback")
-	}
 	app := test.NewApp()
 	defer app.Quit()
 	app.Settings().SetTheme(NewTheme(VariantDark))
@@ -580,6 +574,217 @@ func TestWorkspaceMainActionsTargetCurrentMainAndRespectGuards(t *testing.T) {
 	d.OnMainNotes()
 	if state.SelectedCard != 2 || len(a.noteWindows) != 0 {
 		t.Fatal("stale main action operated on another dashboard")
+	}
+}
+
+func TestExpandedListTerminalShowsOwningCardAboveDrawer(t *testing.T) {
+	a, re, w := terminalFixture(t)
+	d := a.dashboard
+	d.RepoName = "biomelab"
+	re.group.Name = "biomelab"
+	re.state.ViewMode = ViewList
+	re.state.SelectedCard = 4
+	d.Rebuild()
+	owner := re.state.Worktrees[4]
+	seedCardTerminal(a, re, owner)
+	a.handleEnter()
+	p := a.cardTerminals
+	p.expanded = true
+	d.Rebuild()
+	pinnedTexts := func() string {
+		root := d.innerSlot.Objects[0].(*fyne.Container)
+		var values []string
+		walkPolish(root.Objects[1], func(o fyne.CanvasObject) {
+			if label, ok := o.(*measuredText); ok {
+				values = append(values, label.full)
+			}
+		})
+		return strings.Join(values, "\n")
+	}
+	assertOwner := func(title, branch string) {
+		t.Helper()
+		text := pinnedTexts()
+		if !strings.Contains(text, "Terminal · biomelab · regular") || !strings.Contains(text, title) || !strings.Contains(text, branch) || strings.Contains(text, "Main checkout") {
+			t.Fatalf("expanded owner summary missing context: %q", text)
+		}
+	}
+	assertOwner("Resume existing terminal sessions", owner.Branch)
+	if p.slot.Size().Height < 100 {
+		t.Fatalf("expanded terminal did not render: %v", p.slot.Size())
+	}
+	capture := func(name string) {
+		dir := os.Getenv("BIOMELAB_N16_SCREENSHOTS")
+		if dir == "" {
+			return
+		}
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		f, err := os.Create(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := png.Encode(f, w.Canvas().Capture()); err != nil {
+			_ = f.Close()
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	capture("biomelab-n16-expanded-list.png")
+	d.selectCard(3)
+	assertOwner("Document the installation steps", re.state.Worktrees[3].Branch)
+	if p.sessions[cardKey(re, re.state.Worktrees[3])] != nil {
+		t.Fatal("switching cards started a shell")
+	}
+	foundPrompt := false
+	walkPolish(p.slot, func(o fyne.CanvasObject) {
+		if button, ok := o.(*widget.Button); ok && button.Text == "Open terminal" {
+			foundPrompt = true
+		}
+	})
+	if !foundPrompt {
+		t.Fatal("selected card without session lost its terminal prompt")
+	}
+	d.selectCard(0)
+	assertOwner("main", re.state.Worktrees[0].Branch)
+	d.selectCard(4)
+	p.expanded = false
+	d.Rebuild()
+	if text := pinnedTexts(); !strings.Contains(text, "Main checkout") || strings.Contains(text, "Resume existing terminal sessions") {
+		t.Fatalf("collapsed terminal did not restore Main summary: %q", text)
+	}
+	capture("biomelab-n16-restored-list.png")
+	w.Resize(fyne.NewSize(1200, 520))
+	fyne.DoAndWait(func() {})
+	if !p.autoExpanded {
+		t.Fatal("short window did not automatically expand the terminal")
+	}
+	assertOwner("Resume existing terminal sessions", owner.Branch)
+	w.Resize(fyne.NewSize(1200, 820))
+	fyne.DoAndWait(func() {})
+	if p.autoExpanded || !strings.Contains(pinnedTexts(), "Main checkout") {
+		t.Fatal("growing window did not restore the Main summary")
+	}
+	d.mainExpanded = true
+	d.Rebuild()
+	onAutoChanged := p.onAutoExpandedChanged
+	changes := 0
+	p.onAutoExpandedChanged = func() {
+		changes++
+		if changes <= 4 {
+			onAutoChanged()
+		}
+	}
+	nearThreshold := float32(0)
+	sawNormal := false
+	for height := float32(480); height <= 1100; height += 20 {
+		changes = 0
+		w.Resize(fyne.NewSize(1200, height))
+		fyne.DoAndWait(func() {})
+		stable := p.autoExpanded
+		for i := 0; i < 3; i++ {
+			d.Rebuild()
+			fyne.DoAndWait(func() {})
+			if p.autoExpanded != stable {
+				t.Fatalf("auto expansion oscillated at height %.0f", height)
+			}
+		}
+		if changes > 1 {
+			t.Fatalf("auto expansion rebuilt %d times at height %.0f", changes, height)
+		}
+		if stable {
+			nearThreshold = height
+			assertOwner("Resume existing terminal sessions", owner.Branch)
+			if p.slot.Size().Height < 100 {
+				t.Fatalf("terminal unusable at height %.0f: %v", height, p.slot.Size())
+			}
+		} else {
+			sawNormal = true
+			if !strings.Contains(pinnedTexts(), "Main checkout") {
+				t.Fatalf("normal Main summary missing at height %.0f", height)
+			}
+		}
+	}
+	if nearThreshold == 0 || !sawNormal {
+		t.Fatal("height sweep did not cross the automatic expansion threshold")
+	}
+	w.Resize(fyne.NewSize(1200, nearThreshold))
+	fyne.DoAndWait(func() {})
+	d.selectCard(3)
+	assertOwner("Document the installation steps", re.state.Worktrees[3].Branch)
+	d.selectCard(0)
+	assertOwner("main", re.state.Worktrees[0].Branch)
+	d.selectCard(4)
+	if !p.autoExpanded {
+		t.Fatal("switching tasks near threshold lost automatic expansion")
+	}
+	w.Resize(fyne.NewSize(1200, 1100))
+	fyne.DoAndWait(func() {})
+	p.expanded = true
+	d.Rebuild()
+	assertOwner("Resume existing terminal sessions", owner.Branch)
+	p.expanded = false
+	d.Rebuild()
+	if !strings.Contains(pinnedTexts(), "Main checkout") {
+		t.Fatal("restoring manual expansion did not restore Main summary")
+	}
+}
+
+func TestNarrowListTerminalAutoExpansionStaysStable(t *testing.T) {
+	for _, mainExpanded := range []bool{false, true} {
+		for _, width := range []float32{500, 600, 700, 800} {
+			name := fmt.Sprintf("width_%.0f_details_%v", width, mainExpanded)
+			t.Run(name, func(t *testing.T) {
+				a, re, w := terminalFixture(t)
+				d := a.dashboard
+				re.state.ViewMode = ViewList
+				re.state.SelectedCard = 4
+				d.mainExpanded = mainExpanded
+				d.Rebuild()
+				seedCardTerminal(a, re, re.state.Worktrees[4])
+				a.handleEnter()
+				p := a.cardTerminals
+				original := p.onAutoExpandedChanged
+				changes := 0
+				p.onAutoExpandedChanged = func() {
+					changes++
+					if changes <= 6 {
+						original()
+					}
+				}
+				for height := float32(500); height <= 1200; height += 10 {
+					changes = 0
+					w.Resize(fyne.NewSize(width, height))
+					fyne.DoAndWait(func() {})
+					stable := p.autoExpanded
+					for i := 0; i < 2; i++ {
+						d.Rebuild()
+						fyne.DoAndWait(func() {})
+						if p.autoExpanded != stable {
+							t.Fatalf("auto expansion flipped after rebuild at %.0fx%.0f", width, height)
+						}
+					}
+					if changes > 1 {
+						t.Fatalf("auto expansion changed %d times at %.0fx%.0f", changes, width, height)
+					}
+					if p.slot.Size().Height < 100 {
+						t.Fatalf("terminal drawer unusable at %.0fx%.0f: %v", width, height, p.slot.Size())
+					}
+					root := d.innerSlot.Objects[0].(*fyne.Container)
+					header, mainPanel, browser := root.Objects[0], root.Objects[1], root.Objects[2]
+					if header.Position().Y+header.Size().Height > mainPanel.Position().Y+1 || mainPanel.Position().Y+mainPanel.Size().Height > browser.Position().Y+1 {
+						t.Fatalf("toolbar/Main/browser overlap at %.0fx%.0f", width, height)
+					}
+					d.selectCard(3)
+					if p.autoExpanded != stable {
+						t.Fatalf("card switch changed expansion at %.0fx%.0f", width, height)
+					}
+					d.selectCard(4)
+				}
+			})
+		}
 	}
 }
 func TestWorkspaceMainOnlyAndNoDataStates(t *testing.T) {

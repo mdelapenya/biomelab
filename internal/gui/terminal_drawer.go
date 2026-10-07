@@ -25,29 +25,34 @@ import (
 )
 
 type cardTerminalKey struct{ repository, path, mode, sandbox, agent string }
+type cardTerminalRemoval struct{ path string }
 
 type cardTerminalSession struct {
 	view    *term.Terminal
 	cancel  context.CancelFunc
 	done    chan struct{}
-	process *embeddedterminal.Process // UI-thread owned
+	stopped chan struct{} // closed after process handles have been released
 	state   string
 	running bool
 	input   *terminalInput
+	resize  *terminalResize
 }
 
 type cardTerminals struct {
-	ctx                       context.Context
-	cancel                    context.CancelFunc
-	transports                sync.WaitGroup
-	dispatch                  func(func(), bool)
-	sessions                  map[cardTerminalKey]*cardTerminalSession
-	visible, expanded, closed bool
-	key                       cardTerminalKey
-	title                     *widget.Label
-	slot                      *fyne.Container
-	content                   fyne.CanvasObject
-	offset                    float64
+	ctx                                     context.Context
+	cancel                                  context.CancelFunc
+	transports                              sync.WaitGroup
+	dispatch                                func(func(), bool)
+	sessions                                map[cardTerminalKey]*cardTerminalSession
+	removing                                map[string]*cardTerminalRemoval // UI-thread owned
+	visible, expanded, autoExpanded, closed bool
+	onAutoExpandedChanged                   func()
+	key                                     cardTerminalKey
+	title                                   *widget.Label
+	slot                                    *fyne.Container
+	content                                 fyne.CanvasObject
+	offset                                  float64
+	mainPanelHeightDelta                    float32
 }
 
 // terminalInput keeps slow PTY writes off the Fyne thread. The bounded queue
@@ -57,6 +62,57 @@ type terminalInput struct {
 	queue  chan []byte
 	report func(error)
 	once   sync.Once
+}
+
+type terminalSize struct{ rows, cols uint16 }
+
+// terminalResize keeps only the newest pending size. The Fyne callback never
+// calls the native transport, whose resize operation can wait for pipe output.
+type terminalResize struct{ pending chan terminalSize }
+
+func newTerminalResize() *terminalResize {
+	return &terminalResize{pending: make(chan terminalSize, 1)}
+}
+func (r *terminalResize) offer(rows, cols uint) {
+	if rows == 0 || cols == 0 {
+		return
+	}
+	size := terminalSize{uint16(min(rows, 65535)), uint16(min(cols, 65535))}
+	select {
+	case r.pending <- size:
+		return
+	default:
+	}
+	select {
+	case <-r.pending:
+	default:
+	}
+	select {
+	case r.pending <- size:
+	default:
+	}
+}
+func (r *terminalResize) run(ctx context.Context, resize func(uint16, uint16) error) {
+	for {
+		var size terminalSize
+		select {
+		case <-ctx.Done():
+			return
+		case size = <-r.pending:
+		}
+	drain:
+		for {
+			select {
+			case size = <-r.pending:
+			default:
+				break drain
+			}
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		_ = resize(size.rows, size.cols)
+	}
 }
 
 func (w *terminalInput) Write(b []byte) (int, error) {
@@ -141,6 +197,11 @@ func (a *App) ensureCardTerminals() *cardTerminals {
 		}
 	}
 	p.ctx, p.cancel = context.WithCancel(context.Background())
+	p.onAutoExpandedChanged = func() {
+		if a.cardTerminals == p && p.visible && !p.closed && a.dashboard != nil {
+			a.dashboard.Rebuild()
+		}
+	}
 	a.cardTerminals = p
 	p.title = widget.NewLabel("Terminal")
 	p.title.Truncation = fyne.TextTruncateEllipsis
@@ -161,7 +222,9 @@ func (a *App) ensureCardTerminals() *cardTerminals {
 			fyne.NewMenuItem("Stop session", func() { a.confirmTerminalStop(false) }),
 			fyne.NewMenuItem("Open in external terminal", func() {
 				if re, wt, ok := a.selectedTerminalTarget(); ok {
-					a.openOrActivateTerminal(re, wt)
+					if p.removing[cardKey(re, wt).path] == nil {
+						a.openOrActivateTerminal(re, wt)
+					}
 				}
 			}),
 		)
@@ -236,7 +299,11 @@ func (a *App) refreshCardTerminal() {
 	s := p.sessions[key]
 	if s == nil {
 		p.title.SetText("Terminal · " + identity)
-		p.slot.Objects = []fyne.CanvasObject{container.NewCenter(widget.NewButton("Open terminal", func() { a.openCardTerminal(re, wt) }))}
+		if p.removing[key.path] != nil {
+			p.slot.Objects = []fyne.CanvasObject{container.NewCenter(widget.NewLabel("Removing worktree…"))}
+		} else {
+			p.slot.Objects = []fyne.CanvasObject{container.NewCenter(widget.NewButton("Open terminal", func() { a.openCardTerminal(re, wt) }))}
+		}
 	} else {
 		p.title.SetText("Terminal · " + identity + " · " + s.state)
 		p.slot.Objects = []fyne.CanvasObject{s.view}
@@ -244,8 +311,11 @@ func (a *App) refreshCardTerminal() {
 	p.slot.Refresh()
 }
 func (a *App) openCardTerminal(re *repoEntry, wt git.Worktree) {
-	// Windows retains its existing native launch until ConPTY is validated.
-	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+	key := cardKey(re, wt)
+	if p := a.cardTerminals; p != nil && p.removing[key.path] != nil {
+		return
+	}
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" && runtime.GOOS != "windows" {
 		a.openOrActivateTerminal(re, wt)
 		return
 	}
@@ -254,7 +324,6 @@ func (a *App) openCardTerminal(re *repoEntry, wt git.Worktree) {
 		return
 	}
 	p.visible = true
-	key := cardKey(re, wt)
 	p.key = key
 	if previous := p.sessions[key]; previous == nil || !previous.running {
 		if previous != nil {
@@ -268,7 +337,7 @@ func (a *App) openCardTerminal(re *repoEntry, wt git.Worktree) {
 func (a *App) startCardTerminal(key cardTerminalKey, wt git.Worktree, previous *cardTerminalSession) {
 	p := a.cardTerminals
 	ctx, cancel := context.WithCancel(p.ctx)
-	s := &cardTerminalSession{view: term.New(), cancel: cancel, done: make(chan struct{}), state: "Starting", running: true}
+	s := &cardTerminalSession{view: term.New(), cancel: cancel, done: make(chan struct{}), stopped: make(chan struct{}), resize: newTerminalResize(), state: "Starting", running: true}
 	p.sessions[key] = s
 	s.view.Palette = func(index int) color.Color { return terminalANSIColor(index) }
 	s.view.OnReturnToWorkspace = a.leaveCardTerminal
@@ -278,9 +347,7 @@ func (a *App) startCardTerminal(key cardTerminalKey, wt git.Worktree, previous *
 	}}
 	s.view.AttachWriter(s.input)
 	s.view.OnResize = func(rows, cols uint) {
-		if s.process != nil && rows > 0 && cols > 0 {
-			_ = s.process.Resize(uint16(min(rows, 65535)), uint16(min(cols, 65535)))
-		}
+		s.resize.offer(rows, cols)
 	}
 	current := func() bool { return !p.closed && p.ctx.Err() == nil && p.sessions[key] == s }
 	dir, args := embeddedCommand(key, wt)
@@ -289,10 +356,15 @@ func (a *App) startCardTerminal(key cardTerminalKey, wt git.Worktree, previous *
 		defer close(s.done)
 		defer cancel()
 		if previous != nil {
-			<-previous.done
+			if previous.stopped != nil {
+				<-previous.stopped
+			} else {
+				<-previous.done
+			}
 		}
 		process, err := embeddedterminal.Start(ctx, dir, args, 24, 80)
 		if err != nil {
+			close(s.stopped)
 			p.transports.Done()
 			p.dispatch(func() {
 				if current() {
@@ -304,6 +376,17 @@ func (a *App) startCardTerminal(key cardTerminalKey, wt git.Worktree, previous *
 			}, false)
 			return
 		}
+		resizeDone := make(chan struct{})
+		go func() {
+			defer close(resizeDone)
+			s.resize.run(ctx, process.Resize)
+		}()
+		go func() {
+			<-s.done
+			process.WaitStopped()
+			<-resizeDone
+			close(s.stopped)
+		}()
 		go func() {
 			_ = process.Wait()
 			if ctx.Err() != nil {
@@ -317,7 +400,6 @@ func (a *App) startCardTerminal(key cardTerminalKey, wt git.Worktree, previous *
 			if !current() {
 				return
 			}
-			s.process = process
 			s.state = "Running"
 			rows, cols := s.view.Dimensions()
 			s.view.OnResize(rows, cols)
@@ -358,20 +440,33 @@ func (a *App) startCardTerminal(key cardTerminalKey, wt git.Worktree, previous *
 		}
 		stopped := ctx.Err() != nil
 		p.dispatch(func() {
-			if !current() {
-				return
+			if current() {
+				a.finishCardTerminalSession(key, s, stopped, err)
 			}
-			s.running = false
-			s.process = nil
-			s.state = "Exited"
-			if stopped {
-				s.state = "Stopped"
-			} else if err != nil {
-				s.state = "Exited: " + err.Error()
-			}
-			a.refreshCardTerminal()
 		}, false)
 	}()
+}
+func (a *App) finishCardTerminalSession(key cardTerminalKey, s *cardTerminalSession, stopped bool, err error) {
+	p := a.cardTerminals
+	if p == nil || p.closed || p.sessions[key] != s {
+		return
+	}
+	s.running = false
+	s.state = "Exited"
+	if stopped {
+		s.state = "Stopped"
+	} else if err != nil {
+		s.state = "Exited: " + err.Error()
+	}
+	if !stopped && err == nil && p.visible && p.key == key {
+		if re, wt, ok := a.selectedTerminalTarget(); ok && cardKey(re, wt) == key {
+			a.leaveCardTerminal()
+			p.visible = false
+			a.dashboard.Rebuild()
+			return
+		}
+	}
+	a.refreshCardTerminal()
 }
 func (a *App) confirmTerminalStop(restart bool) {
 	p := a.cardTerminals
@@ -379,6 +474,9 @@ func (a *App) confirmTerminalStop(restart bool) {
 		return
 	}
 	key := p.key
+	if p.removing[key.path] != nil {
+		return
+	}
 	s := p.sessions[key]
 	if s == nil || (!restart && !s.running) {
 		return
@@ -388,7 +486,7 @@ func (a *App) confirmTerminalStop(restart bool) {
 		return
 	}
 	action := func() {
-		if p.sessions[key] != s {
+		if p.removing[key.path] != nil || p.sessions[key] != s {
 			return
 		}
 		s.cancel()
@@ -426,18 +524,63 @@ func (a *App) confirmTerminalStop(restart bool) {
 	d.Show()
 	a.window.Canvas().Focus(cancel)
 }
-func (a *App) stopCardTerminals(match func(cardTerminalKey) bool) {
+func (a *App) beginCardTerminalRemoval(path string) *cardTerminalRemoval {
+	p := a.ensureCardTerminals()
+	if p.removing == nil {
+		p.removing = make(map[string]*cardTerminalRemoval)
+	}
+	if p.removing[path] != nil {
+		return nil
+	}
+	removal := &cardTerminalRemoval{path: path}
+	p.removing[path] = removal
+	return removal
+}
+func (a *App) finishCardTerminalRemoval(path string, removal *cardTerminalRemoval) {
+	if p := a.cardTerminals; p != nil {
+		if p.removing[path] == removal && removal != nil {
+			delete(p.removing, path)
+			a.refreshCardTerminal()
+		}
+	}
+}
+func (a *App) releaseCardTerminalRemovalAfterCleanup(path string, removal *cardTerminalRemoval, stopped []<-chan struct{}) <-chan struct{} {
+	p := a.cardTerminals
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for _, done := range stopped {
+			select {
+			case <-done:
+			case <-p.ctx.Done():
+				return
+			}
+		}
+		if p.ctx.Err() == nil {
+			p.dispatch(func() { a.finishCardTerminalRemoval(path, removal) }, false)
+		}
+	}()
+	return done
+}
+func (a *App) stopCardTerminals(match func(cardTerminalKey) bool) []<-chan struct{} {
 	p := a.cardTerminals
 	if p == nil {
-		return
+		return nil
 	}
+	var stopped []<-chan struct{}
 	for key, s := range p.sessions {
 		if match(key) {
 			s.cancel()
+			if s.stopped != nil {
+				stopped = append(stopped, s.stopped)
+			} else {
+				stopped = append(stopped, s.done)
+			}
 			delete(p.sessions, key)
 		}
 	}
 	a.refreshCardTerminal()
+	return stopped
 }
 func (a *App) closeCardTerminals() {
 	if p := a.cardTerminals; p != nil && !p.closed {
@@ -467,7 +610,16 @@ func (*terminalDrawerLayout) MinSize([]fyne.CanvasObject) fyne.Size {
 }
 func (l *terminalDrawerLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	body, divider, drawer := objects[0], objects[1], objects[2]
-	if l.panel.expanded || size.Height < scaledSize(440) {
+	// Measure against the body height with the normal Main panel. Swapping it
+	// for a shorter owner summary must not change the expansion decision.
+	autoExpanded := size.Height+l.panel.mainPanelHeightDelta < scaledSize(440)
+	if l.panel.autoExpanded != autoExpanded {
+		l.panel.autoExpanded = autoExpanded
+		if l.panel.onAutoExpandedChanged != nil {
+			fyne.Do(l.panel.onAutoExpandedChanged)
+		}
+	}
+	if l.panel.expanded || autoExpanded {
 		body.Hide()
 		divider.Hide()
 		drawer.Move(fyne.Position{})

@@ -1,7 +1,11 @@
 package gui
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"math"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"
@@ -684,22 +688,63 @@ func (a *App) handleDeleteOrRemoveSandbox() {
 	wt := re.state.Worktrees[idx]
 	done := a.openDialog()
 	a.activeDialog = showConfirmDelete(a.window, wt.Branch, wt.Path, done, func() {
+		path := canonicalTerminalPath(wt.Path)
+		removal := a.beginCardTerminalRemoval(path)
+		if removal == nil {
+			return
+		}
+		stopped := a.stopCardTerminals(func(k cardTerminalKey) bool { return k.path == path })
 		go func() {
-			err := ops.RemoveWorktree(re.repo, wt.Name)
+			p := a.cardTerminals
+			err := removeAfterCardTerminalCleanup(p.ctx, stopped, 10*time.Second, func() error {
+				return ops.RemoveWorktree(re.repo, wt.Name)
+			})
+			if p.ctx.Err() != nil {
+				return
+			}
 			fyne.Do(func() {
+				if errors.Is(err, errCardTerminalCleanupPending) {
+					a.releaseCardTerminalRemovalAfterCleanup(path, removal, stopped)
+				} else {
+					a.finishCardTerminalRemoval(path, removal)
+				}
 				if !a.hasRepoEntry(re) {
 					return
 				}
 				if err != nil {
 					a.setRepoStatus(re, err.Error(), true)
-				} else {
-					path := canonicalTerminalPath(wt.Path)
-					a.stopCardTerminals(func(k cardTerminalKey) bool { return k.path == path })
 				}
 				a.refreshRepo(re, re.refreshMgr.TriggerQuick)
 			})
 		}()
 	})
+}
+
+var errCardTerminalCleanupPending = errors.New("terminal cleanup pending")
+
+func waitForCardTerminalCleanup(ctx context.Context, stopped []<-chan struct{}, timeout time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	for _, done := range stopped {
+		select {
+		case <-done:
+		case <-deadline.C:
+			return fmt.Errorf("terminal did not stop within %s; worktree was not deleted: %w", timeout, errCardTerminalCleanupPending)
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return ctx.Err()
+}
+
+func removeAfterCardTerminalCleanup(ctx context.Context, stopped []<-chan struct{}, timeout time.Duration, remove func() error) error {
+	if err := waitForCardTerminalCleanup(ctx, stopped, timeout); err != nil {
+		return err
+	}
+	return remove()
 }
 
 func (a *App) handleFetchPR() {

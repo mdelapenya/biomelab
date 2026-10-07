@@ -3,6 +3,7 @@ package gui
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"image/color"
 	"image/png"
 	"os"
@@ -25,7 +26,7 @@ func seedCardTerminal(a *App, re *repoEntry, wt git.Worktree) *cardTerminalSessi
 	p := a.ensureCardTerminals()
 	done := make(chan struct{})
 	close(done)
-	s := &cardTerminalSession{view: term.New(), state: "Running", running: true, cancel: func() {}, done: done}
+	s := &cardTerminalSession{view: term.New(), state: "Running", running: true, cancel: func() {}, done: done, stopped: done}
 	s.view.Palette = func(index int) color.Color { return terminalANSIColor(index) }
 	s.view.OnReturnToWorkspace = a.leaveCardTerminal
 	p.sessions[cardKey(re, wt)] = s
@@ -49,9 +50,6 @@ func terminalFixture(t *testing.T) (*App, *repoEntry, fyne.Window) {
 	return a, re, w
 }
 func TestCardTerminalSelectionRetainsSessionsAndFocus(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("external fallback")
-	}
 	a, re, w := terminalFixture(t)
 	wt := re.state.Worktrees[2]
 	original := seedCardTerminal(a, re, wt)
@@ -89,6 +87,53 @@ func TestCardTerminalSelectionRetainsSessionsAndFocus(t *testing.T) {
 	keys.press(fyne.KeySpace)
 	if w.Canvas().Focused() != nil {
 		t.Fatal("workspace chord did not release terminal focus")
+	}
+}
+
+func TestCardTerminalCleanExitCollapsesOnlyShownSession(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		other     bool
+		hidden    bool
+		stopped   bool
+		err       error
+		collapsed bool
+	}{
+		{name: "shown clean exit", collapsed: true},
+		{name: "other card clean exit", other: true},
+		{name: "hidden clean exit", hidden: true},
+		{name: "abnormal exit", err: fmt.Errorf("shell failed")},
+		{name: "explicit stop", stopped: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, re, w := terminalFixture(t)
+			shown := re.state.Worktrees[2]
+			shownSession := seedCardTerminal(a, re, shown)
+			a.handleEnter()
+			target := shown
+			s := shownSession
+			if tc.other {
+				target = re.state.Worktrees[1]
+				s = seedCardTerminal(a, re, target)
+			}
+			if tc.hidden {
+				a.leaveCardTerminal()
+				a.cardTerminals.visible = false
+			}
+			a.finishCardTerminalSession(cardKey(re, target), s, tc.stopped, tc.err)
+			if !tc.hidden && a.cardTerminals.visible != !tc.collapsed {
+				t.Fatalf("drawer visibility after exit = %v", a.cardTerminals.visible)
+			}
+			if tc.collapsed && w.Canvas().Focused() != nil {
+				t.Fatal("clean exit retained terminal focus")
+			}
+			if tc.other && w.Canvas().Focused() != shownSession.view {
+				t.Fatal("background exit disturbed active terminal focus")
+			}
+			if tc.hidden && a.cardTerminals.visible {
+				t.Fatal("background exit reopened hidden drawer")
+			}
+		})
 	}
 }
 
@@ -176,13 +221,10 @@ func TestCardTerminalRealShellOutputReuseAndStop(t *testing.T) {
 		t.Fatal(err)
 	}
 	drainTerminalEvents(t, events, func() bool { return !s.running })
-	if s.state != "Exited" {
-		t.Fatalf("normal exit = %q", s.state)
+	if s.state != "Exited" || p.visible {
+		t.Fatalf("normal exit = %q, drawer visible = %v", s.state, p.visible)
 	}
-	// Closing the drawer and reopening must replace a dead session.
-	a.leaveCardTerminal()
-	p.visible = false
-	a.dashboard.Rebuild()
+	// Reopening the collapsed drawer must replace a dead session.
 	a.handleEnter()
 	previous := s
 	s = p.sessions[key]
@@ -203,10 +245,98 @@ func TestTerminalInputAfterCancellation(t *testing.T) {
 		t.Fatal("input accepted after stop")
 	}
 }
-func TestCardTerminalRenderedDrawer(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows uses external terminal fallback")
+
+func TestTerminalResizeDoesNotBlockUIAndKeepsLatestSize(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r := newTerminalResize()
+	view := term.New()
+	view.OnResize = r.offer
+	called := make(chan terminalSize, 2)
+	release := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		r.run(ctx, func(rows, cols uint16) error {
+			called <- terminalSize{rows, cols}
+			if rows == 24 {
+				<-release
+			}
+			return nil
+		})
+	}()
+	view.OnResize(24, 80)
+	select {
+	case size := <-called:
+		if size != (terminalSize{24, 80}) {
+			t.Fatalf("first resize = %+v", size)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("first resize did not start")
 	}
+	returned := make(chan struct{})
+	go func() {
+		view.OnResize(30, 100)
+		view.OnResize(40, 120)
+		close(returned)
+	}()
+	select {
+	case <-returned:
+	case <-time.After(time.Second):
+		t.Fatal("UI resize callback waited for blocked native resize")
+	}
+	close(release)
+	select {
+	case size := <-called:
+		if size != (terminalSize{40, 120}) {
+			t.Fatalf("pending resize = %+v, want latest size", size)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("latest resize was not applied")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("resize worker did not stop after cancellation")
+	}
+}
+
+func TestTerminalResizeCancellationDiscardsPendingSize(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	r := newTerminalResize()
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan struct{})
+	calls := make(chan terminalSize, 2)
+	go func() {
+		defer close(done)
+		r.run(ctx, func(rows, cols uint16) error {
+			calls <- terminalSize{rows, cols}
+			close(entered)
+			<-release
+			return nil
+		})
+	}()
+	r.offer(24, 80)
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("blocking resize did not start")
+	}
+	r.offer(40, 120)
+	cancel()
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("resize worker did not exit after cancellation")
+	}
+	if len(calls) != 1 {
+		t.Fatalf("resize continued after cancellation: %d calls", len(calls))
+	}
+}
+func TestCardTerminalRenderedDrawer(t *testing.T) {
 	a, re, w := terminalFixture(t)
 	re.group.Name = "biomelab"
 	a.dashboard.RepoName = "biomelab"
@@ -307,9 +437,6 @@ func TestTerminalPasteLimitIsVisibleAndAtomic(t *testing.T) {
 }
 
 func TestTerminalStopEscapeRestoresInputWithoutStopping(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("external fallback")
-	}
 	a, re, w := terminalFixture(t)
 	s := seedCardTerminal(a, re, re.state.Worktrees[2])
 	s.running = true
