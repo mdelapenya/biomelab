@@ -511,7 +511,7 @@ func (a *App) handleEnter() {
 	}
 	wt := re.state.Worktrees[idx]
 
-	a.openOrActivateTerminal(re, wt)
+	a.openCardTerminal(re, wt)
 }
 
 func (a *App) handleEscape() {
@@ -667,6 +667,7 @@ func (a *App) handleDeleteOrRemoveSandbox() {
 					if result.Err != nil {
 						a.setRepoStatus(re, result.ErrorMessage(), true)
 					} else {
+						a.stopCardTerminals(func(k cardTerminalKey) bool { return k.sandbox == sbxName })
 						a.setRepoStatus(re, "Removed "+sbxName, false)
 					}
 					a.refreshRepo(re, re.refreshMgr.TriggerLocal)
@@ -691,6 +692,9 @@ func (a *App) handleDeleteOrRemoveSandbox() {
 				}
 				if err != nil {
 					a.setRepoStatus(re, err.Error(), true)
+				} else {
+					path := canonicalTerminalPath(wt.Path)
+					a.stopCardTerminals(func(k cardTerminalKey) bool { return k.path == path })
 				}
 				a.refreshRepo(re, re.refreshMgr.TriggerQuick)
 			})
@@ -1221,6 +1225,10 @@ func (a *App) handleRemoveMode() {
 			a.removeRepoEntry(re)
 			return
 		}
+		root := canonicalTerminalPath(re.group.Path)
+		a.stopCardTerminals(func(k cardTerminalKey) bool {
+			return k.repository == root && k.mode == mode.Type && k.sandbox == mode.SandboxName && k.agent == mode.Agent
+		})
 		re.group.Modes = cfg.Repos[idx].Modes
 		newMi := mi
 		if newMi >= len(re.group.Modes) {

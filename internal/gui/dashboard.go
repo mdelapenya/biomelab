@@ -145,6 +145,7 @@ type Dashboard struct {
 	// OnCardSelected is called when a card is clicked. The index is the
 	// worktree index (0=main, 1+=linked).
 	OnCardSelected func(idx int)
+	wrapBody       func(fyne.CanvasObject) fyne.CanvasObject
 
 	// OnNoteRequested fires when the user right-clicks a card and wants to
 	// open the per-worktree note editor.
@@ -416,9 +417,12 @@ func (d *Dashboard) build() fyne.CanvasObject {
 		d.scroll.Offset = d.gridOffset
 		body = d.scroll
 	}
-	browser := inset(container.NewBorder(top, nil, nil, nil, body), spaceMD, spaceSM)
+	var browser fyne.CanvasObject = inset(container.NewBorder(top, nil, nil, nil, body), spaceMD, spaceSM)
 	if d.inspectorOpen {
-		return container.New(&workspaceRootLayout{footer: true}, header, mainPanel, container.New(&workspacePaneLayout{list: d.state.ViewMode == ViewList}, browser, d.buildInspector()), d.helpBar())
+		browser = container.New(&workspacePaneLayout{list: d.state.ViewMode == ViewList}, browser, d.buildInspector())
+	}
+	if d.wrapBody != nil {
+		browser = d.wrapBody(browser)
 	}
 	return container.New(&workspaceRootLayout{footer: true}, header, mainPanel, browser, d.helpBar())
 }

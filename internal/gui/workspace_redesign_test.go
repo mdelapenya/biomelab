@@ -16,6 +16,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -89,6 +90,9 @@ func TestWorkspaceListSelectionNavigationAndPerViewState(t *testing.T) {
 	}
 }
 func TestWorkspaceInspectorUsesCurrentTerminalAndNoteTarget(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows uses external terminal fallback")
+	}
 	app := test.NewApp()
 	defer app.Quit()
 	app.Settings().SetTheme(NewTheme(VariantDark))
@@ -98,19 +102,14 @@ func TestWorkspaceInspectorUsesCurrentTerminalAndNoteTarget(t *testing.T) {
 	s.ViewMode = ViewList
 	d := NewDashboard(s)
 	w := polishWindow(t, app, d, 1000, 700)
-	dispatch := make(chan func(), 1)
-	opened := make(chan string, 1)
 	re := &repoEntry{state: s, dashboard: d, group: &RepoGroup{Path: "/projects/biomelab"}}
-	a := &App{fyneApp: app, window: w, dashboard: d, repos: []*repoEntry{re}, terminalDeps: &terminalDependencies{find: noTerminal, open: func(dir, command, id string) (*terminal.Session, error) {
-		opened <- dir
-		return &terminal.Session{}, nil
-	}, dispatch: func(fn func()) { dispatch <- fn }}}
+	a := &App{fyneApp: app, window: w, dashboard: d, repos: []*repoEntry{re}}
 	a.wireDashboardActions(d)
+	seedCardTerminal(a, re, s.Worktrees[2])
 	test.Tap(polishAction(t, d, "Open Terminal"))
-	if got := receiveRefresh(t, opened); got != s.Worktrees[2].Path {
+	if got := a.cardTerminals.key.path; got != canonicalTerminalPath(s.Worktrees[2].Path) {
 		t.Fatalf("terminal opened %q", got)
 	}
-	receiveRefresh(t, dispatch)()
 	test.Tap(polishAction(t, d, "Notes"))
 	if a.noteWindows[s.Worktrees[2].Path] == nil {
 		t.Fatal("Notes did not open selected worktree editor")
@@ -523,6 +522,9 @@ func TestWorkspaceMainCardPinnedAcrossViewsAndNarrowInspector(t *testing.T) {
 	}
 }
 func TestWorkspaceMainActionsTargetCurrentMainAndRespectGuards(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows uses external terminal fallback")
+	}
 	app := test.NewApp()
 	defer app.Quit()
 	app.Settings().SetTheme(NewTheme(VariantDark))
@@ -532,14 +534,10 @@ func TestWorkspaceMainActionsTargetCurrentMainAndRespectGuards(t *testing.T) {
 	state.Worktrees[0].Path = t.TempDir()
 	d := NewDashboard(state)
 	w := polishWindow(t, app, d, 1000, 700)
-	dispatch := make(chan func(), 1)
-	opened := make(chan string, 1)
 	re := &repoEntry{state: state, dashboard: d, group: &RepoGroup{Path: state.Worktrees[0].Path}}
-	a := &App{fyneApp: app, window: w, dashboard: d, repos: []*repoEntry{re}, terminalDeps: &terminalDependencies{find: noTerminal, open: func(dir, command, id string) (*terminal.Session, error) {
-		opened <- dir
-		return &terminal.Session{}, nil
-	}, dispatch: func(fn func()) { dispatch <- fn }}}
+	a := &App{fyneApp: app, window: w, dashboard: d, repos: []*repoEntry{re}}
 	a.wireDashboardActions(d)
+	seedCardTerminal(a, re, state.Worktrees[0])
 	a.dialogOpen = true
 	d.OnMainTerminal()
 	d.OnMainEditor()
@@ -549,10 +547,9 @@ func TestWorkspaceMainActionsTargetCurrentMainAndRespectGuards(t *testing.T) {
 	}
 	a.dialogOpen = false
 	test.Tap(polishAction(t, d, "Terminal"))
-	if got := receiveRefresh(t, opened); got != state.Worktrees[0].Path {
+	if got := a.cardTerminals.key.path; got != canonicalTerminalPath(state.Worktrees[0].Path) {
 		t.Fatalf("main terminal opened%q", got)
 	}
-	receiveRefresh(t, dispatch)()
 	state.SelectedCard = 2
 	d.Rebuild()
 	d.OnMainNotes()
