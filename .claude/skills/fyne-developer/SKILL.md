@@ -396,7 +396,7 @@ Fyne requires **CGo** and system graphics libraries:
 
 ```bash
 # Linux
-sudo apt install libgl1-mesa-dev xorg-dev gcc
+sudo apt install libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols gcc
 
 # Build
 CGO_ENABLED=1 go build -tags fyne ./cmd/myapp

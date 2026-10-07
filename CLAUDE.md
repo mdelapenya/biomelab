@@ -15,7 +15,7 @@ Fyne requires CGo and system graphics libraries.
 ```
 # Prerequisites — install a C toolchain
 #   macOS:    xcode-select --install
-#   Linux:    sudo apt install gcc libgl1-mesa-dev xorg-dev
+#   Linux:    sudo apt install gcc libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols
 #   Windows:  scoop install gcc    (or MSYS2: pacman -S mingw-w64-ucrt-x86_64-gcc)
 
 # Build and test
