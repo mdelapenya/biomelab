@@ -314,7 +314,10 @@ func (p *Process) teardown() {
 	}
 	// TerminateJobObject may return before a descendant releases its cwd.
 	// WaitStopped is the worktree-deletion barrier, so do not signal it until
-	// the job reports no active members.
+	// every member process object is signaled and the job reports no active
+	// members. Accounting drops before the process object is signaled, so the
+	// count alone can release the barrier a moment too early.
+	waitJobProcesses(p.job)
 	for {
 		var accounting jobBasicAccounting
 		if err := windows.QueryInformationJobObject(p.job, windows.JobObjectBasicAccountingInformation,
@@ -338,6 +341,30 @@ func (p *Process) teardown() {
 	windows.CloseHandle(p.child)
 	windows.CloseHandle(p.job)
 	close(p.stopped)
+}
+
+// waitJobProcesses blocks until each process currently assigned to job has
+// terminated, bounded per process so a stuck kernel teardown cannot hang the
+// drawer forever. Members the fixed list cannot hold are covered by the
+// accounting loop in teardown.
+func waitJobProcesses(job windows.Handle) {
+	var list struct {
+		assigned, listed uint32
+		ids              [256]uintptr
+	}
+	err := windows.QueryInformationJobObject(job, windows.JobObjectBasicProcessIdList,
+		uintptr(unsafe.Pointer(&list)), uint32(unsafe.Sizeof(list)), nil)
+	if err != nil && !errors.Is(err, windows.ERROR_MORE_DATA) {
+		return
+	}
+	for _, pid := range list.ids[:min(list.listed, uint32(len(list.ids)))] {
+		h, err := windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(pid))
+		if err != nil {
+			continue // already gone
+		}
+		_, _ = windows.WaitForSingleObject(h, 5000)
+		windows.CloseHandle(h)
+	}
 }
 
 func (p *Process) Close() error { p.Stop(); return nil }
