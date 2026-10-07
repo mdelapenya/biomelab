@@ -71,12 +71,16 @@ func TestTerminalActionCoalescesAndReportsFailure(t *testing.T) {
 }
 
 func TestTerminalActionReusesRegularAndSandboxSessions(t *testing.T) {
-	for _, mode := range []string{"regular", "sandbox-main", "sandbox-linked"} {
+	for _, mode := range []string{"regular", "sandbox-main", "sandbox-linked", "sandbox-main-shell", "sandbox-linked-shell"} {
 		t.Run(mode, func(t *testing.T) {
-			wt := git.Worktree{Path: "/repo/work", Branch: "feature", IsMain: mode == "sandbox-main"}
+			wt := git.Worktree{Path: "/repo/work", Branch: "feature", IsMain: strings.HasPrefix(mode, "sandbox-main")}
 			re := &repoEntry{state: &RepoState{Worktrees: []git.Worktree{wt}}}
 			if strings.HasPrefix(mode, "sandbox") {
-				re.state.ActiveMode = &config.ModeEntry{Type: "sandbox", SandboxName: "box", Agent: "claude"}
+				agent := "claude"
+				if strings.HasSuffix(mode, "shell") {
+					agent = "shell"
+				}
+				re.state.ActiveMode = &config.ModeEntry{Type: "sandbox", SandboxName: "box", Agent: agent}
 			}
 			dispatch := make(chan func(), 1)
 			var opens, activations, finds int
@@ -104,11 +108,14 @@ func TestTerminalActionReusesRegularAndSandboxSessions(t *testing.T) {
 					if dir != "" || title != "" {
 						t.Error("sandbox launch leaked directory or title")
 					}
-					if mode == "sandbox-main" && command != "sbx\x00run\x00--name\x00box" {
+					if wt.IsMain && command != "sbx\x00run\x00--name\x00box" {
 						t.Errorf("wrong main attach: %q", args)
 					}
 					if mode == "sandbox-linked" && (!strings.Contains(command, "exec") || !strings.Contains(command, "claude") || !strings.Contains(command, wt.Path)) {
 						t.Errorf("wrong linked attach: %q", args)
+					}
+					if mode == "sandbox-linked-shell" && (!strings.Contains(command, "exec /bin/bash -i") || strings.Contains(command, "exec shell") || !strings.Contains(command, wt.Path)) {
+						t.Errorf("linked shell workload did not launch interactive shell: %q", args)
 					}
 					return first, nil
 				},

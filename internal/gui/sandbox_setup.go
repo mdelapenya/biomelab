@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/widget"
 
 	"github.com/mdelapenya/biomelab/internal/config"
 	"github.com/mdelapenya/biomelab/internal/kits"
@@ -72,12 +72,13 @@ func newSandboxMode(repoPath, agent string) config.ModeEntry {
 func (a *App) loadSetupKits(repoName string, onSubmit func([]kits.Kit)) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	done := a.openDialog()
-	loading := dialog.NewCustom("Loading Kits", "Cancel", widget.NewLabel("Loading available kits…"), a.window)
+	loading := newKeyboardDismiss("Loading Kits", "Cancel", dialogBusy("Loading available kits…"), a.window)
 	loading.SetOnClosed(func() {
 		cancel()
 		done()
 	})
 	a.activeDialog = loading
+	loading.Resize(boundedDialogSize(a.window, dialogMinSize))
 	loading.Show()
 	go func() {
 		sandboxKits, mixins, err := kits.FetchAvailable(ctx)
@@ -87,7 +88,7 @@ func (a *App) loadSetupKits(repoName string, onSubmit func([]kits.Kit)) {
 			}
 			loading.Hide()
 			if err != nil {
-				dialog.ShowError(fmt.Errorf("load kits: %w", err), a.window)
+				a.showError(fmt.Errorf("load kits: %w", err))
 				return
 			}
 			pickerDone := a.openDialog()
@@ -101,35 +102,19 @@ func (a *App) createProjectSandbox(repoPath, repoName string, mode config.ModeEn
 		a.creatingSandboxes = make(map[string]bool)
 	}
 	if a.creatingSandboxes[mode.SandboxName] {
-		dialog.ShowInformation("Creating Sandbox", mode.SandboxName+" is already being created.", a.window)
+		a.showInformation("Creating Sandbox", mode.SandboxName+" is already being created.")
 		return
 	}
 	a.creatingSandboxes[mode.SandboxName] = true
+	navigation := a.workspaceGeneration
+	origin := a.projectRepo(repoPath)
 	a.setProjectStatus(repoPath, "Creating "+mode.SandboxName+"…", false)
 	go func() {
 		baseRef, mixinRefs := kitSelectionRefs(selected)
 		name, created, err := ops.EnsureSandboxWithKit(repoName, repoPath, mode.SandboxName, mode.Agent, baseRef, mixinRefs)
 		fyne.Do(func() {
 			delete(a.creatingSandboxes, mode.SandboxName)
-			if err != nil {
-				var existing *ops.ExistingSandboxWithKitsError
-				if errors.As(err, &existing) {
-					// The selected kits cannot be applied to this sandbox. The
-					// user must explicitly choose registration without them.
-					a.setProjectStatus(repoPath, "Existing sandbox "+existing.Name+" needs registration confirmation", false)
-					done := a.openDialog()
-					a.activeDialog = showConfirmRegisterExistingSandbox(a.window, existing.Name, repoPath, done, func() {
-						a.registerExistingProjectSandbox(repoPath, repoName, mode, existing.Name)
-					}, func() {
-						a.setProjectStatus(repoPath, "Sandbox registration canceled", false)
-					})
-					return
-				}
-				a.setProjectStatus(repoPath, ops.FirstNonEmptyLine(err.Error()), true)
-				dialog.ShowError(err, a.window)
-				return
-			}
-			a.completeProjectSandbox(repoPath, repoName, mode, name, created, selected)
+			a.applyProjectSandboxResult(repoPath, repoName, mode, name, created, selected, navigation, origin, err)
 		})
 	}()
 }
@@ -138,11 +123,11 @@ func (a *App) createProjectSandbox(repoPath, repoName string, mode config.ModeEn
 // original Create confirmation requested kit installation. Hiding or canceling
 // it closes modal ownership without changing the repository configuration.
 func showConfirmRegisterExistingSandbox(parent fyne.Window, name, repoPath string, onDone, onRegister, onCancel func()) dialog.Dialog {
-	var d *dialog.ConfirmDialog
+	var d *keyboardConfirmDialog
 	keyCap := newDialogKeyCapture(func() { d.Confirm() }, func() { d.Hide() })
-	content := container.NewStack(widget.NewLabel(
-		"Sandbox "+name+" already exists for "+repoPath+". Register it without changing its kits?\n\nSelected kits will not be installed or recorded."), keyCap)
-	d = dialog.NewCustomConfirm("Register Existing Sandbox", "Register Existing", "Cancel", content, func(ok bool) {
+	content := container.NewStack(container.NewVScroll(dialogSection(dialogText(
+		"Sandbox "+name+" already exists for "+repoPath+". Register it without changing its kits?\n\nSelected kits will not be installed or recorded."))), keyCap)
+	d = newKeyboardConfirm("Register Existing Sandbox", "Register Existing", "Cancel", content, func(ok bool) {
 		onDone()
 		if ok {
 			onRegister()
@@ -150,7 +135,7 @@ func showConfirmRegisterExistingSandbox(parent fyne.Window, name, repoPath strin
 			onCancel()
 		}
 	}, parent)
-	d.Resize(dialogMinSize)
+	d.Resize(boundedDialogSize(parent, dialogMinSize))
 	d.Show()
 	focusInDialog(parent, keyCap)
 	return d
@@ -161,28 +146,56 @@ func (a *App) registerExistingProjectSandbox(repoPath, repoName string, mode con
 		a.creatingSandboxes = make(map[string]bool)
 	}
 	if a.creatingSandboxes[matchedName] {
-		dialog.ShowInformation("Registering Sandbox", matchedName+" is already being registered.", a.window)
+		a.showInformation("Registering Sandbox", matchedName+" is already being registered.")
 		return
 	}
 	a.creatingSandboxes[matchedName] = true
+	navigation := a.workspaceGeneration
+	origin := a.projectRepo(repoPath)
 	a.setProjectStatus(repoPath, "Registering existing sandbox "+matchedName+"…", false)
 	go func() {
 		name, err := ops.RegisterExistingSandbox(matchedName)
 		fyne.Do(func() {
 			delete(a.creatingSandboxes, matchedName)
-			if err != nil {
-				a.setProjectStatus(repoPath, ops.FirstNonEmptyLine(err.Error()), true)
-				dialog.ShowError(err, a.window)
-				return
-			}
-			a.completeProjectSandbox(repoPath, repoName, mode, name, false, nil)
+			a.applyProjectSandboxResult(repoPath, repoName, mode, name, false, nil, navigation, origin, err)
 		})
 	}()
 }
 
-func (a *App) completeProjectSandbox(repoPath, repoName string, mode config.ModeEntry, name string, created bool, selected []kits.Kit) {
+// applyProjectSandboxResult runs on the UI thread for both creation and
+// existing-sandbox registration. Validate the initiating entry before any
+// error dialog, status update, or configuration change.
+func (a *App) applyProjectSandboxResult(repoPath, repoName string, mode config.ModeEntry, name string, created bool, selected []kits.Kit, navigation uint64, origin *repoEntry, err error) {
+	if a.sandboxRegistrationRemoved(origin, repoPath, mode.SandboxName) {
+		return
+	}
+	if err != nil {
+		var existing *ops.ExistingSandboxWithKitsError
+		if errors.As(err, &existing) {
+			// Selected kits cannot be applied to an existing sandbox.
+			a.setProjectStatus(repoPath, "Existing sandbox "+existing.Name+" needs registration confirmation", false)
+			done := a.openDialog()
+			a.activeDialog = showConfirmRegisterExistingSandbox(a.window, existing.Name, repoPath, done, func() {
+				a.registerExistingProjectSandbox(repoPath, repoName, mode, existing.Name)
+			}, func() {
+				a.setProjectStatus(repoPath, "Sandbox registration canceled", false)
+			})
+			return
+		}
+		a.setProjectStatus(repoPath, ops.FirstNonEmptyLine(err.Error()), true)
+		a.showError(err)
+		return
+	}
+	a.completeProjectSandbox(repoPath, repoName, mode, name, created, selected, navigation, origin)
+}
+
+func (a *App) completeProjectSandbox(repoPath, repoName string, mode config.ModeEntry, name string, created bool, selected []kits.Kit, navigation uint64, origin *repoEntry) {
+	if a.sandboxRegistrationRemoved(origin, repoPath, name) {
+		return
+	}
 	mode = registeredSandboxMode(mode, name, created, selected)
-	if !a.addRepoToConfig(repoPath, repoName, mode) {
+	activate := a.workspaceGeneration == navigation
+	if !a.addRepoToConfigWithActivation(repoPath, repoName, mode, activate) {
 		a.setProjectStatus(repoPath, "Sandbox "+name+" exists, but its registration failed. Retry to register it.", true)
 		return
 	}
@@ -199,6 +212,16 @@ func (a *App) completeProjectSandbox(repoPath, repoName string, mode config.Mode
 	}
 }
 
+func (a *App) sandboxRegistrationRemoved(origin *repoEntry, repoPath, name string) bool {
+	if origin != nil && !a.hasRepoEntry(origin) {
+		// An explicit unregister supersedes this pending operation. The
+		// sandbox can still be discovered by Add if creation succeeded.
+		log.Printf("Ignoring sandbox %q completion for %q: its initiating repository registration was removed. If created, the sandbox remains discoverable by adding the repository again.", name, repoPath)
+		return true
+	}
+	return false
+}
+
 func registeredSandboxMode(mode config.ModeEntry, name string, created bool, selected []kits.Kit) config.ModeEntry {
 	mode.SandboxName = name
 	if created {
@@ -212,12 +235,18 @@ func registeredSandboxMode(mode config.ModeEntry, name string, created bool, sel
 // A background operation's status belongs to its original project even if
 // the user navigates elsewhere while the CLI is running.
 func (a *App) setProjectStatus(repoPath, message string, isError bool) {
+	if re := a.projectRepo(repoPath); re != nil {
+		re.state.StatusMessage = message
+		re.state.StatusIsError = isError
+		re.dashboard.Rebuild()
+	}
+}
+
+func (a *App) projectRepo(path string) *repoEntry {
 	for _, re := range a.repos {
-		if re.group.Path == repoPath {
-			re.state.StatusMessage = message
-			re.state.StatusIsError = isError
-			re.dashboard.Rebuild()
-			return
+		if re.group != nil && re.group.Path == path {
+			return re
 		}
 	}
+	return nil
 }

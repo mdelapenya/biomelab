@@ -32,7 +32,7 @@ func (a *App) saveBytesNative(parent fyne.Window, defaultName string, data []byt
 			return
 		}
 		if werr := os.WriteFile(path, data, 0o644); werr != nil {
-			dialog.ShowError(werr, parent)
+			a.showWindowError(parent, werr)
 		}
 		return
 	}
@@ -129,7 +129,7 @@ if ($dlg.ShowDialog() -eq 'OK') { Write-Output $dlg.FileName }`, safe)
 func (a *App) saveBytesFyne(parent fyne.Window, defaultName string, data []byte) {
 	save := dialog.NewFileSave(func(writer fyne.URIWriteCloser, ferr error) {
 		if ferr != nil {
-			dialog.ShowError(ferr, parent)
+			a.showWindowError(parent, ferr)
 			return
 		}
 		if writer == nil {
@@ -137,11 +137,11 @@ func (a *App) saveBytesFyne(parent fyne.Window, defaultName string, data []byte)
 		}
 		if _, werr := writer.Write(data); werr != nil {
 			_ = writer.Close()
-			dialog.ShowError(werr, parent)
+			a.showWindowError(parent, werr)
 			return
 		}
 		if cerr := writer.Close(); cerr != nil {
-			dialog.ShowError(cerr, parent)
+			a.showWindowError(parent, cerr)
 		}
 	}, parent)
 	save.SetFileName(defaultName)

@@ -13,7 +13,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -161,7 +160,7 @@ func (a *App) showRegentLogModal(wt git.Worktree) {
 	render := func(target git.Worktree) {
 		current = target
 		w.SetTitle("Regent activity — " + target.Branch)
-		body.Objects = []fyne.CanvasObject{monoText("Loading regent activity…", colorGray, false)}
+		body.Objects = []fyne.CanvasObject{dialogBusy("Loading regent activity…")}
 		body.Refresh()
 		session.load(target.Path, func(data regentLogData) {
 			body.Objects = a.buildRegentLogContent(data)
@@ -179,12 +178,7 @@ func (a *App) showRegentLogModal(wt git.Worktree) {
 		a.exportRegentLog(session, current, w)
 	})
 	closeBtn := widget.NewButton("Close", func() { w.Close() })
-	footer := container.NewBorder(nil, nil,
-		container.NewHBox(refresh, exportBtn),
-		closeBtn,
-	)
-
-	w.SetContent(container.NewBorder(nil, footer, nil, nil, scroll))
+	w.SetContent(regentWindowContent(scroll, refresh, exportBtn, closeBtn))
 	w.Resize(regentLogWindowInitialSize)
 	w.CenterOnScreen()
 
@@ -199,6 +193,12 @@ func (a *App) showRegentLogModal(wt git.Worktree) {
 	w.RequestFocus()
 }
 
+// Shared by the live activity window and offline render evidence.
+func regentWindowContent(scroll fyne.CanvasObject, refresh, export, close fyne.CanvasObject) fyne.CanvasObject {
+	footer := container.NewBorder(nil, nil, container.NewHBox(refresh, export), close)
+	return container.NewPadded(container.NewBorder(nil, container.NewVBox(widget.NewSeparator(), footer), nil, nil, scroll))
+}
+
 // buildRegentLogContent returns the rendered children for the scrollable
 // body: a session header followed by a step row per Step. Handles all
 // "no data" states (rgt missing, no .regent/, no activity) with a
@@ -207,28 +207,27 @@ func (a *App) buildRegentLogContent(data regentLogData) []fyne.CanvasObject {
 	if data.missing {
 		// OS-agnostic message — install hints live in the deps dialog.
 		return []fyne.CanvasObject{
-			monoText("re_gent (rgt) is not installed.", colorYellow, true),
-			monoText("See install instructions: https://github.com/regent-vcs/re_gent", colorDimGray, false),
-			monoText("Or open the Dependencies dialog from the system tray.", colorDimGray, false),
+			dialogHeading("re_gent (rgt) is not installed."),
+			dialogHint("See install instructions: https://github.com/regent-vcs/re_gent"),
+			dialogHint("Or open the Dependencies dialog from the system tray."),
 		}
 	}
 
 	if data.err != nil {
 		return []fyne.CanvasObject{
-			monoText("rgt log failed:", colorRed, true),
-			monoText(data.err.Error(), colorRed, false),
+			dialogHeading("rgt log failed:"),
+			dialogText(data.err.Error()),
 		}
 	}
 	if len(data.steps) == 0 {
 		return []fyne.CanvasObject{
-			monoText("No regent activity yet.", colorGray, true),
-			monoText("Run an agent in this worktree and the log will populate here.", colorDimGray, false),
+			dialogHeading("No regent activity yet."),
+			dialogHint("Run an agent in this worktree and the log will populate here."),
 		}
 	}
 
 	items := make([]fyne.CanvasObject, 0, len(data.steps)+1)
-	header := monoText(fmt.Sprintf("Session %s · %d steps", data.sessionID, len(data.steps)), colorBranch, true)
-	header.TextSize = scaledSize(11)
+	header := dialogHeading(fmt.Sprintf("Session %s · %d steps", data.sessionID, len(data.steps)))
 	items = append(items, header)
 	items = append(items, widget.NewSeparator())
 
@@ -261,13 +260,13 @@ func buildRegentStepRow(s Step) fyne.CanvasObject {
 	if s.Origin != "" {
 		metaText += " · " + s.Origin
 	}
-	meta := monoText(metaText, colorDimGray, false)
-	meta.TextSize = scaledSize(10)
+	meta := dialogHint(metaText)
+	meta.TextStyle.Monospace = true
 	meta.Alignment = fyne.TextAlignCenter
-	rows = append(rows, container.NewCenter(meta))
+	rows = append(rows, meta)
 
 	if s.HumanPrompt != "" {
-		bubble := buildSimpleBubble(s.HumanPrompt, colorBubbleHuman(), colorBubbleHumanStroke())
+		bubble := buildSimpleBubble(s.HumanPrompt, colorBubbleHuman, colorBubbleHumanStroke)
 		rows = append(rows, alignRight(bubble, naturalBubbleWidth(s.HumanPrompt)))
 	}
 	if s.AgentReply != "" || len(s.Tools) > 0 {
@@ -294,19 +293,16 @@ func buildRegentStepRow(s Step) fyne.CanvasObject {
 // and applyLightPalette, so a literal capturing the previous values
 // would render stale.
 //
-// Fill alpha (~45%) sits above the page background enough to read as a
-// bubble; the same tint at higher alpha (~55%) does the stroke so each
-// bubble has a colored border, not the generic panel border — that
-// gives Human and Agent visually distinct identities without saturating
-// the canvas.
+// A restrained tint distinguishes the two speakers while keeping the
+// conversation on the same neutral surfaces as the workspace inspector.
 //
 // Tools is technical content, not a third speaker, so it uses
 // colorPanelBg (the existing "panel surface" color). Neutral surface
 // keeps emphasis on the conversation bubbles and avoids the saturated
 // look a third hue produced under both light and dark themes.
 const (
-	bubbleFillAlpha   = 115
-	bubbleStrokeAlpha = 200
+	bubbleFillAlpha   = 24
+	bubbleStrokeAlpha = 48
 )
 
 func colorBubbleHuman() color.Color { return tintAlpha(colorBlue, bubbleFillAlpha) }
@@ -424,7 +420,7 @@ func naturalBubbleWidth(body string) float32 {
 // — the bubble used for Human prompts. Label.Selectable + Wrapping lets
 // the user click-drag to highlight and Cmd/Ctrl+C to copy; the bubble's
 // width is governed by chatRowLayout.
-func buildSimpleBubble(body string, bg, stroke color.Color) fyne.CanvasObject {
+func buildSimpleBubble(body string, bg, stroke func() color.Color) fyne.CanvasObject {
 	msg := widget.NewLabel(body)
 	msg.Wrapping = fyne.TextWrapWord
 	msg.Selectable = true
@@ -465,7 +461,7 @@ func buildAgentBubble(reply string, tools []ToolCall) (fyne.CanvasObject, *fyne.
 		// lines when they're too long. Stacked horizontal scrollbars
 		// looked broken; vertical wrap is the cleaner trade.
 		listVBox := container.NewVBox()
-		toolsBubble = wrapBubble(listVBox, colorBubbleTools(), colorBubbleToolsStroke())
+		toolsBubble = wrapBubble(listVBox, colorBubbleTools, colorBubbleToolsStroke)
 		toolsBubble.Hide()
 
 		count := len(tools)
@@ -498,18 +494,46 @@ func buildAgentBubble(reply string, tools []ToolCall) (fyne.CanvasObject, *fyne.
 	}
 
 	inner := container.NewVBox(content...)
-	return wrapBubble(inner, colorBubbleAgent(), colorBubbleAgentStroke()), toolsBubble
+	return wrapBubble(inner, colorBubbleAgent, colorBubbleAgentStroke), toolsBubble
 }
 
 // wrapBubble layers a content object on top of a rounded-rectangle
 // background with a 1px tinted stroke and padding inside. Returned type
 // is *fyne.Container so callers can Show / Hide it.
-func wrapBubble(content fyne.CanvasObject, bg, stroke color.Color) *fyne.Container {
-	bgRect := canvas.NewRectangle(bg)
-	bgRect.CornerRadius = 10
-	bgRect.StrokeColor = stroke
-	bgRect.StrokeWidth = 1
-	return container.NewStack(bgRect, container.NewPadded(content))
+func wrapBubble(content fyne.CanvasObject, bg, stroke func() color.Color) *fyne.Container {
+	surface := &dialogBubbleSurface{fill: bg, stroke: stroke}
+	surface.ExtendBaseWidget(surface)
+	return container.NewStack(surface, container.NewPadded(content))
+}
+
+// A widget surface reads the active palette on each theme refresh instead of
+// retaining the colors with which a long-lived activity window was opened.
+type dialogBubbleSurface struct {
+	widget.BaseWidget
+	fill, stroke func() color.Color
+}
+
+func (s *dialogBubbleSurface) CreateRenderer() fyne.WidgetRenderer {
+	renderer := &dialogBubbleRenderer{surface: s, rect: canvas.NewRectangle(s.fill())}
+	renderer.Refresh()
+	return renderer
+}
+
+type dialogBubbleRenderer struct {
+	surface *dialogBubbleSurface
+	rect    *canvas.Rectangle
+}
+
+func (r *dialogBubbleRenderer) Layout(size fyne.Size)        { r.rect.Resize(size) }
+func (r *dialogBubbleRenderer) MinSize() fyne.Size           { return fyne.Size{} }
+func (r *dialogBubbleRenderer) Destroy()                     {}
+func (r *dialogBubbleRenderer) Objects() []fyne.CanvasObject { return []fyne.CanvasObject{r.rect} }
+func (r *dialogBubbleRenderer) Refresh() {
+	r.rect.FillColor = r.surface.fill()
+	r.rect.StrokeColor = r.surface.stroke()
+	r.rect.CornerRadius = scaledSize(radiusCard)
+	r.rect.StrokeWidth = 1
+	r.rect.Refresh()
 }
 
 // buildToolRow renders one tool invocation: name in bold, primary arg
@@ -523,8 +547,8 @@ func wrapBubble(content fyne.CanvasObject, bg, stroke color.Color) *fyne.Contain
 func buildToolRow(t ToolCall) fyne.CanvasObject {
 	primaryKey, primaryValue := pickPrimaryArg(t)
 
-	head := monoText("└─ "+t.Name, colorPurple, true)
-	head.TextSize = scaledSize(11)
+	head := dialogHeading("└─ " + t.Name)
+	head.TextStyle.Monospace = true
 
 	// Args go into a nested mini-bubble so each tool reads as a self-
 	// contained record. The mini-bubble is on a slightly different
@@ -551,7 +575,7 @@ func buildToolRow(t ToolCall) fyne.CanvasObject {
 		return head
 	}
 	argsBox := container.NewVBox(argRows...)
-	innerBubble := wrapBubble(argsBox, colorBubbleToolInner(), colorBubbleToolInnerStroke())
+	innerBubble := wrapBubble(argsBox, colorBubbleToolInner, colorBubbleToolInnerStroke)
 	return container.NewVBox(head, innerBubble)
 }
 
@@ -562,7 +586,7 @@ func buildToolRow(t ToolCall) fyne.CanvasObject {
 // collapse bug doesn't apply here because there's no scroll wrapping
 // the label.
 func wrappedArgLine(key, value string) fyne.CanvasObject {
-	label := widget.NewLabel("   " + key + ": " + value)
+	label := widget.NewLabelWithStyle("   "+key+": "+value, fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
 	label.Wrapping = fyne.TextWrapWord
 	label.Selectable = true
 	return label
@@ -613,11 +637,11 @@ type (
 func (a *App) exportRegentLog(session *regentLogSession, wt git.Worktree, parent fyne.Window) {
 	session.export(wt.Path, func(data []byte, err error) {
 		if err != nil {
-			dialog.ShowError(err, parent)
+			a.showWindowError(parent, err)
 			return
 		}
 		if len(data) == 0 {
-			dialog.ShowInformation("No data", "There is no regent activity to export for this worktree.", parent)
+			a.showWindowInformation(parent, "No data", "There is no regent activity to export for this worktree.")
 			return
 		}
 		defaultName := fmt.Sprintf("regent-log-%s-%s.json",

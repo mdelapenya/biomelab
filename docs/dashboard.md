@@ -1,10 +1,16 @@
 # Dashboard and worktrees
 
-Launch BiomeLab from your desktop, or run `biomelab` inside a repository to auto-register it in host mode. Otherwise, focus the projects panel and press `a` to add a repository. The left panel lists repositories and their host or sandbox modes; selecting a mode updates the dashboard. `Tab` switches panel focus. Drag a repository's `☰` handle to reorder it; the order is saved.
+Launch BiomeLab from your desktop, or run `biomelab` inside a repository to auto-register it in host mode. Otherwise, click **Add repository**, or focus the projects panel and press `a`. The left panel lists repositories and their host or sandbox modes; selecting a mode updates the dashboard. `Tab` switches panel focus. Drag a repository's `☰` handle to reorder it; the order is saved.
 
-## Kanban and grid
+Drag the vertical divider at the right edge of the projects panel to resize it. The chosen width is kept for the current app run through view changes, refreshes, theme changes, and zoom; narrow windows temporarily clamp it so the workspace stays usable.
 
-The main worktree stays above the linked worktrees. Kanban is the default view; `g` switches to a grid with more detailed cards and back. View state is kept in memory, not saved across restarts.
+## Board, list, and inspector
+
+The prominent **Main checkout** card spans the full workspace above the linked worktrees and inspector in Board, List, and Grid. It stays pinned while you scroll the worktree browser, and shows the main branch, path, checkout state, and detected activity. **Terminal**, **Editor**, and **Notes** act on the main checkout, even when a linked worktree is selected. **Details** expands extra metadata; **Hide details** collapses it. Details has no dedicated keyboard shortcut. The workspace and main-card **More** menus offer **Create from GitHub issue** and **Fetch GitHub PR**, available for GitHub repositories; the existing main-card `i` and `f` shortcuts still work.
+
+The workspace header shows the active repository and mode, with **Board**, **List**, **Grid**, **Refresh**, **New Worktree**, and **Inspector** controls. New Worktree selects the main card and opens the same creation flow as `c` on that card. Refresh refreshes the selected card, like `r`. Board is the default view; List shows compact rows for linked worktrees beneath the shared Main checkout card. Grid remains available for fuller cards. Press `v` to cycle Board → List → Grid → Board. The `g` shortcut switches Board and Grid; from List it returns to Board. View and disclosure state are kept in memory, not saved across restarts.
+
+Press `Ctrl/Cmd+I` while the worktree panel is focused, or click **Inspector**, to show or hide details for the selected worktree. Plain `i` still creates a worktree from a GitHub issue when the main card is selected. List initially opens the inspector; each view remembers its visibility for the current app run. The inspector shows checkout path and branch, changes and remote state, PR/MR information, detected activity, available task notes, and sandbox details when applicable. **Open Terminal**, **Editor**, **Notes**, and **Activity** invoke the same workflows as `Enter`, `e`, `m`, and `l`. **More** offers pull, send PR/MR, deletion, and sandbox actions where applicable. At narrow widths the inspector moves below the worktree browser; its contents scroll. Full technical values live in the inspector rather than appearing in hover popups.
 
 | Kanban column | Meaning |
 |---|---|
@@ -14,15 +20,15 @@ The main worktree stays above the linked worktrees. Kanban is the default view; 
 | PR In Review | Open PR/MR with recorded review status |
 | PR Merged | PR/MR merged |
 
-Cards show branch and activity information; compact kanban cards show agents, terminals, notes, dirty state, and PR links with separate review and CI indicators. Hover the review or CI icon for its meaning. Use the grid for fuller paths, IDE details, and sync information. Columns reflect provider data, not a manually editable task status.
+Board cards and List rows use the PR/MR title when available; Board cards show the branch underneath. Worktrees without a request use the branch as their title. Compact board cards show agents, terminals, notes, dirty state, and PR links with separate review and CI indicators. Use the grid for fuller paths, IDE details, and sync information. Columns reflect provider data, not a manually editable task status.
 
-Arrow keys navigate cards. In the grid, left/right move one card and up/down move by row. In kanban, up/down move within a column and left/right move between populated columns. Click a card to select it. See the [known navigation issue](known-limitations.md) affecting the final kanban column.
+Arrow keys navigate worktrees. In List, up/down move through linked rows; up from the first row selects the pinned Main checkout card, and down from Main selects the first linked row. In the grid, left/right move one card and up/down move by row. In kanban, up/down move within a column and left/right move between populated columns. Click a card to select it. Right-arrow navigation reaches the final PR Merged column and brings the selected card into view. Narrow boards scroll horizontally instead of compressing the five columns; each column also scrolls vertically. Board, list, grid, and column scroll positions are retained through refreshes and view/theme changes, with offsets adjusted when content or available space changes.
 
 Local state refreshes every five seconds. Git fetch, PR/MR, review, CI, and sync data refresh every 30 seconds by default; `r` refreshes the selected card. Header timestamps show when each refresh last ran.
 
 ## Dashboard images
 
-These images are rendered from the application widgets with sample data. Open
+These images use synthetic sample data rendered by the production Fyne shell and dashboard widgets. Open
 an image to inspect the full-size layout:
 
 - [Dark theme](../website/img/dashboard-dark.png)
@@ -40,7 +46,7 @@ Detection matches local processes to worktree paths. Terminal detection follows 
 
 ## Everyday workflow
 
-1. Select the main card and press `c` to create a branch and linked worktree under `.biomelab-worktrees/`. Creation does not automatically launch a terminal.
+1. Click **New Worktree**, or select the main card and press `c`, to create a branch and linked worktree under `.biomelab-worktrees/`. Creation does not automatically launch a terminal.
 2. Select its card and press `Enter` to activate an existing host terminal or open one. In sandbox mode this opens or reuses the card's agent session. Press `e` to open your configured editor.
 3. Use `m` or right-click to prepare task notes and a PR title. See [notes and activity](notes-and-activity.md).
 4. Commit your changes, then press `Shift+P` on the linked card. Review any dirty/stash warning, choose the remote, and confirm the push and PR/MR creation. If a request already exists, BiomeLab offers push-only behavior.
@@ -55,6 +61,8 @@ Select the main card and press `i`. Enter a positive issue number for the select
 Creation uses the main checkout's current local HEAD. It does not pull, fetch an issue ref, launch a terminal or agent, create a sandbox, push, or open a PR. Branch or path collisions fail without replacing an existing worktree. The new worktree receives the issue requirements and a progress handoff; see [notes and agent activity](notes-and-activity.md#issue-context-and-agent-handoff). Issue URLs, GitLab issues, and base-branch selection are not currently supported.
 
 ## Keyboard shortcuts
+
+The shortcut strip spans the full workspace below the browser and inspector. It shows navigation and available actions for the focused panel, selected main or linked worktree, provider, and sandbox state, and wraps at narrow widths or larger zoom. Relevant controls also show inline key hints. These hints stay in the interface without opening hover popups; buttons invoke the same existing workflows as the keyboard.
 
 ### Left panel (repo tree)
 
@@ -72,8 +80,8 @@ Creation uses the main checkout's current local HEAD. It does not pull, fetch an
 
 | Key | Action | Context |
 |-----|--------|---------|
-| `↑` | Navigate up within column / grid row | Any card |
-| `↓` | Navigate down within column / grid row | Any card |
+| `↑` | Navigate up within column / grid row / List | Any card |
+| `↓` | Navigate down within column / grid row / List | Any card |
 | `←` | Navigate left | Linked cards |
 | `→` | Navigate right | Linked cards |
 | `Enter` | Activate existing terminal or open new | Any card |
@@ -90,17 +98,21 @@ Creation uses the main checkout's current local HEAD. It does not pull, fetch an
 | `n` | Create/enroll sandbox | Main card |
 | `s` | Start stopped sandbox | Main card |
 | `Shift+S` | Stop running sandbox | Main card |
-| `g` | Toggle kanban / grid view | Global |
+| `g` | Toggle Board / Grid; List returns to Board | Global |
+| `v` | Cycle Board → List → Grid → Board | Global |
+| `Ctrl/Cmd+I` | Toggle selected-worktree inspector | Worktree panel |
 | `Tab` | Toggle focus between panels | Global |
 | `Ctrl/Cmd+T` | Toggle dark / light theme | Global |
 | `Ctrl/Cmd+=` | Zoom in | Global |
 | `Ctrl/Cmd+-` | Zoom out | Global |
 | `Ctrl/Cmd+0` | Reset zoom | Global |
-| `Esc` | Dismiss dialog / switch panel | Global |
+| `Esc` | Dismiss dialog or status; Projects focus returns to Worktrees | Global |
 
 
 ## Dialogs, appearance, and tray
 
 Use the visible confirmation button or `Enter` to confirm standard confirmation dialogs; `Esc` dismisses them. There is no mouse-mode toggle or `y` arming step. Mouse selection and scrolling are always available.
+
+Interface labels, headings, and explanatory text use proportional type; technical values such as branches, paths, and commands use monospace. Dashboard surfaces and dialogs share the theme and zoom settings.
 
 `Ctrl/Cmd+T` switches dark/light theme and saves it. The tray also offers **Theme**, **Show Config**, Docker Sandbox documentation, and **Dependencies**. Closing the main window hides it; choose **Quit** in the tray to exit. Zoom uses `Ctrl/Cmd+=`, `Ctrl/Cmd+-`, and `Ctrl/Cmd+0`.

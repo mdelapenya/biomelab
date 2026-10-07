@@ -5,6 +5,10 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -123,6 +127,81 @@ func (b *dialogButton) TypedKey(key *fyne.KeyEvent) {
 	}
 }
 
+// escapeButton preserves ordinary button activation and dismisses its parent
+// when Escape is delivered directly to a focused footer or content control.
+type escapeButton struct {
+	widget.Button
+	onEscape func()
+}
+
+func newEscapeButton(text string, onTap, onEscape func()) *escapeButton {
+	b := &escapeButton{onEscape: onEscape}
+	b.Text, b.OnTapped = text, onTap
+	b.ExtendBaseWidget(b)
+	return b
+}
+
+func (b *escapeButton) TypedKey(key *fyne.KeyEvent) {
+	if key.Name == fyne.KeyEscape {
+		b.onEscape()
+		return
+	}
+	b.Button.TypedKey(key)
+}
+
+// keyboardConfirmDialog keeps Fyne's confirmation response and callback order,
+// with footer controls that also dismiss correctly after keyboard traversal.
+type keyboardConfirmDialog struct {
+	*dialog.CustomDialog
+	confirm, cancel *escapeButton
+	confirmResponse bool
+}
+
+func newKeyboardConfirm(title, confirm, dismiss string, content fyne.CanvasObject, callback func(bool), parent fyne.Window) *keyboardConfirmDialog {
+	d := &keyboardConfirmDialog{CustomDialog: dialog.NewCustomWithoutButtons(title, content, parent)}
+	d.cancel = newEscapeButton(dismiss, d.Hide, d.Hide)
+	d.cancel.Icon = theme.CancelIcon()
+	d.confirm = newEscapeButton(confirm, d.Confirm, d.Hide)
+	d.confirm.Icon = theme.ConfirmIcon()
+	d.confirm.Importance = widget.HighImportance
+	d.SetButtons([]fyne.CanvasObject{d.cancel, d.confirm})
+	d.SetOnClosed(func() {
+		response := d.confirmResponse
+		d.confirmResponse = false
+		if callback != nil {
+			callback(response)
+		}
+	})
+	return d
+}
+
+func (d *keyboardConfirmDialog) Confirm() {
+	d.confirmResponse = true
+	d.Hide()
+}
+
+func (d *keyboardConfirmDialog) SetConfirmImportance(importance widget.Importance) {
+	d.confirm.Importance = importance
+	d.confirm.Refresh()
+}
+
+func (d *keyboardConfirmDialog) SetConfirmText(text string) { d.confirm.SetText(text) }
+func (d *keyboardConfirmDialog) SetDismissText(text string) { d.cancel.SetText(text) }
+
+type keyboardDismissDialog struct {
+	*dialog.CustomDialog
+	cancel *escapeButton
+}
+
+func newKeyboardDismiss(title, dismiss string, content fyne.CanvasObject, parent fyne.Window) *keyboardDismissDialog {
+	d := &keyboardDismissDialog{CustomDialog: dialog.NewCustomWithoutButtons(title, content, parent)}
+	d.cancel = newEscapeButton(dismiss, d.Hide, d.Hide)
+	d.SetButtons([]fyne.CanvasObject{d.cancel})
+	return d
+}
+
+func (d *keyboardDismissDialog) SetDismissText(text string) { d.cancel.SetText(text) }
+
 // dialogKeyCapture is an invisible focusable widget used by confirm-only
 // dialogs (where Fyne renders the OK/Cancel buttons internally) to translate
 // Enter into a confirm action and Escape into a dismiss action.
@@ -173,4 +252,120 @@ func focusInDialog(parent fyne.Window, target fyne.Focusable) {
 	fyne.Do(func() {
 		parent.Canvas().Focus(target)
 	})
+}
+
+// dialogText uses the installed theme on refresh, including in an open dialog.
+func dialogText(text string) *widget.Label {
+	label := widget.NewLabel(text)
+	label.Wrapping = fyne.TextWrapWord
+	return label
+}
+
+func dialogHeading(text string) *widget.Label {
+	label := dialogText(text)
+	label.TextStyle.Bold = true
+	return label
+}
+
+func dialogHint(text string) *widget.Label {
+	label := dialogText(text)
+	label.Importance = widget.LowImportance
+	return label
+}
+
+func dialogSection(objects ...fyne.CanvasObject) *fyne.Container {
+	return inset(container.NewVBox(objects...), spaceSM, spaceSM)
+}
+
+// Group related fields on the same quiet inset surface as the workspace
+// inspector. Its renderer follows theme and zoom changes in an open window.
+func dialogGroup(objects ...fyne.CanvasObject) *fyne.Container {
+	surface := &dialogGroupSurface{}
+	surface.ExtendBaseWidget(surface)
+	return container.NewStack(surface, dialogSection(objects...))
+}
+
+type dialogGroupSurface struct{ widget.BaseWidget }
+
+func (s *dialogGroupSurface) CreateRenderer() fyne.WidgetRenderer {
+	r := &dialogGroupRenderer{rect: canvas.NewRectangle(colorSecondaryBg)}
+	r.Refresh()
+	return r
+}
+
+type dialogGroupRenderer struct{ rect *canvas.Rectangle }
+
+func (r *dialogGroupRenderer) Layout(size fyne.Size) { r.rect.Resize(size) }
+func (r *dialogGroupRenderer) MinSize() fyne.Size    { return fyne.Size{} }
+func (r *dialogGroupRenderer) Destroy()              {}
+func (r *dialogGroupRenderer) Objects() []fyne.CanvasObject {
+	return []fyne.CanvasObject{r.rect}
+}
+func (r *dialogGroupRenderer) Refresh() {
+	r.rect.FillColor = colorSecondaryBg
+	r.rect.CornerRadius = scaledSize(radiusControl)
+	r.rect.Refresh()
+}
+
+func dialogFooter(objects ...fyne.CanvasObject) *fyne.Container {
+	return container.NewVBox(widget.NewSeparator(), container.NewHBox(append([]fyne.CanvasObject{layout.NewSpacer()}, objects...)...))
+}
+
+// Keep preferred sizes within the parent canvas; scrolling content must supply
+// a small minimum independently, rather than forcing the popup wider.
+func boundedDialogSize(parent fyne.Window, preferred fyne.Size) fyne.Size {
+	if parent == nil {
+		return preferred
+	}
+	size := parent.Canvas().Size()
+	margin := scaledSize(spaceXL)
+	if size.Width > margin {
+		preferred.Width = min(preferred.Width, size.Width-margin)
+	}
+	if size.Height > margin {
+		preferred.Height = min(preferred.Height, size.Height-margin)
+	}
+	return preferred
+}
+
+func dialogReadOnlyText(text string, wrapping fyne.TextWrap, onEscape func()) *noteEntry {
+	entry := newNoteEntry(text, onEscape)
+	entry.SetPlaceHolder("")
+	entry.TextStyle.Monospace = true
+	entry.Wrapping = wrapping
+	entry.MultiLine = wrapping != fyne.TextWrapOff
+	if wrapping == fyne.TextWrapOff {
+		entry.Scroll = container.ScrollNone
+	}
+	entry.SetMinRowsVisible(1)
+	entry.Disable()
+	return entry
+}
+
+func dialogTechnical(text string, onEscape func()) *container.Scroll {
+	scroll := container.NewHScroll(dialogReadOnlyText(text, fyne.TextWrapOff, onEscape))
+	scroll.SetMinSize(fyne.NewSize(0, scaledSize(textBodySize+spaceLG)))
+	return scroll
+}
+
+func dialogBusy(message string) *fyne.Container {
+	return dialogSection(dialogText(message), widget.NewProgressBarInfinite())
+}
+
+// commandLayout retains the complete canvas command for inspection while
+// refreshing its font and color whenever the themed container is laid out.
+type commandLayout struct{ text *canvas.Text }
+
+func (l commandLayout) MinSize(objects []fyne.CanvasObject) fyne.Size { return objects[0].MinSize() }
+func (l commandLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	l.text.Color = theme.Color(theme.ColorNameForeground)
+	l.text.TextSize = theme.TextSize()
+	l.text.Refresh()
+	objects[0].Resize(size)
+}
+func dialogCommand(command string) *fyne.Container {
+	text := monoText(command, theme.Color(theme.ColorNameForeground), false)
+	scroll := container.NewHScroll(text)
+	scroll.SetMinSize(fyne.NewSize(0, scaledSize(textBodySize+spaceLG)))
+	return container.New(commandLayout{text}, scroll)
 }

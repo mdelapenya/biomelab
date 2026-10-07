@@ -18,8 +18,8 @@ cmd/helpers/screenshot-generator/
 internal/
   gui/
     app.go                  FyneApp: window, HSplit layout, multi-repo management, mode switching
-    dashboard.go            Right panel: main card + scrollable linked cards grid, refresh timestamps
-    kanban.go               Five lifecycle columns, compact cards, review/CI tooltips
+    dashboard.go            Right workspace: pinned main checkout card, board/list/grid, inspector, actions, refresh timestamps
+    kanban.go               Five lifecycle columns, compact title-first cards, inline review/CI labels
     note_dialog.go          Per-worktree resizable note editor and live Markdown preview
     dialog_widgets.go       Focusable dialog controls for Enter/Escape
     card.go                 Worktree card rendering: branch, path, PR, agents, IDEs, status
@@ -34,7 +34,14 @@ internal/
     sandbox_setup.go        Project-panel sandbox creation, optional kit discovery, registration
     refresh.go              RefreshManager: goroutine tickers for local (5s) and network refresh
     state.go                RepoState: domain + UI state, worktree sorting
-    theme.go                Dark/light themes, saved variant, session font zoom
+    theme.go                Semantic dark/light palette, saved variant, session font zoom
+    shell.go                Compact project rail and responsive workspace geometry
+    workspace_list.go       Compact worktree rows and selection
+    workspace_inspector.go  Selected checkout, request, activity, notes, and real actions
+    workspace_layout.go     Responsive inspector panes and wrapping action rows
+    design.go               Shared spacing, radii, and type-size constants
+    typography.go           Proportional interface text and secondary text helpers
+    dashboard_controls.go   Non-Focusable actions, callback routing, measured text, board clipping
     icon.go                 AppIcon resource (set from embedded icon at startup)
     systray.go              System tray: Show/Hide toggle, Quit, Dependencies summary
     sysdeps_dialog.go       System Dependencies modal + first-run banner
@@ -82,21 +89,54 @@ internal/
 2. `gui.App.Run()` creates the Fyne window, builds the content (repo panel + dashboard), registers keyboard handlers via `desktop.Canvas.SetOnKeyDown`, sets up the system tray, and starts the event loop.
 3. Each repo's `RefreshManager` runs goroutine tickers: local refresh (5s) for dirty/agents/IDE/sandbox status, network refresh (configurable, default 30s) for git fetch + PR lookup.
 4. Refresh results are delivered via `fyne.Do(func() { dashboard.ApplyRefresh(result) })` to ensure all UI mutations happen on the main thread.
-5. `Dashboard.Rebuild()` recreates the card widgets from current `RepoState`. Linked worktrees are sorted by branch name and rendered in either a five-column kanban (default) or a responsive grid.
+5. `Dashboard.Rebuild()` recreates the card widgets from current `RepoState`. Linked worktrees are sorted by branch name and rendered in a five-column board (default), compact list, or responsive grid.
 6. The repo panel uses tappable VBox items (not `widget.Tree`) to avoid stealing keyboard focus.
 
 ## Views and desktop state
 
-`RepoState.ViewMode` selects kanban or grid in memory; it is not serialized.
+`RepoState.ViewMode` selects Board, List, or Grid in memory; it is not serialized. List shows linked rows and initially opens the selected-item inspector; each view retains its inspector visibility. All views share a prominent Main checkout card pinned at full workspace width above the browser/inspector panes. The `v` shortcut cycles Board → List → Grid → Board; `g` toggles Board/Grid and returns from List to Board. `Ctrl/Cmd+I` toggles the inspector while the worktree panel is focused, retaining plain `i` for issue creation.
 `kanbanStageOf` maps provider state/reviews into Closed Unmerged, Created, PR Sent,
-PR In Review, and PR Merged. The main worktree remains above the linked cards.
-The known final-column navigation bound is tracked in [known limitations](docs/known-limitations.md).
+PR In Review, and PR Merged. The main worktree stays above the linked browser in every view; List does not duplicate it as a row.
+`navigateKanbanRight` searches `len(stages)`, including the final PR Merged
+column. `TestDashboardKanbanNavigationReachesAndRevealsFinalColumn` covers
+selection and horizontal reveal of that column, returning left, and vertical
+reveal within a column.
+
+`Dashboard` retains the board horizontal scroll, list and grid vertical scroll, and
+per-stage vertical scroll objects and offsets across rebuilds. Main-card
+disclosure and view-specific inspector visibility are also retained per dashboard. Inspector contents follow `RepoState.SelectedCard`; at narrow widths the inspector is arranged below the browser. `EnsureVisible` reveals the
+selected card; content and viewport changes clamp scroll offsets. The board
+keeps a minimum column width and scrolls horizontally on narrow windows.
+With pinned Fyne v2.7.3, nested scroll traversal replaces the outer clip with
+the inner clip. `boardViewport` and `stageViewport` explicitly intersect each
+stage with the board viewport, hide fully offscreen stages, and preserve natural
+content width. This prevents scrolled cards from painting into the sidebar or
+intercepting its clicks.
 
 `repo_panel_drag.go` provides the drag handle; `reorderRepos` updates both the
 in-memory repository order and the config slice while preserving selection.
 `applyThemeVariant` rebuilds themed content and persists `Config.Theme`.
 Zoom is session-only. The tray offers theme selection, Show Config, dependency
 diagnostics, sandbox documentation, Show/Hide, and Quit.
+
+## Shared presentation
+
+`theme.go` owns the dark/light palette and session zoom. `design.go` centralizes
+logical spacing, radii, and type sizes; custom canvas objects use `scaledSize`
+to follow zoom. `typography.go` supplies proportional interface labels and
+supporting text; `monoText` and measured technical text retain monospace for
+branches, paths, and commands. Measured text fits strings to available width.
+The shell uses a 160–190 logical-unit project rail with a separator and the remaining width assigned to the workspace. The sidebar brand uses the embedded `AppIcon`. Neutral panel/content surfaces, blue selection, and `colorActionBg`/`colorOnAction` distinguish filled actions from selection highlights. Canvas primitives capture palette values, so theme and zoom changes rebuild them.
+Dialog controls and surfaces use the same palette and sizing helpers, while
+keeping workflow-specific input, validation, and confirmation semantics.
+
+The visible New Worktree, Board, List, Grid, Refresh, Inspector, Details, and More controls use
+`actionControl`, which implements tap/pointer interfaces without `fyne.Focusable`.
+`wireDashboardActions` resolves the active repository on each action, ignores
+stale-dashboard callbacks or clicks during a dialog, and routes work through the
+existing handlers. Creation/issue/PR-fetch actions select the main card;
+refresh acts on the selected card. Details only changes presentation and has no
+new shortcut. Inspector terminal/editor/notes/activity and More actions route to the same current-repository handlers as keyboard shortcuts. Main-card Terminal, Editor, and Notes callbacks select the current main checkout before invoking those handlers; List keeps selection index 0 for Main and indexes linked rows from 1. Add repository resolves its callback at tap time. Dialog inputs remain Focusable for their own keyboard handling. No main-shell action is Focusable, and technical values are shown through explicit details instead of hover popups. The contextual shortcut strip sits across the full workspace below the browser and inspector, wraps instead of truncating, and adapts to panel focus, selected main/linked card, provider, and sandbox state. Inline control hints expose the same bindings without popup help.
 
 ## Keyboard handling
 
@@ -108,9 +148,9 @@ Fyne's keyboard event delivery has several constraints:
 
 The solution:
 - **No Focusable widgets** in the content tree (repo panel uses tappable labels, not widget.Tree)
-- **`desktop.Canvas.SetOnKeyDown`** handles all keys (fires before Tab interception)
+- **`desktop.Canvas.SetOnKeyDown`** handles plain navigation/action keys before Tab interception. The desktop driver supplies current modifiers so Ctrl/Cmd/Alt chords do not also invoke plain-letter actions.
 - **`Canvas.SetOnTypedRune`** handles only Shift+S and Shift+P (case-sensitive)
-- **Zoom shortcuts** use `Canvas.AddShortcut` with Ctrl/Cmd modifier (which works)
+- **Zoom, theme, and inspector shortcuts** use `Canvas.AddShortcut` with Ctrl/Cmd modifiers; the inspector chord stays distinct from plain `i`.
 - **Dialog Escape** calls `dialog.Hide()` (never `overlays.Remove` which corrupts state)
 
 ## Async pattern

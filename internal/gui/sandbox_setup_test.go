@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
 
@@ -70,7 +69,7 @@ func TestSandboxPromptAgentAndOptionalKits(t *testing.T) {
 				addKits.TypedKey(&fyne.KeyEvent{Name: fyne.KeyEscape})
 			default:
 				addKits.SetSelected(choice)
-				d.(*dialog.ConfirmDialog).Confirm()
+				sel.TypedKey(&fyne.KeyEvent{Name: fyne.KeyReturn})
 			}
 			if !cleaned {
 				t.Fatal("dialog did not clean up")
@@ -149,7 +148,7 @@ func TestRegisterExistingSandboxChoiceOwnsModalAndCanCancel(t *testing.T) {
 		}
 		switch action {
 		case "confirm":
-			d.(*dialog.ConfirmDialog).Confirm()
+			d.(interface{ Confirm() }).Confirm()
 		case "hide":
 			d.Hide()
 		case "escape":
@@ -297,7 +296,7 @@ esac
 			registered = true
 		}, func() {})
 		if accept {
-			d.(*dialog.ConfirmDialog).Confirm()
+			d.(interface{ Confirm() }).Confirm()
 		} else {
 			d.Hide()
 		}

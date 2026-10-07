@@ -21,70 +21,82 @@ const (
 // After swapping, a full rebuild (Dashboard.Rebuild / RepoPanel.RebuildFull)
 // is required because canvas primitives capture colors at construction time.
 var (
-	colorBackground color.NRGBA
-	colorPanelBg    color.NRGBA
-	colorBorder     color.NRGBA
-	colorSelected   color.NRGBA
-	colorBranch     color.NRGBA
-	colorGreen      color.NRGBA
-	colorBlue       color.NRGBA
-	colorYellow     color.NRGBA
-	colorRed        color.NRGBA
-	colorPurple     color.NRGBA
-	colorGray       color.NRGBA
-	colorDimGray    color.NRGBA
-	colorForeground color.NRGBA
-	colorSelection  color.NRGBA
-	colorHover      color.NRGBA
-	colorShadow     color.NRGBA
+	colorBackground  color.NRGBA // App canvas behind cards and panels.
+	colorPanelBg     color.NRGBA // Sidebar and persistent panel surface.
+	colorCardBg      color.NRGBA // Elevated cards, dialogs, menus, and inputs.
+	colorSecondaryBg color.NRGBA // Subtle inset sections within a card.
+	colorBorder      color.NRGBA
+	colorActionBg    color.NRGBA // Filled primary actions, with colorOnAction text.
+	colorOnAction    color.NRGBA
+	colorSelected    color.NRGBA
+	colorBranch      color.NRGBA
+	colorGreen       color.NRGBA
+	colorBlue        color.NRGBA
+	colorYellow      color.NRGBA
+	colorRed         color.NRGBA
+	colorPurple      color.NRGBA
+	colorGray        color.NRGBA
+	colorDimGray     color.NRGBA
+	colorForeground  color.NRGBA
+	colorSelection   color.NRGBA
+	colorHover       color.NRGBA
+	colorShadow      color.NRGBA
 )
 
 func init() {
 	applyDarkPalette()
 }
 
-// applyDarkPalette installs the default GitHub-inspired dark palette.
+// applyDarkPalette installs calm charcoal surfaces with restrained accents.
 func applyDarkPalette() {
-	colorBackground = color.NRGBA{R: 28, G: 33, B: 40, A: 255}    // #1c2128
-	colorPanelBg = color.NRGBA{R: 22, G: 27, B: 34, A: 255}       // #161b22
-	colorBorder = color.NRGBA{R: 48, G: 54, B: 61, A: 255}        // #30363d
-	colorSelected = color.NRGBA{R: 0, G: 212, B: 255, A: 255}     // #00d4ff cyan
-	colorBranch = color.NRGBA{R: 255, G: 110, B: 199, A: 255}     // #ff6ec7 hot pink
-	colorGreen = color.NRGBA{R: 46, G: 204, B: 113, A: 255}       // #2ecc71
-	colorBlue = color.NRGBA{R: 88, G: 166, B: 255, A: 255}        // #58a6ff
-	colorYellow = color.NRGBA{R: 243, G: 156, B: 18, A: 255}      // #f39c12
-	colorRed = color.NRGBA{R: 231, G: 76, B: 60, A: 255}          // #e74c3c
-	colorPurple = color.NRGBA{R: 135, G: 95, B: 215, A: 255}      // #8760d7
-	colorGray = color.NRGBA{R: 139, G: 148, B: 158, A: 255}       // #8b949e
-	colorDimGray = color.NRGBA{R: 72, G: 79, B: 88, A: 255}       // #484f58
-	colorForeground = color.NRGBA{R: 230, G: 237, B: 243, A: 255} // #e6edf3
-	colorSelection = color.NRGBA{R: 0, G: 212, B: 255, A: 60}
-	colorHover = color.NRGBA{R: 48, G: 54, B: 61, A: 128}
-	colorShadow = color.NRGBA{R: 0, G: 0, B: 0, A: 80}
+	colorBackground = color.NRGBA{R: 43, G: 43, B: 46, A: 255}
+	colorPanelBg = color.NRGBA{R: 36, G: 36, B: 39, A: 255}
+	colorCardBg = color.NRGBA{R: 40, G: 40, B: 43, A: 255}
+	colorSecondaryBg = color.NRGBA{R: 51, G: 51, B: 55, A: 255}
+	colorBorder = color.NRGBA{R: 65, G: 65, B: 70, A: 255}
+	colorBlue = color.NRGBA{R: 120, G: 163, B: 228, A: 255}
+	colorSelected = colorBlue
+	colorActionBg = color.NRGBA{R: 57, G: 113, B: 200, A: 255}
+	colorOnAction = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+	colorPurple = color.NRGBA{R: 180, G: 160, B: 221, A: 255}
+	colorBranch = colorPurple
+	colorGreen = color.NRGBA{R: 129, G: 195, B: 154, A: 255}
+	colorYellow = color.NRGBA{R: 217, G: 181, B: 108, A: 255}
+	colorRed = color.NRGBA{R: 235, G: 146, B: 152, A: 255}
+	colorGray = color.NRGBA{R: 189, G: 195, B: 205, A: 255}
+	colorDimGray = color.NRGBA{R: 170, G: 170, B: 180, A: 255}
+	colorForeground = color.NRGBA{R: 236, G: 236, B: 241, A: 255}
+	colorSelection = color.NRGBA{R: colorBlue.R, G: colorBlue.G, B: colorBlue.B, A: 38}
+	colorHover = color.NRGBA{R: 189, G: 195, B: 205, A: 20}
+	colorShadow = color.NRGBA{A: 70}
 }
 
-// applyLightPalette installs a GitHub-inspired light palette.
+// applyLightPalette installs cool-gray chrome and white card surfaces.
 func applyLightPalette() {
-	colorBackground = color.NRGBA{R: 255, G: 255, B: 255, A: 255} // #ffffff
-	colorPanelBg = color.NRGBA{R: 246, G: 248, B: 250, A: 255}    // #f6f8fa
-	colorBorder = color.NRGBA{R: 208, G: 215, B: 222, A: 255}     // #d0d7de
-	colorSelected = color.NRGBA{R: 9, G: 105, B: 218, A: 255}     // #0969da blue
-	colorBranch = color.NRGBA{R: 130, G: 80, B: 223, A: 255}      // #8250df purple
-	colorGreen = color.NRGBA{R: 26, G: 127, B: 55, A: 255}        // #1a7f37
-	colorBlue = color.NRGBA{R: 9, G: 105, B: 218, A: 255}         // #0969da
-	colorYellow = color.NRGBA{R: 154, G: 103, B: 0, A: 255}       // #9a6700
-	colorRed = color.NRGBA{R: 207, G: 34, B: 46, A: 255}          // #cf222e
-	colorPurple = color.NRGBA{R: 130, G: 80, B: 223, A: 255}      // #8250df
-	colorGray = color.NRGBA{R: 87, G: 96, B: 106, A: 255}         // #57606a
-	colorDimGray = color.NRGBA{R: 140, G: 149, B: 159, A: 255}    // #8c959f
-	colorForeground = color.NRGBA{R: 31, G: 35, B: 40, A: 255}    // #1f2328
-	colorSelection = color.NRGBA{R: 9, G: 105, B: 218, A: 40}
-	colorHover = color.NRGBA{R: 208, G: 215, B: 222, A: 120}
-	colorShadow = color.NRGBA{R: 31, G: 35, B: 40, A: 40}
+	colorBackground = color.NRGBA{R: 250, G: 250, B: 251, A: 255}
+	colorPanelBg = color.NRGBA{R: 240, G: 240, B: 242, A: 255}
+	colorCardBg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+	colorSecondaryBg = color.NRGBA{R: 245, G: 245, B: 247, A: 255}
+	colorBorder = color.NRGBA{R: 224, G: 224, B: 229, A: 255}
+	colorBlue = color.NRGBA{R: 57, G: 113, B: 200, A: 255}
+	colorSelected = colorBlue
+	colorActionBg = color.NRGBA{R: 57, G: 113, B: 200, A: 255}
+	colorOnAction = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+	colorPurple = color.NRGBA{R: 117, G: 83, B: 176, A: 255}
+	colorBranch = colorPurple
+	colorGreen = color.NRGBA{R: 39, G: 117, B: 72, A: 255}
+	colorYellow = color.NRGBA{R: 149, G: 105, B: 0, A: 255}
+	colorRed = color.NRGBA{R: 190, G: 63, B: 72, A: 255}
+	colorGray = color.NRGBA{R: 86, G: 97, B: 112, A: 255}
+	colorDimGray = color.NRGBA{R: 101, G: 101, B: 111, A: 255}
+	colorForeground = color.NRGBA{R: 48, G: 48, B: 56, A: 255}
+	colorSelection = color.NRGBA{R: colorBlue.R, G: colorBlue.G, B: colorBlue.B, A: 26}
+	colorHover = color.NRGBA{R: 86, G: 97, B: 112, A: 16}
+	colorShadow = color.NRGBA{R: 48, G: 48, B: 56, A: 24}
 }
 
 const (
-	defaultTextSize float32 = 14
+	defaultTextSize float32 = textBodySize
 	minTextSize     float32 = 10
 	maxTextSize     float32 = 24
 	textSizeStep    float32 = 2
@@ -180,27 +192,47 @@ func (t *biomeTheme) Color(name fyne.ThemeColorName, _ fyne.ThemeVariant) color.
 	case theme.ColorNameForeground:
 		return colorForeground
 	case theme.ColorNamePrimary:
-		return colorSelected
+		return colorActionBg
+	case theme.ColorNameHyperlink:
+		return colorBlue
+	case theme.ColorNameSuccess:
+		return colorGreen
+	case theme.ColorNameWarning:
+		return colorYellow
+	case theme.ColorNameError:
+		return colorRed
+	case theme.ColorNameForegroundOnPrimary:
+		return colorOnAction
+	case theme.ColorNameForegroundOnSuccess,
+		theme.ColorNameForegroundOnWarning, theme.ColorNameForegroundOnError:
+		if t.variant == VariantLight {
+			return colorCardBg
+		}
+		return colorBackground
 	case theme.ColorNameFocus:
-		return colorSelected
+		// Fyne overlays focus on ordinary buttons without changing their text.
+		// A translucent action accent also preserves filled-action contrast.
+		focus := colorActionBg
+		focus.A = colorSelection.A
+		return focus
 	case theme.ColorNameSeparator:
 		return colorBorder
 	case theme.ColorNameInputBackground:
-		return colorPanelBg
+		return colorCardBg
 	case theme.ColorNameInputBorder:
 		return colorBorder
 	case theme.ColorNameButton:
-		return colorBorder
+		return colorSecondaryBg
 	case theme.ColorNameScrollBar:
 		return colorBorder
 	case theme.ColorNameShadow:
 		return colorShadow
 	case theme.ColorNameOverlayBackground:
-		return colorPanelBg
+		return colorCardBg
 	case theme.ColorNameHeaderBackground:
 		return colorPanelBg
 	case theme.ColorNameMenuBackground:
-		return colorPanelBg
+		return colorCardBg
 	case theme.ColorNamePlaceHolder:
 		return colorDimGray
 	case theme.ColorNameDisabled:
@@ -215,7 +247,6 @@ func (t *biomeTheme) Color(name fyne.ThemeColorName, _ fyne.ThemeVariant) color.
 }
 
 func (t *biomeTheme) Font(style fyne.TextStyle) fyne.Resource {
-	style.Monospace = true
 	return theme.DefaultTheme().Font(style)
 }
 
@@ -224,13 +255,23 @@ func (t *biomeTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
 }
 
 func (t *biomeTheme) Size(name fyne.ThemeSizeName) float32 {
+	// Use this receiver's zoom; scaledSize reads the currently installed theme.
+	scale := t.textSize / defaultTextSize
 	switch name {
 	case theme.SizeNameText:
 		return t.textSize
+	case theme.SizeNameHeadingText:
+		return textTitleSize * scale
+	case theme.SizeNameSubHeadingText:
+		return textHeadingSize * scale
+	case theme.SizeNameCaptionText:
+		return textSecondarySize * scale
 	case theme.SizeNamePadding:
-		return 6
+		return spaceXS * scale
 	case theme.SizeNameInnerPadding:
-		return 4
+		return spaceXS * scale
+	case theme.SizeNameInputRadius, theme.SizeNameSelectionRadius:
+		return radiusControl * scale
 	default:
 		return theme.DefaultTheme().Size(name)
 	}

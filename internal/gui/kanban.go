@@ -8,7 +8,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/mdelapenya/biomelab/internal/agent"
@@ -28,7 +27,7 @@ type prLink struct {
 
 func newPRLink(label, rawURL string, c color.Color) *prLink {
 	u, _ := url.Parse(rawURL)
-	txt := monoText(label, c, false)
+	txt := uiText(label, c, false)
 	txt.TextStyle.Underline = true
 	pl := &prLink{txt: txt, u: u}
 	pl.ExtendBaseWidget(pl)
@@ -40,144 +39,75 @@ func (pl *prLink) Tapped(_ *fyne.PointEvent) {
 		_ = fyne.CurrentApp().OpenURL(pl.u)
 	}
 }
-func (pl *prLink) TappedSecondary(_ *fyne.PointEvent) {}
+func (pl *prLink) TappedSecondary(_ *fyne.PointEvent)  {}
 func (pl *prLink) CreateRenderer() fyne.WidgetRenderer { return widget.NewSimpleRenderer(pl.txt) }
 
-// hintIcon wraps a coloured label and shows a tooltip popup on mouse hover.
-type hintIcon struct {
+// statusText renders independent review and CI state without a hover surface.
+type statusText struct {
 	widget.BaseWidget
-	txt  *canvas.Text
-	hint string
-	pop  *widget.PopUp
+	txt *canvas.Text
 }
 
-func newHintIcon(label string, c color.Color, hint string) *hintIcon {
-	h := &hintIcon{
-		txt:  monoText(label, c, false),
-		hint: hint,
-	}
-	h.ExtendBaseWidget(h)
-	return h
+func newStatusText(label string, c color.Color) *statusText {
+	s := &statusText{txt: uiText(label, c, false)}
+	s.ExtendBaseWidget(s)
+	return s
 }
 
-func (h *hintIcon) CreateRenderer() fyne.WidgetRenderer { return widget.NewSimpleRenderer(h.txt) }
+func (s *statusText) CreateRenderer() fyne.WidgetRenderer { return widget.NewSimpleRenderer(s.txt) }
 
-func (h *hintIcon) MouseIn(_ *desktop.MouseEvent) {
-	cnv := fyne.CurrentApp().Driver().CanvasForObject(h)
-	if cnv == nil {
-		return
+// buildKanbanCardContent leads with the provider title when one exists;
+// branches remain technical and titleless cards retain their natural height.
+func buildKanbanCardContent(wt git.Worktree, agents []agent.Info, terminals []terminal.Info, pr *provider.PRInfo, selected bool) fyne.CanvasObject {
+	branch := newMeasuredText(wt.Branch, colorDimGray, false, true, false)
+	branch.txt.TextSize = scaledSize(11)
+	rows := []fyne.CanvasObject{}
+	if pr != nil && pr.Title != "" {
+		title := newMeasuredText(pr.Title, colorForeground, true, false, false)
+		title.txt.TextSize = scaledSize(12)
+		rows = append(rows, title)
 	}
-	label := widget.NewLabel(h.hint)
-	h.pop = widget.NewPopUp(label, cnv)
-	pos := fyne.CurrentApp().Driver().AbsolutePositionForObject(h)
-	h.pop.ShowAtPosition(fyne.NewPos(pos.X, pos.Y+h.Size().Height))
-}
-
-func (h *hintIcon) MouseOut() {
-	if h.pop != nil {
-		h.pop.Hide()
-		h.pop = nil
-	}
-}
-
-func (h *hintIcon) MouseMoved(_ *desktop.MouseEvent) {}
-
-// buildKanbanCardContent builds a compact card matching the website's kb-card
-// layout:
-//
-//	Row 1:  ● (stage-coloured dot)  branch-name
-//	Row 2:  ● agent-name            (omitted when no agent is running)
-//	Row 3:  #42 ↗  review-icon  CI-icon   (omitted when no PR)
-//	Row 4:  ~ dirty                 (omitted when clean)
-//
-// The PR number is a tappable link (↗ suffix signals this). Review and CI icons
-// are prefixed with emojis (🔍 / 🤖) and show a tooltip on hover:
-//
-//	review  🔍✓ green   🔍! red   🔍~ yellow
-//	CI      🤖✓ green   🤖✗ red   🤖○ yellow
-func buildKanbanCardContent(
-	wt git.Worktree,
-	agents []agent.Info,
-	terminals []terminal.Info,
-	pr *provider.PRInfo,
-	selected bool,
-) fyne.CanvasObject {
-	var rows []fyne.CanvasObject
-
-	stage := kanbanStageOf(pr)
-	dotColor := kanbanColumnColor(stage)
-
-	// ── Row 1: ● branch-name ────────────────────────────────────────────
-	dot := monoText("●", dotColor, false)
-	dot.TextSize = scaledSize(8)
-	branchColor := colorBranch
-	prefix := ""
-	if selected {
-		branchColor = colorSelected
-		prefix = "▸ "
-	}
-	branchLabel := monoText(prefix+wt.Branch, branchColor, true)
-	branchLabel.TextSize = scaledSize(12)
-	row := []fyne.CanvasObject{dot, branchLabel}
-	if notes.Exists(wt.Path) {
-		noteIcon := monoText(" 📝", colorYellow, false)
-		noteIcon.TextSize = scaledSize(10)
-		row = append(row, noteIcon)
-	}
-	rows = append(rows, container.NewHBox(row...))
-
-	// ── Row 2: ● agent-name (omitted when no agent) ─────────────────────
-	if len(agents) > 0 {
-		agentLine := monoText("● "+string(agents[0].Kind), colorGreen, false)
-		agentLine.TextSize = scaledSize(10)
-		rows = append(rows, agentLine)
-	}
-
-	// ── Row 2b: ▶ terminal (omitted when no terminal) ───────────────────
-	if len(terminals) > 0 {
-		termLine := monoText("▶ "+string(terminals[0].Kind), colorPurple, false)
-		termLine.TextSize = scaledSize(10)
-		rows = append(rows, termLine)
-	}
-
-	// ── Row 3: #42 ↗  review  CI  (omitted when no PR) ─────────────────
+	rows = append(rows, branch)
 	if pr != nil {
-		// PR number as a tappable link; ↗ makes clickability explicit.
-		prNum := newPRLink(fmt.Sprintf("#%d", pr.Number), pr.URL, colorBlue)
-
-		var statusParts []fyne.CanvasObject
-		statusParts = append(statusParts, prNum)
-
-		// Review icon — 🔍 prefix, tooltip on hover.
-		switch pr.ReviewStatus {
-		case "approved":
-			statusParts = append(statusParts, newHintIcon("🔍✓", colorGreen, "Review: approved"))
-		case "changes_requested":
-			statusParts = append(statusParts, newHintIcon("🔍!", colorRed, "Review: changes requested"))
-		case "commented":
-			statusParts = append(statusParts, newHintIcon("🔍~", colorYellow, "Review: commented"))
+		state := pr.State
+		if pr.Draft {
+			state = "draft"
 		}
-
-		// CI icon — 🤖 prefix, tooltip on hover.
-		switch pr.CheckStatus {
-		case "success":
-			statusParts = append(statusParts, newHintIcon("🤖✓", colorGreen, "CI: success"))
-		case "failure":
-			statusParts = append(statusParts, newHintIcon("🤖✗", colorRed, "CI: failure"))
-		case "pending":
-			statusParts = append(statusParts, newHintIcon("🤖○", colorYellow, "CI: pending"))
-		}
-
-		rows = append(rows, container.NewHBox(statusParts...))
+		link := newPRLink(fmt.Sprintf("#%d · %s", pr.Number, state), pr.URL, colorBlue)
+		link.txt.TextSize = scaledSize(11)
+		rows = append(rows, link)
 	}
-
-	// ── Row 4: ~ dirty (omitted when clean) ─────────────────────────────
+	if len(agents) > 0 {
+		rows = append(rows, secondaryText(string(agents[0].Kind)+" active"))
+	}
+	if len(terminals) > 0 {
+		rows = append(rows, secondaryText(fmt.Sprintf("%d terminal(s)", len(terminals))))
+	}
+	if notes.Exists(wt.Path) {
+		rows = append(rows, secondaryText("Notes available"))
+	}
 	if wt.IsDirty {
-		dirty := monoText("~ dirty", colorYellow, false)
-		dirty.TextSize = scaledSize(10)
+		dirty := secondaryText("Uncommitted changes")
+		dirty.Color = colorYellow
 		rows = append(rows, dirty)
 	}
-
+	if pr != nil {
+		rows = append(rows, prStatusLabels(pr)...)
+	}
+	if selected {
+		for _, o := range rows {
+			switch t := o.(type) {
+			case *measuredText:
+				t.txt.Color = colorOnAction
+			case *prLink:
+				t.txt.Color = colorOnAction
+			case *statusText:
+				t.txt.Color = colorOnAction
+			case *canvas.Text:
+				t.Color = colorOnAction
+			}
+		}
+	}
 	return container.NewVBox(rows...)
 }
 
@@ -204,17 +134,20 @@ func (w *kanbanCardWrapper) CreateRenderer() fyne.WidgetRenderer {
 type kanbanCardWrapperRenderer struct{ w *kanbanCardWrapper }
 
 func (r *kanbanCardWrapperRenderer) Layout(size fyne.Size) {
-	r.w.inner.Move(fyne.NewPos(0, 0))
-	r.w.inner.Resize(size)
+	pad := scaledSize(1)
+	r.w.inner.Move(fyne.NewPos(pad, pad))
+	r.w.inner.Resize(fyne.NewSize(max(float32(0), size.Width-2*pad), max(float32(0), size.Height-2*pad)))
 }
 func (r *kanbanCardWrapperRenderer) MinSize() fyne.Size {
 	// Report width=1 so the VScroll gives the VBox the scroll (column) width,
 	// not the widest text element. Height stays natural so rows don't collapse.
-	return fyne.NewSize(1, r.w.inner.MinSize().Height)
+	return fyne.NewSize(1, r.w.inner.MinSize().Height+scaledSize(2))
 }
-func (r *kanbanCardWrapperRenderer) Refresh()                     { r.w.inner.Refresh() }
-func (r *kanbanCardWrapperRenderer) Destroy()                     {}
-func (r *kanbanCardWrapperRenderer) Objects() []fyne.CanvasObject { return []fyne.CanvasObject{r.w.inner} }
+func (r *kanbanCardWrapperRenderer) Refresh() { r.w.inner.Refresh() }
+func (r *kanbanCardWrapperRenderer) Destroy() {}
+func (r *kanbanCardWrapperRenderer) Objects() []fyne.CanvasObject {
+	return []fyne.CanvasObject{r.w.inner}
+}
 
 // kanbanStageOf returns the kanban column index (0–4) for a worktree based on
 // its PR/MR state and review status.
@@ -269,47 +202,15 @@ func kanbanColumnColor(stage int) color.Color {
 	}
 }
 
-// kanbanColumnBgColor returns a subtle body-tint for the column background.
-func kanbanColumnBgColor(stage int) color.Color {
-	switch stage {
-	case 0:
-		return color.NRGBA{R: 0xff, G: 0x69, B: 0x69, A: 0x1a} // red    ~10 %
-	case 2:
-		return color.NRGBA{R: 0x69, G: 0xa7, B: 0xff, A: 0x1a} // blue   ~10 %
-	case 3:
-		return color.NRGBA{R: 0xf3, G: 0xd6, B: 0x6b, A: 0x1a} // yellow ~10 %
-	case 4:
-		return color.NRGBA{R: 0xca, G: 0x79, B: 0xff, A: 0x1a} // purple ~10 %
-	default:
-		return color.NRGBA{R: 0x70, G: 0x83, B: 0x94, A: 0x12} // gray   ~ 7 %
-	}
-}
-
-// kanbanColumnHeaderBgColor returns a stronger header tint for a kanban column.
-func kanbanColumnHeaderBgColor(stage int) color.Color {
-	switch stage {
-	case 0:
-		return color.NRGBA{R: 0xff, G: 0x69, B: 0x69, A: 0x38} // red    ~22 %
-	case 2:
-		return color.NRGBA{R: 0x69, G: 0xa7, B: 0xff, A: 0x38} // blue   ~22 %
-	case 3:
-		return color.NRGBA{R: 0xf3, G: 0xd6, B: 0x6b, A: 0x38} // yellow ~22 %
-	case 4:
-		return color.NRGBA{R: 0xca, G: 0x79, B: 0xff, A: 0x38} // purple ~22 %
-	default:
-		return color.NRGBA{R: 0x70, G: 0x83, B: 0x94, A: 0x28} // gray  ~16 %
-	}
-}
-
 // makeStagePill returns a small coloured pill showing the PR lifecycle stage label.
 // Background is the stage accent at ~16% opacity; text is the full accent color.
 func makeStagePill(stage int) fyne.CanvasObject {
 	accent := kanbanColumnColor(stage)
 	nrgba := accent.(color.NRGBA)
 	bg := canvas.NewRectangle(color.NRGBA{R: nrgba.R, G: nrgba.G, B: nrgba.B, A: 0x28})
-	bg.CornerRadius = 4
-	label := monoText(kanbanColumnTitles[stage], accent, false)
-	label.TextSize = scaledSize(9)
+	bg.CornerRadius = scaledSize(radiusControl)
+	label := uiText(kanbanColumnTitles[stage], accent, false)
+	label.TextSize = scaledSize(11)
 	return container.NewStack(bg, container.NewPadded(label))
 }
 
@@ -349,82 +250,50 @@ func (d *Dashboard) KanbanRowOf(cardIdx int, stages [5][]int) int {
 	return 0
 }
 
-// buildKanbanView constructs the five-column kanban board for linked worktrees.
-// Each column is wrapped in a coloured border rectangle (matching the website
-// kb-col design): subtle body tint + stronger header tint + coloured stroke.
-// Cards scroll vertically inside each column via NewVScroll, which constrains
-// card width to the column width so nothing overflows sideways.
+// buildKanbanView preserves all five provider-derived columns. Column scrolls
+// are retained, and the caller wraps the neutral board in a horizontal scroll.
 func (d *Dashboard) buildKanbanView() fyne.CanvasObject {
 	stages := d.KanbanStages()
-
-	cols := make([]fyne.CanvasObject, 5)
-	for si, stageIndices := range stages {
-		accentColor := kanbanColumnColor(si)
-
-		// ── Header (pinned, stronger tint) ──────────────────────────────
-		// Title on the left, count chip on the right. Chip uses the
-		// column's accent color so it pops against the muted header bg.
-		titleLabel := monoText(kanbanColumnTitles[si], accentColor, true)
-		titleLabel.TextSize = scaledSize(11)
-
-		headerRow := container.NewBorder(nil, nil, nil, countChip(len(stageIndices), accentColor), titleLabel)
-
-		headerBg := canvas.NewRectangle(kanbanColumnHeaderBgColor(si))
-		headerBg.CornerRadius = 4
-		header := container.NewStack(headerBg, container.NewPadded(headerRow))
-		headerSection := container.NewVBox(header, widget.NewSeparator())
-
-		// ── Cards (vertically scrollable, width-constrained) ─────────────
-		// Always use VScroll so every column — including empty ones — has a
-		// guaranteed minimum height (Fyne's scrollContainerMinSize = 32 px).
-		// A bare container.NewPadded around a canvas.Text can report a near-zero
-		// MinSize before first render, collapsing the column in the grid layout.
-		var cardItems []fyne.CanvasObject
-		if len(stageIndices) == 0 {
-			cardItems = []fyne.CanvasObject{container.NewPadded(monoText("—", colorDimGray, false))}
-		} else {
-			for _, wtIdx := range stageIndices {
-				wt := d.state.Worktrees[wtIdx]
-				isSelected := d.state.SelectedCard == wtIdx
-				content := buildKanbanCardContent(
-					wt,
-					d.agentsFor(wt.Path),
-					d.terminalsFor(wt.Path),
-					d.prFor(wt.Branch),
-					isSelected,
-				)
-				cardWtIdx := wtIdx // capture for closure
-				wtCopy := wt       // capture for closure
-				card := makeCard(content, isSelected, false, func() {
-					d.state.SelectedCard = cardWtIdx
-					if d.OnCardSelected != nil {
-						d.OnCardSelected(cardWtIdx)
-					}
-					d.Rebuild()
-				})
-				card.SetOnSecondaryTap(func() {
-					if d.OnNoteRequested != nil {
-						d.OnNoteRequested(wtCopy)
-					}
-				})
-				// Wrap each card so its MinSize.Width = 1, forcing the VScroll to
-				// size it to the column width rather than the natural text width.
-				cardItems = append(cardItems, newKanbanCardWrapper(card))
-			}
+	cols := make([]fyne.CanvasObject, len(stages))
+	for stage, indices := range stages {
+		dot := canvas.NewRectangle(kanbanColumnColor(stage))
+		dot.CornerRadius = scaledSize(4)
+		dot.SetMinSize(fyne.NewSize(scaledSize(7), scaledSize(7)))
+		heading := uiText(kanbanColumnTitles[stage], colorForeground, true)
+		heading.TextSize = scaledSize(11)
+		header := container.NewBorder(nil, nil, container.NewCenter(dot), countChip(len(indices), colorSecondaryBg), heading)
+		var items []fyne.CanvasObject
+		d.stageCards[stage] = nil
+		for _, idx := range indices {
+			wt := d.state.Worktrees[idx]
+			content := buildKanbanCardContent(wt, d.agentsFor(wt.Path), d.terminalsFor(wt.Path), d.prFor(wt.Branch), d.state.SelectedCard == idx)
+			cardIdx := idx
+			wtCopy := wt
+			card := makeKanbanCard(content, d.state.SelectedCard == idx, func() { d.selectCard(cardIdx) })
+			card.SetOnSecondaryTap(func() {
+				if d.OnNoteRequested != nil {
+					d.OnNoteRequested(wtCopy)
+				}
+			})
+			wrapped := newKanbanCardWrapper(card)
+			items = append(items, wrapped)
+			d.stageCards[stage] = append(d.stageCards[stage], wrapped)
 		}
-		cardArea := container.NewVScroll(container.NewVBox(cardItems...))
-
-		// ── Column border + background rectangle ─────────────────────────
-		// Mirrors the website's .kb-col: coloured stroke + subtle body tint.
-		colBg := canvas.NewRectangle(kanbanColumnBgColor(si))
-		colBg.CornerRadius = 6
-		colBg.StrokeColor = accentColor
-		colBg.StrokeWidth = 1.5
-
-		// NewPadded keeps the content (header + cards) away from the border stroke.
-		colContent := container.NewBorder(headerSection, nil, nil, nil, cardArea)
-		cols[si] = container.NewStack(colBg, container.NewPadded(colContent))
+		if len(items) == 0 {
+			items = append(items, inset(secondaryText("No worktrees"), 0, spaceSM))
+		}
+		area := container.New(&stageBodyLayout{}, container.NewVBox(items...))
+		if d.stageScrolls[stage] == nil {
+			d.stageScrolls[stage] = container.NewVScroll(area)
+		} else {
+			d.stageScrolls[stage].Content = area
+		}
+		d.stageScrolls[stage].Offset = d.stageOffsets[stage]
+		bg := canvas.NewRectangle(colorBackground)
+		d.stageViewports[stage] = newStageViewport(d, stage, d.stageScrolls[stage], area)
+		col := container.NewBorder(inset(header, 0, spaceXS), nil, nil, nil, d.stageViewports[stage])
+		cols[stage] = container.NewStack(bg, inset(col, spaceSM, spaceSM))
 	}
-
-	return container.NewGridWithColumns(5, cols...)
+	d.boardColumns = cols
+	return container.New(&boardLayout{}, cols...)
 }

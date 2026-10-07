@@ -24,6 +24,8 @@ const (
 	ViewKanban ViewMode = iota
 	// ViewGrid is the responsive card grid layout.
 	ViewGrid
+	// ViewList shows compact worktree rows beside the selected-item inspector.
+	ViewList
 )
 
 // RepoState holds all UI-relevant state for a single repo+mode.
@@ -76,8 +78,7 @@ type SandboxCardInfo struct {
 // through so users still see them.
 //
 // Pure state mutation: no UI side-effects, no AfterFunc, no fyne calls.
-// The Dashboard's ApplyRefresh wraps this with the flash-clearing timer
-// and a Rebuild.
+// Dashboard.ApplyRefresh rebuilds the view and preserves visible selection.
 func (s *RepoState) Apply(result ops.RefreshResult) bool {
 	if result.Err == nil && result.Generation < s.LastAppliedGen {
 		return false

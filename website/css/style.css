@@ -2812,3 +2812,27 @@ body.rgt-modal-open { overflow: hidden }
 .note-modal-window .rgt-modal-foot .rgt-modal-hint { flex-basis: 100%; }
 .note-modal-window .rgt-modal-foot [data-note-save] { margin-left: auto; background: var(--green); }
 .demo-use-notes { display: block; margin-top: 1rem; }
+
+/* Playground mirrors the desktop view cycle with one shared inspector. */
+.kb-toolbar, .kb-inspector-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+.kb-toolbar { margin-bottom: 1rem; }
+.kb-toolbar > span { font-weight: 700; margin-right: auto; }
+.kb-toolbar button, .kb-inspector button { color: var(--text-primary); background: var(--bg-card); border: 1px solid var(--border-strong); border-radius: var(--radius-md); padding: .5rem .7rem; cursor: pointer; font: inherit; font-size: .85rem; }
+.kanban-diagram-html:focus-visible { outline: 2px solid var(--cyan); outline-offset: 4px; }
+.kb-list { display: none; }
+.kb-view-list .kb-board, .kb-view-list .kb-grid { display: none; }
+.kb-view-list .kb-list { display: flex; flex-direction: column; gap: .4rem; }
+.kb-list .kb-card { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; margin: 0; }
+.kb-list .kb-card-top { flex: 1 1 220px; }
+.kb-list .kb-card-meta, .kb-list .kb-card-status { margin: 0; }
+.kb-inspector { margin-top: 1rem; padding: 1rem; border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--bg-card); }
+.kb-inspector h4 { margin: 0 0 .5rem; }
+.kb-inspector p { color: var(--text-secondary); font-size: .85rem; overflow-wrap: anywhere; margin-bottom: .8rem; }
+
+@media (min-width: 1100px) {
+  .kb-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 1rem; align-items: start; }
+  .kb-inspector { margin-top: 0; }
+  .kb-board { gap: .3rem; }
+  .kb-flow-arrow { font-size: 1rem; }
+  .kb-workspace .kb-branch { overflow-wrap: anywhere; }
+}

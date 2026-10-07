@@ -1,7 +1,8 @@
 package gui
 
 import (
-	"fmt"
+	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -25,10 +26,11 @@ type RepoGroup struct {
 // keyboard focus). Instead it uses plain tappable containers so the
 // canvas-level key handlers always work.
 type RepoPanel struct {
-	groups      []*RepoGroup
-	activeGrp   int
-	activeMode  int
-	sbxStatuses map[string]sandbox.Status
+	groups         []*RepoGroup
+	activeGrp      int
+	activeMode     int
+	keyboardActive bool
+	sbxStatuses    map[string]sandbox.Status
 
 	content *fyne.Container
 	list    *fyne.Container // the scrollable mode list
@@ -47,8 +49,9 @@ type RepoPanel struct {
 	headerYSnap      []float32
 	headerHSnap      []float32
 
-	OnModeSelected func(groupIdx, modeIdx int)
-	OnReorder      func(fromIdx, toIdx int)
+	OnAddRepository func()
+	OnModeSelected  func(groupIdx, modeIdx int)
+	OnReorder       func(fromIdx, toIdx int)
 }
 
 // NewRepoPanel creates a repo panel from config entries.
@@ -85,13 +88,36 @@ func (rp *RepoPanel) build() {
 	rp.list = container.NewVBox()
 	rp.rebuildList()
 
-	helpLabel := monoText("[a]dd  [n]ew sandbox  [x]rm", colorDimGray, false)
-	helpLabel.TextSize = scaledSize(9)
-
-	scroll := container.NewScroll(rp.list)
+	brandResource := theme.HomeIcon()
+	if AppIcon != nil {
+		brandResource = AppIcon
+	}
+	brandIcon := canvas.NewImageFromResource(brandResource)
+	brandIcon.FillMode = canvas.ImageFillContain
+	brand := container.NewBorder(nil, nil, shellIcon(brandIcon, 24), nil, uiText("biomelab", colorForeground, true))
+	heading := "Projects"
+	if rp.keyboardActive {
+		heading += " · Keyboard"
+	}
+	title := secondaryText(heading)
+	top := container.NewVBox(inset(brand, spaceMD, spaceMD), inset(title, spaceMD, spaceXS))
+	// Resolve the callback at tap time: App wires it after construction and
+	// may replace it without rebuilding this panel.
+	addLabel := "Add repository"
+	if rp.keyboardActive {
+		addLabel = shortcutLabel(addLabel, "a")
+	}
+	add := newTappableCard(inset(container.NewBorder(nil, nil,
+		shellIcon(widget.NewIcon(theme.ContentAddIcon()), 14), nil,
+		newMeasuredText(addLabel, colorGray, false, false, false)), spaceSM, spaceSM), func() {
+		if rp.OnAddRepository != nil {
+			rp.OnAddRepository()
+		}
+	})
+	footer := inset(add, spaceSM, spaceSM)
+	scroll := container.NewVScroll(rp.list)
 	bg := canvas.NewRectangle(colorPanelBg)
-
-	inner := container.NewBorder(nil, container.NewPadded(helpLabel), nil, nil, scroll)
+	inner := container.NewBorder(top, footer, nil, nil, inset(scroll, spaceSM, 0))
 
 	if rp.content == nil {
 		rp.content = container.NewStack(bg, inner)
@@ -112,14 +138,11 @@ func (rp *RepoPanel) rebuildList() {
 	rp.headerRows = rp.headerRows[:0]
 
 	for gi, group := range rp.groups {
-		// Compact visual separator between repo groups.
+		// Separate project groups with space rather than a heavy divider.
 		if gi > 0 {
 			gap := canvas.NewRectangle(colorPanelBg)
-			gap.SetMinSize(fyne.NewSize(0, 4))
-			sep := canvas.NewRectangle(colorBorder)
-			sep.SetMinSize(fyne.NewSize(0, 1))
+			gap.SetMinSize(fyne.NewSize(0, scaledSize(spaceSM)))
 			rp.list.Add(gap)
-			rp.list.Add(sep)
 		}
 
 		// Drop indicator: a colored bar showing where the dragged repo
@@ -132,14 +155,14 @@ func (rp *RepoPanel) rebuildList() {
 
 		// Repo header — bold + foreground color for strong visual
 		// hierarchy over the mode sub-items. The optional linked-worktree
-		// count surfaces "tasks in flight" at a glance. truncMonoText
+		// count surfaces "tasks in flight" at a glance. measuredText
 		// (instead of monoText) shrinks long repo names to fit, so a
 		// narrow panel never triggers a horizontal scrollbar that would
 		// push the chip off-screen.
-		header := newTruncMonoText(group.Name, colorForeground, true, false)
-		header.txt.TextSize = scaledSize(12)
+		header := newMeasuredText(group.Name, colorForeground, true, false, false)
+		header.txt.TextSize = scaledSize(13)
 		topGap := canvas.NewRectangle(colorPanelBg)
-		topGap.SetMinSize(fyne.NewSize(0, 4))
+		topGap.SetMinSize(fyne.NewSize(0, scaledSize(spaceXS)))
 
 		// Drag handle on the left of the header. Only the handle is
 		// draggable so users don't accidentally reorder by clicking the
@@ -150,7 +173,7 @@ func (rp *RepoPanel) rebuildList() {
 		if group.LinkedWorktreeCount > 0 {
 			rightContent = worktreeCountChip(group.LinkedWorktreeCount)
 		}
-		headerRow := container.NewBorder(nil, nil, handle, rightContent, header)
+		headerRow := container.NewBorder(nil, nil, shellIcon(handle, 12), rightContent, header)
 
 		groupHeader := container.NewVBox(topGap, headerRow)
 		rp.headerRows = append(rp.headerRows, groupHeader)
@@ -186,61 +209,49 @@ func (rp *RepoPanel) dropIndicator() fyne.CanvasObject {
 }
 
 func (rp *RepoPanel) buildModeLine(mode config.ModeEntry, isActive bool) fyne.CanvasObject {
-	prefix := "  "
-	if isActive {
-		prefix = "▸ "
-	}
-
-	icon := "\U0001F4C2" // folder for regular
+	label := "Host"
+	icon := theme.ComputerIcon()
 	if mode.Type == "sandbox" {
-		icon = "\U0001F433" // whale for sandbox
-	}
-
-	modeLabel := "host"
-	if mode.Agent != "" {
-		modeLabel = mode.Agent
-	}
-
-	text := fmt.Sprintf("%s%s [%s]", prefix, icon, modeLabel)
-
-	var labelColor = colorGray
-	if isActive {
-		labelColor = colorSelected
-	}
-
-	label := monoText(text, labelColor, isActive)
-	label.TextSize = scaledSize(11)
-
-	// Status dot for sandbox modes.
-	var dot *canvas.Text
-	if mode.Type == "sandbox" && mode.SandboxName != "" {
-		if status, ok := rp.sbxStatuses[mode.SandboxName]; ok {
-			dotText := " ●"
-			var dotColor = colorRed
-			switch status {
-			case sandbox.StatusRunning:
-				dotColor = colorGreen
-			case sandbox.StatusStopped:
-				dotColor = colorYellow
-			}
-			dot = monoText(dotText, dotColor, false)
+		label = "Sandbox"
+		icon = theme.StorageIcon()
+		if mode.Agent != "" {
+			label = mode.Agent
 		}
 	}
-
-	var row fyne.CanvasObject
-	if dot != nil {
-		row = container.NewHBox(label, dot)
-	} else {
-		row = label
-	}
-
-	// Active row gets a highlighted background so it stands out.
+	c := colorGray
 	if isActive {
-		bg := canvas.NewRectangle(colorSelection)
-		bg.CornerRadius = 4
-		return container.NewStack(bg, container.NewPadded(row))
+		c = colorForeground
 	}
-	return row
+	text := newMeasuredText(label, c, isActive, false, false)
+	text.txt.TextSize = scaledSize(textSecondarySize)
+	var status fyne.CanvasObject
+	if mode.Type == "sandbox" {
+		value := "Unknown"
+		sc := colorDimGray
+		if s, ok := rp.sbxStatuses[mode.SandboxName]; ok {
+			switch s {
+			case sandbox.StatusRunning:
+				value = "Running"
+				sc = colorGreen
+			case sandbox.StatusStopped:
+				value = "Stopped"
+				sc = colorYellow
+			default:
+				value = "Missing"
+				sc = colorRed
+			}
+		}
+		t := secondaryText(value)
+		t.Color = sc
+		status = t
+	}
+	row := container.NewBorder(nil, nil, shellIcon(widget.NewIcon(icon), 14), status, text)
+	bg := canvas.NewRectangle(colorPanelBg)
+	bg.CornerRadius = scaledSize(radiusControl)
+	if isActive {
+		bg.FillColor = colorSelection
+	}
+	return container.NewStack(bg, inset(row, spaceSM, spaceXS))
 }
 
 // worktreeCountChip renders the linked-worktree count as a pill-shaped badge
@@ -249,5 +260,5 @@ func (rp *RepoPanel) buildModeLine(mode config.ModeEntry, isActive bool) fyne.Ca
 func worktreeCountChip(n int) fyne.CanvasObject {
 	rightPad := canvas.NewRectangle(colorPanelBg)
 	rightPad.SetMinSize(fyne.NewSize(8, 0))
-	return container.NewHBox(countChip(n, colorSelection), rightPad)
+	return container.NewHBox(countChip(n, colorSecondaryBg), rightPad)
 }
