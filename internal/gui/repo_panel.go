@@ -103,9 +103,13 @@ func (rp *RepoPanel) build() {
 	top := container.NewVBox(inset(brand, spaceMD, spaceMD), inset(title, spaceMD, spaceXS))
 	// Resolve the callback at tap time: App wires it after construction and
 	// may replace it without rebuilding this panel.
+	addLabel := "Add repository"
+	if rp.keyboardActive {
+		addLabel = shortcutLabel(addLabel, "a")
+	}
 	add := newTappableCard(inset(container.NewBorder(nil, nil,
 		shellIcon(widget.NewIcon(theme.ContentAddIcon()), 14), nil,
-		newMeasuredText("Add repository", colorGray, false, false, false)), spaceSM, spaceSM), func() {
+		newMeasuredText(addLabel, colorGray, false, false, false)), spaceSM, spaceSM), func() {
 		if rp.OnAddRepository != nil {
 			rp.OnAddRepository()
 		}

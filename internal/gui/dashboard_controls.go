@@ -2,6 +2,7 @@ package gui
 
 import (
 	"image/color"
+	"runtime"
 	"unicode/utf8"
 
 	"fyne.io/fyne/v2"
@@ -66,10 +67,7 @@ func (c *actionControl) CreateRenderer() fyne.WidgetRenderer {
 		i := widget.NewIcon(resource)
 		parts = append(parts, shellIcon(i, 14))
 	}
-	text := c.label
-	if c.keyHint != "" {
-		text += "  " + c.keyHint
-	}
+	text := shortcutLabel(c.label, c.keyHint)
 	label := uiText(text, colorForeground, c.primary)
 	label.TextSize = scaledSize(12)
 	parts = append(parts, label)
@@ -357,4 +355,19 @@ func (d *Dashboard) refreshStageViewports() {
 			v.Refresh()
 		}
 	}
+}
+
+// shortcutLabel separates an action from its keyboard hint on every surface.
+func shortcutLabel(action, key string) string {
+	if key == "" {
+		return action
+	}
+	return action + " [" + key + "]"
+}
+
+func platformShortcut(key string) string {
+	if runtime.GOOS == "darwin" {
+		return "Cmd+" + key
+	}
+	return "Ctrl+" + key
 }

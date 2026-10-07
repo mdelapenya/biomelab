@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -375,6 +374,9 @@ func (d *Dashboard) build() fyne.CanvasObject {
 				d.OnCreate()
 			}
 		})
+		if d.keyboardActive && d.state.SelectedCard == 0 {
+			create.keyHint = "c"
+		}
 		body = container.NewCenter(container.NewVBox(secondaryText("Create a worktree to start a task."), create))
 	} else if d.state.ViewMode == ViewList {
 		body = d.buildListView()
@@ -474,7 +476,7 @@ func (d *Dashboard) header() fyne.CanvasObject {
 	case ViewList:
 		grid.keyHint = "v"
 	default:
-		board.keyHint = "g/v"
+		board.keyHint = "g or v"
 	}
 	grid.selected = d.state.ViewMode == ViewGrid
 	refresh := newActionControl("Refresh", theme.ViewRefreshIcon(), false, func() {
@@ -488,10 +490,15 @@ func (d *Dashboard) header() fyne.CanvasObject {
 		}
 	})
 	create.disabled = d.state.MainWorktree() == nil
+	if d.keyboardActive {
+		refresh.keyHint = "r"
+		if d.state.SelectedCard == 0 && !create.disabled {
+			create.keyHint = "c"
+		}
+	}
 	inspector := newActionControl("Inspector", theme.InfoIcon(), false, func() { d.inspectorOpen = !d.inspectorOpen; d.Rebuild() })
-	inspector.keyHint = "Ctrl+I"
-	if runtime.GOOS == "darwin" {
-		inspector.keyHint = "⌘I"
+	if d.keyboardActive && d.state.MainWorktree() != nil {
+		inspector.keyHint = platformShortcut("I")
 	}
 	inspector.selected = d.inspectorOpen
 	more := newActionControl("More", theme.MoreHorizontalIcon(), false, nil)
@@ -582,45 +589,61 @@ func (d *Dashboard) mainSummary(wt git.Worktree) fyne.CanvasObject {
 }
 
 func (d *Dashboard) helpBar() fyne.CanvasObject {
-	viewKeys := "g Board/Grid · v Board/List/Grid"
-	text := "Projects · ↑ ↓ select mode · a Add repository · n Add sandbox mode · x Remove mode · Enter/Tab Worktrees\n" + viewKeys
+	hint := shortcutLabel
+	viewKeys := hint("Board/Grid", "g") + " · " + hint("Cycle view", "v")
+	text := "Projects · " + hint("Select mode", "↑ ↓") + " · " + hint("Add repository", "a") + " · " + hint("Add sandbox mode", "n") + " · " + hint("Remove mode", "x") + " · " + hint("Worktrees", "Enter or Tab")
 	if d.keyboardActive {
 		arrows := "↑ ↓ ← →"
 		if d.state.ViewMode == ViewList {
 			arrows = "↑ ↓"
 		}
-		text = "Worktrees · " + arrows + " navigate · Tab Projects · Esc Clear status · " + viewKeys + " · Ctrl/Cmd+I Inspector\n"
-		actions := "Enter Terminal · e Editor · m Notes · l Activity · r Refresh · p Pull"
-		if d.state.SelectedCard == 0 {
-			actions += " · c New worktree"
-			if d.state.Provider == provider.ProviderGitHub {
-				actions += " · i From issue · f Fetch PR"
-			}
-			if mode := d.state.ActiveMode; mode != nil && mode.Type == "sandbox" {
-				if d.state.SandboxStatus == sandbox.StatusNotFound {
-					actions += " · n Create sandbox"
-				} else {
-					actions += " · d Remove sandbox"
-					switch d.state.SandboxStatus {
-					case sandbox.StatusStopped:
-						actions += " · s Start sandbox"
-					case sandbox.StatusRunning:
-						actions += " · Shift+S Stop sandbox"
+		text = "Worktrees · " + hint("Navigate", arrows) + " · " + hint("Projects", "Tab")
+		if d.state.MainWorktree() != nil {
+			text += " · " + hint("Inspector", platformShortcut("I"))
+		}
+		actions := hint("Refresh", "r") + " · " + hint("Pull", "p")
+		if d.state.SelectedCard >= 0 && d.state.SelectedCard < len(d.state.Worktrees) {
+			actions = hint("Terminal", "Enter") + " · " + hint("Editor", "e") + " · " + hint("Notes", "m") + " · " + hint("Activity", "l") + " · " + actions
+			if d.state.SelectedCard == 0 {
+				actions += " · " + hint("New worktree", "c")
+				if d.state.Provider == provider.ProviderGitHub {
+					actions += " · " + hint("From issue", "i") + " · " + hint("Fetch PR", "f")
+				}
+				if mode := d.state.ActiveMode; mode != nil && mode.Type == "sandbox" {
+					if d.state.SandboxStatus == sandbox.StatusNotFound {
+						actions += " · " + hint("Create sandbox", "n")
+					} else {
+						actions += " · " + hint("Remove sandbox", "d")
 					}
+				} else {
+					actions += " · " + hint("Create/enroll sandbox", "n")
 				}
 			} else {
-				actions += " · n Create/enroll sandbox"
-			}
-		} else {
-			actions += " · d Delete worktree"
-			if d.state.Provider != provider.ProviderUnknown {
-				actions += " · Shift+P Send PR"
+				actions += " · " + hint("Delete worktree", "d")
+				if d.state.Provider != provider.ProviderUnknown {
+					actions += " · " + hint("Send PR", "Shift+P")
+				}
 			}
 		}
-		text += actions
+		if mode := d.state.ActiveMode; mode != nil && mode.Type == "sandbox" && mode.SandboxName != "" {
+			switch d.state.SandboxStatus {
+			case sandbox.StatusStopped:
+				actions += " · " + hint("Start sandbox", "s")
+			case sandbox.StatusRunning:
+				actions += " · " + hint("Stop sandbox", "Shift+S")
+			}
+		}
+		text += "\n" + actions
 	}
+	if d.state.StatusMessage != "" {
+		text += " · " + hint("Clear status", "Esc")
+	} else if !d.keyboardActive {
+		text += " · " + hint("Worktrees", "Esc")
+	}
+	text += "\n" + viewKeys + " · " + hint("Theme", platformShortcut("T")) + " · " + hint("Zoom in", platformShortcut("+")) + " · " + hint("Zoom out", platformShortcut("−")) + " · " + hint("Reset zoom", platformShortcut("0"))
 	help := newWrappedValue(text, false)
 	help.muted = true
+	help.shortcutGroups = true
 	return inset(help, spaceMD, spaceXS)
 }
 

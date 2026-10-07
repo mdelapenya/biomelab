@@ -226,10 +226,18 @@ func TestWorkspaceShortcutStripWrapsAcrossInspector(t *testing.T) {
 		if footer.Size().Width != root.Size().Width || len(text.lines(text.Size().Width)) < 2 {
 			t.Fatal("shortcut strip is truncated inside browser pane")
 		}
-		for _, hint := range []string{"g Board/Grid", "v Board/List/Grid", "Ctrl/Cmd+I Inspector", "Enter Terminal", "Shift+P Send PR", "Esc Clear status"} {
+		for _, hint := range []string{"Board/Grid [g]", "Cycle view [v]", shortcutLabel("Inspector", platformShortcut("I")), "Terminal [Enter]", "Send PR [Shift+P]", shortcutLabel("Theme", platformShortcut("T")), shortcutLabel("Reset zoom", platformShortcut("0"))} {
 			if !strings.Contains(text.value, hint) {
 				t.Fatalf("missing existing/new hint %q", hint)
 			}
+		}
+		for _, line := range text.lines(text.Size().Width) {
+			if strings.Contains(line, "[Shift+P]") && !strings.Contains(line, "Send PR [Shift+P]") {
+				t.Fatal("shortcut wrapped away from its action")
+			}
+		}
+		if strings.Contains(text.value, "Clear status [Esc]") {
+			t.Fatal("advertised inactive Escape action")
 		}
 		walkPolish(w.Content(), func(o fyne.CanvasObject) {
 			if _, ok := o.(fyne.Focusable); ok {
@@ -237,15 +245,22 @@ func TestWorkspaceShortcutStripWrapsAcrossInspector(t *testing.T) {
 			}
 		})
 	}
+	s.StatusMessage = "Refresh complete"
+	d.Rebuild()
+	root := d.innerSlot.Objects[0].(*fyne.Container)
+	footer := root.Objects[len(root.Objects)-1].(*fyne.Container)
+	if !strings.Contains(footer.Objects[0].(*wrappedValue).value, "Clear status [Esc]") {
+		t.Fatal("status dismissal shortcut missing")
+	}
 	s.SelectedCard = 0
 	d.Rebuild()
 	var help *wrappedValue
 	walkPolish(d.Content(), func(o fyne.CanvasObject) {
-		if text, ok := o.(*wrappedValue); ok && strings.Contains(text.value, "c New worktree") {
+		if text, ok := o.(*wrappedValue); ok && strings.Contains(text.value, "New worktree [c]") {
 			help = text
 		}
 	})
-	if help == nil || !strings.Contains(help.value, "i From issue") || !strings.Contains(help.value, "p Pull") || strings.Contains(help.value, "d Delete worktree") {
+	if help == nil || !strings.Contains(help.value, "From issue [i]") || !strings.Contains(help.value, "Pull [p]") || strings.Contains(help.value, "Delete worktree [d]") {
 		t.Fatal("main shortcuts omitted creation or implied main deletion")
 	}
 }

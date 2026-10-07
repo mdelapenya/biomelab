@@ -655,6 +655,7 @@ func (a *App) emptyState() fyne.CanvasObject {
 			a.handleAddRepo()
 		}
 	})
+	add.keyHint = "a"
 	return container.NewCenter(inset(container.NewVBox(uiText("BiomeLab", colorForeground, true), msg, add), spaceXL, spaceXL))
 }
 

@@ -16,6 +16,7 @@ type wrappedValue struct {
 	value               string
 	mono                bool
 	muted               bool
+	shortcutGroups      bool
 	wrapWidth, wrapSize float32
 	wrapValue           string
 	wrapMono            bool
@@ -40,6 +41,36 @@ func (w *wrappedValue) lines(width float32) []string {
 	}
 	var lines []string
 	for _, paragraph := range strings.Split(w.value, "\n") {
+		// Shortcut descriptions are whole phrases: keep each action and its
+		// key together when wrapping the footer between middle-dot separators.
+		if w.shortcutGroups {
+			line := ""
+			for _, group := range strings.Split(paragraph, " · ") {
+				if fyne.MeasureText(group, size, style).Width > width {
+					if line != "" {
+						lines = append(lines, line)
+						line = ""
+					}
+					// Extremely narrow panes still bound text to their width.
+					lines = append(lines, newWrappedValue(group, false).lines(width)...)
+					continue
+				}
+				candidate := group
+				if line != "" {
+					candidate = line + " · " + group
+				}
+				if line != "" && fyne.MeasureText(candidate, size, style).Width > width {
+					lines = append(lines, line)
+					line = group
+				} else {
+					line = candidate
+				}
+			}
+			if line != "" || paragraph == "" {
+				lines = append(lines, line)
+			}
+			continue
+		}
 		remaining := []rune(paragraph)
 		if len(remaining) == 0 {
 			lines = append(lines, "")

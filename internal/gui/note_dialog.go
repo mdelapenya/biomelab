@@ -214,7 +214,7 @@ func (a *App) openNoteDialog(wt git.Worktree) {
 	}
 	bottomRow := container.NewBorder(nil, nil, leftSide, rightButtons, nil)
 
-	content := container.NewPadded(container.NewBorder(dialogGroup(titleSection), container.NewVBox(widget.NewSeparator(), bottomRow), nil, nil, split))
+	content := container.NewPadded(container.NewBorder(dialogGroup(titleSection), container.NewVBox(widget.NewSeparator(), secondaryText(shortcutLabel("Save", platformShortcut("S"))+" · "+shortcutLabel("Cancel", "Esc")), bottomRow), nil, nil, split))
 	w.SetContent(content)
 	w.Resize(noteWindowInitialSize)
 	w.CenterOnScreen()

@@ -44,6 +44,12 @@ func (d *Dashboard) buildInspector() fyne.CanvasObject {
 	editor := inspectorAction("Editor", theme.DocumentCreateIcon(), false, d.OnOpenEditor)
 	note := inspectorAction("Notes", theme.DocumentIcon(), false, d.OnEditNotes)
 	activity := inspectorAction("Activity", theme.HistoryIcon(), false, d.OnActivity)
+	if d.keyboardActive {
+		terminal.keyHint, editor.keyHint, note.keyHint, activity.keyHint = "Enter", "e", "m", "l"
+		if d.state.MainWorktree() != nil {
+			close.keyHint = platformShortcut("I")
+		}
+	}
 	more := newActionControl("More", theme.MoreHorizontalIcon(), false, nil)
 	more.onTap = func() { d.showInspectorMenu(more) }
 	controls := container.NewVBox(container.NewHBox(terminal, editor), container.NewHBox(note, activity, more))

@@ -49,13 +49,17 @@ func TestShellReservesCompactRailAndResponsiveWorkspace(t *testing.T) {
 func shellAddControl(t *testing.T, panel *RepoPanel) fyne.Tappable {
 	t.Helper()
 	var found fyne.Tappable
+	expectedLabel := "Add repository"
+	if panel.keyboardActive {
+		expectedLabel = shortcutLabel(expectedLabel, "a")
+	}
 	walkPolish(panel.Content(), func(obj fyne.CanvasObject) {
 		tap, ok := obj.(fyne.Tappable)
 		if !ok {
 			return
 		}
 		walkPolish(obj, func(child fyne.CanvasObject) {
-			if text, ok := child.(*measuredText); ok && text.full == "Add repository" {
+			if text, ok := child.(*measuredText); ok && text.full == expectedLabel {
 				found = tap
 			}
 		})
