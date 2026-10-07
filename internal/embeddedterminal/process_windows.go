@@ -156,7 +156,10 @@ func Start(ctx context.Context, dir string, argv []string, rows, cols uint16) (_
 	if err != nil {
 		return nil, err
 	}
-	if err = attrs.Update(windows.PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, unsafe.Pointer(&console), unsafe.Sizeof(console)); err != nil {
+	// UpdateProcThreadAttribute expects the HPCON value itself as lpValue, not
+	// a pointer to it. Reinterpret the handle bits as a pointer-sized value so
+	// the child attaches to this pseudoconsole instead of inheriting our stdio.
+	if err = attrs.Update(windows.PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, *(*unsafe.Pointer)(unsafe.Pointer(&console)), unsafe.Sizeof(console)); err != nil {
 		return nil, err
 	}
 	job, err = windows.CreateJobObject(nil, nil)
@@ -186,6 +189,10 @@ func Start(ctx context.Context, dir string, argv []string, rows, cols uint16) (_
 	si := windows.StartupInfoEx{}
 	si.Cb = uint32(unsafe.Sizeof(si))
 	si.ProcThreadAttributeList = attrs.List()
+	// When our own stdio is redirected (go test, a parent shell with pipes),
+	// the child would inherit those handles instead of the pseudoconsole's.
+	// Requesting explicit NULL std handles makes ConPTY supply its own.
+	si.Flags |= windows.STARTF_USESTDHANDLES
 	if err = ctx.Err(); err != nil {
 		return nil, err
 	}
