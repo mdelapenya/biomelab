@@ -151,10 +151,16 @@ document.querySelectorAll('a[href^="#"]').forEach(function (anchor) {
 function showModal(id, onShow) {
   var modal = document.getElementById(id);
   if (!modal) return;
+  modal._demoLastFocus = document.activeElement;
+  if (modal._demoHideTimer) clearTimeout(modal._demoHideTimer);
   if (onShow) onShow(modal);
   modal.removeAttribute('hidden');
   document.body.classList.add('rgt-modal-open');
-  requestAnimationFrame(function () { modal.classList.add('open'); });
+  requestAnimationFrame(function () {
+    modal.classList.add('open');
+    var first = modal.querySelector('button, input, textarea, select, [tabindex]');
+    if (first) first.focus({ preventScroll: true });
+  });
 }
 function hideModal(id, onHide) {
   var modal = document.getElementById(id);
@@ -162,8 +168,21 @@ function hideModal(id, onHide) {
   if (onHide) onHide();
   modal.classList.remove('open');
   document.body.classList.remove('rgt-modal-open');
-  setTimeout(function () { modal.setAttribute('hidden', ''); }, 200);
+  modal._demoHideTimer = setTimeout(function () { modal.setAttribute('hidden', ''); }, 200);
+  if (modal._demoLastFocus && document.contains(modal._demoLastFocus)) modal._demoLastFocus.focus({ preventScroll: true });
 }
+
+// Keep keyboard focus inside whichever demo dialog is open.
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Tab') return;
+  var modal = document.querySelector('.rgt-modal.open:not([hidden])');
+  if (!modal) return;
+  var items = Array.from(modal.querySelectorAll('button, input, textarea, select, [tabindex="0"]')).filter(function (el) { return !el.disabled && el.getClientRects().length; });
+  var first = items[0], last = items[items.length - 1];
+  if (items.length && (!modal.contains(document.activeElement) || (e.shiftKey && document.activeElement === first) || (!e.shiftKey && document.activeElement === last))) {
+    e.preventDefault(); (e.shiftKey ? last : first).focus();
+  }
+}, true);
 
 // Regent activity modal — select a card and press 'l' to view sample logs.
 (function () {
@@ -343,46 +362,26 @@ function hideModal(id, onHide) {
   ];
 })();
 
-// Kanban / grid toggle — press 'g' to switch views
+// The demo shares the desktop view cycle; g keeps its legacy Board/Grid toggle.
 (function () {
   var diagram = document.querySelector('.kanban-diagram-html');
-  var title   = document.querySelector('#kb-title');
-  var hint    = document.querySelector('.kb-footer-hint .kb-footer-mode');
-  var STORE_KEY = 'kb-view';
-
-  function getHintHTML(mode) {
-    if (mode === 'grid') {
-      return 'Press <kbd class="kb-g-glow">g</kbd> to return to kanban board';
-    } else {
-      return 'Try <kbd class="kb-g-glow">g</kbd> for grid view';
-    }
+  var modes = ['board', 'list', 'grid'];
+  var mode = localStorage.getItem('kb-view') || 'board';
+  function setView(next) {
+    mode = modes.indexOf(next) >= 0 ? next : 'board';
+    diagram.classList.toggle('kb-view-grid', mode === 'grid');
+    diagram.classList.toggle('kb-view-list', mode === 'list');
+    document.getElementById('kb-view-label').textContent = mode.charAt(0).toUpperCase() + mode.slice(1);
+    localStorage.setItem('kb-view', mode);
   }
-
-  function setView(mode) {
-    // The diagram title stays as the page's inviting CTA in both
-    // views — only the layout class and the footer hint flip on the
-    // 'g' toggle.
-    if (mode === 'grid') {
-      diagram.classList.add('kb-view-grid');
-      hint.innerHTML = getHintHTML('grid');
-    } else {
-      diagram.classList.remove('kb-view-grid');
-      hint.innerHTML = getHintHTML('kanban');
-    }
-    localStorage.setItem(STORE_KEY, mode);
-  }
-
-  // Restore saved preference
-  var saved = localStorage.getItem(STORE_KEY);
-  if (saved === 'grid') setView('grid');
-
+  function cycle() { setView(modes[(modes.indexOf(mode) + 1) % modes.length]); }
+  document.getElementById('kb-switch-view').addEventListener('click', cycle);
+  setView(mode);
   document.addEventListener('keydown', function (e) {
-    // Ignore when focus is in an input / textarea
-    var tag = document.activeElement && document.activeElement.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-    if (e.key === 'g' || e.key === 'G') {
-      setView(diagram.classList.contains('kb-view-grid') ? 'kanban' : 'grid');
-    }
+    if (!diagram.contains(document.activeElement) || document.activeElement.matches('input, textarea, select, [contenteditable]')) return;
+    if (e.ctrlKey || e.metaKey || e.altKey || document.querySelector('.rgt-modal:not([hidden])')) return;
+    if (e.key.toLowerCase() === 'v') { cycle(); e.preventDefault(); }
+    if (e.key.toLowerCase() === 'g') { setView(mode === 'board' ? 'grid' : 'board'); e.preventDefault(); }
   });
 })();
 
@@ -555,6 +554,8 @@ function hideModal(id, onHide) {
   function renderAll() {
     renderBoard();
     renderGrid();
+    document.querySelector('.kb-list').innerHTML = STATE.cards.map(function (c) { return cardHTML(c, 'grid'); }).join('');
+    renderInspector();
     document.querySelectorAll('.kb-card[data-kb]').forEach(wireCard);
     if (STATE.selectedCardId) applySelection(STATE.selectedCardId);
   }
@@ -574,6 +575,23 @@ function hideModal(id, onHide) {
   function selectCard(id) {
     STATE.selectedCardId = id;
     applySelection(id);
+    renderInspector();
+  }
+
+  function renderInspector() {
+    var id = STATE.selectedCardId;
+    var c = getCard(id);
+    document.getElementById('kb-inspector-title').textContent = id === 'main' ? 'Main · main' : c ? c.branch : 'Select a worktree';
+    document.getElementById('kb-inspector-details').textContent = id === 'main'
+      ? '~/sourcecode/biomelab · sample main checkout · ' + (STATE.mainSync === 'behind' ? 'behind remote' : 'up-to-date')
+      : c ? 'Sample checkout · ' + (STAGE_LABEL[c.stage] || c.stage) + ' · ' + (c.prNumber ? 'PR #' + c.prNumber + ' ' + c.prState : 'no PR') + ' · ' + (c.agent || 'no agent')
+      : 'Click Main or a linked worktree to inspect the sample checkout.';
+    var actions = id ? [['Enter', 'Terminal'], ['e', 'Editor'], ['m', 'Note'], ['l', 'Regent log'], ['p', 'Pull'], ['r', 'Refresh']] : [];
+    if (id === 'main') actions.push(['c', 'New worktree'], ['f', 'Fetch PR']);
+    if (c) actions.push(['P', 'Send PR'], ['d', 'Delete worktree']);
+    document.querySelector('.kb-inspector-actions').innerHTML = actions.map(function (action) {
+      return '<button type="button" data-demo-action="' + action[0] + '">' + action[1] + ' [' + (action[0] === 'P' ? 'Shift+P' : action[0]) + ']</button>';
+    }).join('');
   }
 
   function getCard(id) {
@@ -617,6 +635,7 @@ function hideModal(id, onHide) {
       syncEl.textContent = '↕ up-to-date';
     }
     pulseCard('main');
+    renderInspector();
   }
 
   function startMainSyncCycle() {
@@ -821,7 +840,7 @@ function hideModal(id, onHide) {
   // card; blur also commits (clicking elsewhere). selectionStart/End
   // place the caret at the end so users can append-or-overwrite at will.
   function focusBranchEdit(currentId) {
-    var input = document.querySelector('.kb-card[data-kb="' + cssEsc(currentId) + '"] .kb-branch-edit');
+    var input = Array.from(document.querySelectorAll('.kb-card[data-kb="' + cssEsc(currentId) + '"] .kb-branch-edit')).find(function (el) { return el.getClientRects().length; });
     if (!input) return;
     input.focus();
     input.setSelectionRange(0, input.value.length); // select-all for easy overwrite
@@ -838,6 +857,7 @@ function hideModal(id, onHide) {
         STATE.cards = STATE.cards.filter(function (c) { return c.id !== currentId; });
         STATE.selectedCardId = null;
         renderAll();
+        board.focus({ preventScroll: true });
         return;
       }
       // Update id + branch. selectedCardId follows the rename so
@@ -848,6 +868,7 @@ function hideModal(id, onHide) {
       STATE.selectedCardId = newName;
       renderAll();
       pulseCard(newName);
+      board.focus({ preventScroll: true });
     }
     function cancel() {
       if (committed) return;
@@ -855,10 +876,11 @@ function hideModal(id, onHide) {
       STATE.cards = STATE.cards.filter(function (c) { return c.id !== currentId; });
       STATE.selectedCardId = null;
       renderAll();
+      board.focus({ preventScroll: true });
     }
     input.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') { e.preventDefault(); commit(); }
-      else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); commit(); }
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancel(); }
     });
     input.addEventListener('blur', commit);
   }
@@ -872,7 +894,7 @@ function hideModal(id, onHide) {
     var id = STATE.selectedCardId;
     openConfirmModal(
       'Delete worktree',
-      "Delete worktree '" + id + "'?\n\nThis removes the directory, branch, and metadata.",
+      "Delete worktree '" + id + "'?\n\nThis removes the sample worktree from the playground.",
       'Delete',
       function () {
         STATE.cards = STATE.cards.filter(function (c) { return c.id !== id; });
@@ -1197,8 +1219,10 @@ function hideModal(id, onHide) {
 
   document.addEventListener('keydown', function (e) {
     var tag = document.activeElement && document.activeElement.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if ((tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || document.activeElement.isContentEditable) && !(e.key === 'Escape' && document.querySelector('.rgt-modal.open:not([hidden])'))) return;
+    if (e.key === 'Enter' && tag === 'BUTTON') return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (!board.contains(document.activeElement) && !document.querySelector('.rgt-modal:not([hidden])')) return;
     var rgtModal     = document.getElementById('rgt-modal');
     var noteModal    = document.getElementById('note-modal');
     var helpModal    = document.getElementById('kb-help-modal');
@@ -1233,6 +1257,13 @@ function hideModal(id, onHide) {
       if (e.key === 'Escape') { closeConfirmModal(); e.preventDefault(); }
       else if (e.key === 'Enter') { confirmYes(); e.preventDefault(); }
       return;
+    }
+    if (/^Arrow(Up|Down|Left|Right)$/.test(e.key)) {
+      var ids = ['main'].concat(STATE.cards.map(function (c) { return c.id; }));
+      var index = ids.indexOf(STATE.selectedCardId);
+      var step = e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 1;
+      selectCard(ids[Math.max(0, Math.min(ids.length - 1, index + step))]);
+      e.preventDefault(); return;
     }
     if (e.key === '?') { openHelpModal(); e.preventDefault(); return; }
 
@@ -1286,9 +1317,13 @@ function hideModal(id, onHide) {
       case 'P': sendPR(); return;
       case 's': showToast('Starting stopped sandbox…'); return;
       case 'S': showToast('Stopping running sandbox…'); return;
-      case '⏎':
+      case 'Enter': case '⏎':
         if (STATE.selectedCardId) openTerminalModal();
         else showToast('Select a card first (click one)');
+        return;
+      case '?': openHelpModal(); return;
+      case 'v':
+        document.getElementById('kb-switch-view').click();
         return;
       case 'g':
         // Delegate to the existing kanban toggle by dispatching a
@@ -1297,6 +1332,11 @@ function hideModal(id, onHide) {
         return;
     }
   }
+  board.addEventListener('click', function (e) {
+    var action = e.target.closest('[data-demo-action]');
+    if (action) fireByCap(action.dataset.demoAction);
+    if (!e.target.closest('button, input, textarea, select')) board.focus({ preventScroll: true });
+  });
   // Delegate so both the page-load key-items AND the clones inside the
   // '?' help modal trigger the same actions.
   document.addEventListener('click', function (e) {
@@ -1304,7 +1344,8 @@ function hideModal(id, onHide) {
     if (!item) return;
     var cap = item.querySelector('.key-cap');
     if (!cap) return;
-    fireByCap(cap.textContent.trim());
+    closeHelpModal();
+    fireByCap(cap.dataset.demoKey || cap.textContent.trim());
   });
 
   // ── Modal close handlers (delegated) ───────────────────────────

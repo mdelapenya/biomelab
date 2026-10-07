@@ -178,7 +178,7 @@
         </div>
         <div class="feature-card"><span class="icon">⌨️</span>
           <h3>Keyboard-first</h3>
-          <p>Browse worktrees in Board or List, inspect checkout and request details, and use visible actions or contextual shortcuts. Dark/light themes, zoom, and tray controls keep the desktop app close at hand. Press <code>?</code> on this page for demo shortcuts.</p>
+          <p>Browse worktrees in Board, List, or Grid, inspect checkout and request details, and use visible actions or contextual shortcuts. Dark/light themes, zoom, and tray controls keep the desktop app close at hand. Focus the playground and press <code>?</code> for demo shortcuts.</p>
         </div>
       </div>
     </div>
@@ -352,9 +352,10 @@
     <div class="container">
       <span class="section-label">Playground</span>
       <h2>See every PR's lifecycle <span class="kb-accent">at a glance</span></h2>
-      <p class="kanban-intro">The desktop app offers Board and List views with a selected-worktree inspector, plus Grid. This sample demo shows the five lifecycle columns; press <kbd>g</kbd> here to switch to the grid and back.</p>
-      <p class="demo-disclaimer">Interactive demo with sample data. Terminal, editor, PR, and sandbox actions are simulated; nothing connects to your repositories. <kbd>?</kbd> opens website-only help. See the <a href="https://github.com/mdelapenya/biomelab/blob/main/docs/dashboard.md">desktop guide</a> for contextual shortcuts and dialogs.</p>
-      <div class="kanban-diagram-html">
+      <p class="kanban-intro">The desktop app offers Board and List views with a selected-worktree inspector, plus Grid. This sample demo shares selection across all three views. Focus the playground and press <kbd>v</kbd> to cycle Board → List → Grid.</p>
+      <p class="demo-disclaimer">Interactive demo with sample data. Terminal, editor, PR, and sandbox actions are simulated; nothing connects to your repositories. <kbd>?</kbd> opens website-only help while the playground is focused. Arrow keys select a sample worktree. Browser shortcuts such as Cmd/Ctrl+T keep their usual behavior; desktop theme and inspector shortcuts are available in the desktop app. See the <a href="https://github.com/mdelapenya/biomelab/blob/main/docs/dashboard.md">desktop guide</a> for contextual shortcuts and dialogs.</p>
+      <div class="kanban-diagram-html" tabindex="0" aria-label="Interactive sample worktree playground">
+        <div class="kb-toolbar"><span id="kb-view-label">Board</span><button type="button" id="kb-switch-view">Switch view [v]</button><button type="button" data-demo-action="c">New worktree [c]</button><button type="button" data-demo-action="?">Help [?]</button></div>
         <h4 class="diagram-title" id="kb-title">Try the playground · press <kbd class="kb-g-glow">c</kbd> to start</h4>
 
         <!-- Main worktree row — always visible above both views, just
@@ -373,6 +374,7 @@
           </span>
         </div>
 
+        <div class="kb-workspace"><div class="kb-views">
         <div class="kb-board">
 
           <!-- Column 0: Closed Unmerged -->
@@ -658,8 +660,10 @@
           </div>
         </div><!-- /.kb-grid -->
 
+        <div class="kb-list" aria-label="Worktree list"></div>
+        </div><aside class="kb-inspector" aria-label="Selected worktree inspector"><h4 id="kb-inspector-title">Select a worktree</h4><p id="kb-inspector-details">Click Main or a linked worktree to inspect the sample checkout.</p><div class="kb-inspector-actions"></div></aside></div>
         <div class="kb-footer-hint">
-          <span class="kb-footer-mode">Try <kbd class="kb-g-glow">g</kbd> for grid view</span>
+          <span class="kb-footer-mode">Switch view <kbd class="kb-g-glow">v</kbd> · Board → List → Grid</span>
           <span class="kb-footer-sep">·</span>
           <span class="kb-footer-cta">Try <kbd class="kb-g-glow">n</kbd> for sandbox setup · <kbd class="kb-g-glow">?</kbd> for keybindings</span>
         </div>
@@ -844,7 +848,7 @@ gh pr create --title <span class="notes-arg">"$(cat .biomelab/pr-title.md)"</spa
     <div class="rgt-modal-overlay" data-kbhelp-close></div>
     <div class="rgt-modal-window">
       <header class="rgt-modal-head">
-        <h3 id="kb-help-title">Keyboard shortcuts</h3>
+        <h3 id="kb-help-title">Playground shortcuts</h3>
         <button class="rgt-modal-close" data-kbhelp-close aria-label="Close">×</button>
       </header>
       <div class="rgt-modal-body" id="kb-help-body">
@@ -855,13 +859,13 @@ gh pr create --title <span class="notes-arg">"$(cat .biomelab/pr-title.md)"</spa
           <div class="key-item"><span class="key-cap key-yellow">m</span><span class="key-action">Open note editor</span></div>
           <div class="key-item"><span class="key-cap key-magenta">l</span><span class="key-action">Open regent log</span></div>
           <div class="key-item"><span class="key-cap key-blue">f</span><span class="key-action">Fetch GitHub PR</span></div>
-          <div class="key-item"><span class="key-cap key-cyan">g</span><span class="key-action">Toggle kanban / grid</span></div>
-          <div class="key-item"><span class="key-cap">n</span><span class="key-action">New sandbox (projects panel)</span></div>
+          <div class="key-item"><span class="key-cap key-cyan">v</span><span class="key-action">Switch view: Board → List → Grid</span></div>
+          <div class="key-item"><span class="key-cap">n</span><span class="key-action">Sample sandbox setup</span></div>
           <div class="key-item"><span class="key-cap key-orange">p</span><span class="key-action">Pull from remote</span></div>
-          <div class="key-item"><span class="key-cap key-magenta">P</span><span class="key-action">Send PR</span></div>
+          <div class="key-item"><span class="key-cap key-magenta" data-demo-key="P">Shift+P</span><span class="key-action">Send PR</span></div>
           <div class="key-item"><span class="key-cap">r</span><span class="key-action">Refresh card</span></div>
           <div class="key-item"><span class="key-cap key-green">s</span><span class="key-action">Start sandbox</span></div>
-          <div class="key-item"><span class="key-cap key-red">S</span><span class="key-action">Stop sandbox</span></div>
+          <div class="key-item"><span class="key-cap key-red" data-demo-key="S">Shift+S</span><span class="key-action">Stop sandbox</span></div>
           <div class="key-item"><span class="key-cap key-yellow">⏎</span><span class="key-action">Open in terminal</span></div>
         </div>
       </div>
