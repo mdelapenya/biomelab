@@ -8,7 +8,6 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
-	"fyne.io/fyne/v2/widget"
 
 	"github.com/mdelapenya/biomelab/internal/sandbox"
 )
@@ -37,7 +36,7 @@ func TestConfirmCreateSandboxBoundsLongCommand(t *testing.T) {
 	}
 
 	var commandText *canvas.Text
-	walkSetupContent(win.Canvas().Overlays().Top().(*widget.PopUp).Content, func(obj fyne.CanvasObject) {
+	walkSetupContent(requirePopup(t, win.Canvas().Overlays().Top()).Content, func(obj fyne.CanvasObject) {
 		if scroll, ok := obj.(*container.Scroll); ok {
 			if text, ok := scroll.Content.(*canvas.Text); ok && text.Text == wantCommand {
 				commandText = text

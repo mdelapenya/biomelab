@@ -536,3 +536,23 @@ func TestRefreshDoesNotRevealSelectionUserScrolledAwayFrom(t *testing.T) {
 		t.Fatal("PR stage update interrupted manual browsing")
 	}
 }
+
+// Fyne 2.8 wraps popups in an overlay container. Find the public popup through
+// its renderer instead of depending on the canvas overlay's concrete type.
+func popupFromOverlay(obj fyne.CanvasObject) (*widget.PopUp, bool) {
+	var popup *widget.PopUp
+	walkPolish(obj, func(o fyne.CanvasObject) {
+		if p, ok := o.(*widget.PopUp); ok && popup == nil {
+			popup = p
+		}
+	})
+	return popup, popup != nil
+}
+func requirePopup(t *testing.T, obj fyne.CanvasObject) *widget.PopUp {
+	t.Helper()
+	p, ok := popupFromOverlay(obj)
+	if !ok {
+		t.Fatal("expected popup overlay")
+	}
+	return p
+}

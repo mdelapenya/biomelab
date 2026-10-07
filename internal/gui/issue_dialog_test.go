@@ -8,7 +8,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
-	"fyne.io/fyne/v2/widget"
 
 	"github.com/mdelapenya/biomelab/internal/github"
 )
@@ -68,7 +67,7 @@ func TestIssuePreviewBoundsLongContent(t *testing.T) {
 	if got := p.MinSize(); got.Width > 1200 || got.Height > 700 {
 		t.Fatalf("dialog minimum size %v exceeds a 1200x700 application window", got)
 	}
-	popup, ok := w.Canvas().Overlays().Top().(*widget.PopUp)
+	popup, ok := popupFromOverlay(w.Canvas().Overlays().Top())
 	if !ok {
 		t.Fatal("issue preview did not create a popup overlay")
 	}

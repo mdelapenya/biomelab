@@ -1,0 +1,74 @@
+# Biomelab terminal compatibility patch
+
+This directory is a source snapshot of `github.com/fyne-io/terminal` at
+`c8f30fa130e35b342233cf2ee3171d3a161039bd` (2026-09-27), with its LICENSE and
+upstream tests retained. The root module uses an explicit local `replace` so
+builds do not depend on an unpublished fork or mutate the Go module cache.
+Only the library, tests, and test fixtures are included; the upstream executable
+and promotional assets are omitted.
+
+The scrollback implementation is adapted from
+[fyne-io/terminal PR 147](https://github.com/fyne-io/terminal/pull/147), head
+`0de34d0c3536a94bb32ce85d88fdfcf42716214b`, retrieved 2026-10-07. It was rebased
+onto the snapshot above, preserving newer alternate-screen and escape handling.
+This is a local compatibility patch, not an upstream release.
+
+## Local changes
+
+- Bounded scrollback (1,000 lines), scroll-container rendering, and screen versus
+  history coordinates, adapted from PR 147. Alternate-screen programs do not
+  append their screen contents to normal shell history.
+- Correct modified cursor sequences through TypedKey and TypedShortcut,
+  Shift+Tab, DEL backspace, and an explicit Ctrl+Shift+Space callback.
+- Parse each output batch and refresh its cursor together on the UI thread.
+  Per-character queued updates previously left the native cursor one batch
+  behind; the software test driver hid this by running callbacks inline.
+- Retain incomplete UTF-8 across reads instead of dropping split characters.
+- Optional indexed-color palette hook, used by Biomelab for readable ANSI colors
+  in both themes, including retained history. Explicit RGB colors stay unchanged.
+- `AttachWriter`, `Feed`, `Dimensions`, and `OnResize` provide an app-owned
+  transport integration. Biomelab calls these on the Fyne thread; it does not
+  call RunLocalShell or RunWithConnection. Output parsing and canvas mutation
+  therefore happen on the same thread, and resize delivery is direct.
+- Preserve viewport geometry and cursor bounds while resizing. Ignore transient
+  zero-cell layouts when rebuilding the workspace, retaining the last valid
+  PTY dimensions.
+- `Feed` preserves the scroll position when reading earlier output and follows
+  the bottom when already there. The scroll wheel never sends unconditional
+  cursor-key input into the shell.
+- The module's minimum Go version and Fyne requirement match the Fyne 2.8 line.
+
+The application owns process cancellation, input queuing, PTY cleanup, and
+process reaping in `internal/embeddedterminal`. The upstream Run APIs are retained
+for provenance and upstream tests; their concurrency behavior is not the
+application's integration contract.
+
+## Validation and upstream candidates
+
+Run from the Biomelab repository root so its dependency selection is used:
+
+```sh
+go test github.com/fyne-io/terminal/...
+go test -race github.com/fyne-io/terminal/... -run TestEmbedded
+```
+
+`embedded_test.go` covers the focused shortcut path, Tab/Escape ownership,
+alternate-screen history restoration, history bounds, split UTF-8, and resizing.
+`render_test.go` checks font sizes and uses a queued driver to verify that
+output and cursor state are current when Feed returns. The updated existing input tests expect valid Shift+arrow sequences and DEL.
+The root Taskfile and CI run compatibility tests explicitly because `./...`
+does not traverse nested modules.
+
+Prepare separate upstream contributions for modified-key encoding and split
+UTF-8 handling. Coordinate the scrollback fixes with PR 147. The Feed/resize API
+needs maintainer discussion before proposing a public API change. Before each
+contribution, reproduce against the then-current upstream head, check for
+existing fixes, and separate application-specific keybindings from library fixes.
+A broader race run also reports races in the retained `TestTerminal_Close`
+(`RunLocalShell` startup versus `Write`/`Close`). This is outside Biomelab's
+app-owned transport path; reproduce against unmodified upstream before filing.
+The integration race checks above deliberately target the embedded API.
+No contribution has been published from this worktree.
+
+When upstream covers these needs, remove this replacement and snapshot only
+after the same integration tests pass with the selected upstream version.

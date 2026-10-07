@@ -35,7 +35,7 @@ func TestDependenciesOwnModalAndAllActionsDismissWithEscape(t *testing.T) {
 			t.Fatal("Dependencies stacked another dialog over its modal")
 		}
 		var action *dialogButton
-		walkPolish(w.Canvas().Overlays().Top().(*widget.PopUp).Content, func(obj fyne.CanvasObject) {
+		walkPolish(requirePopup(t, w.Canvas().Overlays().Top()).Content, func(obj fyne.CanvasObject) {
 			if b, ok := obj.(*dialogButton); ok && b.Text == target {
 				action = b
 			}

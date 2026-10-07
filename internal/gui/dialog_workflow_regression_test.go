@@ -12,7 +12,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
-	"fyne.io/fyne/v2/widget"
 
 	"github.com/mdelapenya/biomelab/internal/git"
 )
@@ -174,7 +173,7 @@ func TestRemoteSelectionScrollsToLastOptionInsideWindow(t *testing.T) {
 	selected, closed := -1, 0
 	d := showSendPRRemoteSelection(w, remotes, func() { closed++ }, func(index int) { selected = index })
 	defer d.Hide()
-	popup := w.Canvas().Overlays().Top().(*widget.PopUp)
+	popup := requirePopup(t, w.Canvas().Overlays().Top())
 	if popup.Size().Height > w.Canvas().Size().Height {
 		t.Fatal("remote list grew beyond the window")
 	}

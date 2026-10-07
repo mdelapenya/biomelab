@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -20,6 +21,7 @@ type keyboardCanvas struct {
 	fyne.Canvas
 	down, up  func(*fyne.KeyEvent)
 	modifiers fyne.KeyModifier
+	shortcuts fyne.ShortcutHandler
 }
 
 func (c *keyboardCanvas) OnKeyDown() func(*fyne.KeyEvent)     { return c.down }
@@ -49,13 +51,29 @@ func (c *keyboardCanvas) press(name fyne.KeyName) {
 			}
 			focused.TypedShortcut(shortcut)
 		} else {
-			c.Canvas.(fyne.Shortcutable).TypedShortcut(shortcut)
+			// Fyne 2.8's test canvas hides TypedShortcut behind its exported
+			// WindowlessCanvas field. Unwrap only that test adapter.
+			target := c.Canvas
+			if field := reflect.ValueOf(target).Elem().FieldByName("WindowlessCanvas"); field.IsValid() && field.CanInterface() {
+				target = field.Interface().(fyne.Canvas)
+			}
+			if sh, ok := target.(fyne.Shortcutable); ok {
+				sh.TypedShortcut(shortcut)
+			} else {
+				c.shortcuts.TypedShortcut(shortcut)
+			}
 		}
 		return
 	}
 	if name == fyne.KeyTab {
-		c.FocusNext()
-		return
+		if tab, ok := c.Focused().(fyne.Tabbable); !ok || !tab.AcceptsTab() {
+			if c.modifiers == fyne.KeyModifierShift {
+				c.FocusPrevious()
+			} else {
+				c.FocusNext()
+			}
+			return
+		}
 	}
 	if focused := c.Focused(); focused != nil {
 		focused.TypedKey(event)
@@ -294,4 +312,9 @@ func TestDependencyBannerPreservesCanvasKeyboardEvents(t *testing.T) {
 	if c.Focused() != nil {
 		t.Fatalf("dependency banner captured canvas keyboard focus: %T", c.Focused())
 	}
+}
+
+func (c *keyboardCanvas) AddShortcut(s fyne.Shortcut, fn func(fyne.Shortcut)) {
+	c.Canvas.AddShortcut(s, fn)
+	c.shortcuts.AddShortcut(s, fn)
 }

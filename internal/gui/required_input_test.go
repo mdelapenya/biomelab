@@ -6,7 +6,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
-	"fyne.io/fyne/v2/widget"
 )
 
 func TestFetchPRRequiresNonblankReference(t *testing.T) {
@@ -85,7 +84,7 @@ func TestSandboxRequiresAgentOrKitsBeforeContinuing(t *testing.T) {
 				})
 				var agent, kits *dialogSelect
 				var next *dialogButton
-				walkSetupContent(w.Canvas().Overlays().Top().(*widget.PopUp).Content, func(o fyne.CanvasObject) {
+				walkSetupContent(requirePopup(t, w.Canvas().Overlays().Top()).Content, func(o fyne.CanvasObject) {
 					switch control := o.(type) {
 					case *dialogSelect:
 						if agent == nil {

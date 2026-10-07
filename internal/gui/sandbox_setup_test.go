@@ -12,7 +12,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
-	"fyne.io/fyne/v2/widget"
 
 	"github.com/mdelapenya/biomelab/internal/config"
 	"github.com/mdelapenya/biomelab/internal/kits"
@@ -45,7 +44,7 @@ func TestSandboxPromptAgentAndOptionalKits(t *testing.T) {
 			})
 			var sel *dialogSelect
 			var addKits *dialogSelect
-			walkSetupContent(win.Canvas().Overlays().Top().(*widget.PopUp).Content, func(obj fyne.CanvasObject) {
+			walkSetupContent(requirePopup(t, win.Canvas().Overlays().Top()).Content, func(obj fyne.CanvasObject) {
 				switch w := obj.(type) {
 				case *dialogSelect:
 					if sel == nil {
@@ -153,7 +152,7 @@ func TestRegisterExistingSandboxChoiceOwnsModalAndCanCancel(t *testing.T) {
 			d.Hide()
 		case "escape":
 			var keyCap *dialogKeyCapture
-			walkSetupContent(win.Canvas().Overlays().Top().(*widget.PopUp).Content, func(obj fyne.CanvasObject) {
+			walkSetupContent(requirePopup(t, win.Canvas().Overlays().Top()).Content, func(obj fyne.CanvasObject) {
 				if capture, ok := obj.(*dialogKeyCapture); ok {
 					keyCap = capture
 				}
