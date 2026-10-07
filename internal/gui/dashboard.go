@@ -460,24 +460,10 @@ func (d *Dashboard) header() fyne.CanvasObject {
 	context := newMeasuredText(mode+" · Local "+local+" · Network "+network, colorDimGray, false, false, false)
 	context.txt.TextSize = scaledSize(textSecondarySize)
 	board := newActionControl("Board", nil, false, func() { d.setView(ViewKanban) })
-	if d.state.ViewMode != ViewKanban {
-		board.keyHint = "g"
-	}
 	board.selected = d.state.ViewMode == ViewKanban
 	list := newActionControl("List", nil, false, func() { d.setView(ViewList) })
-	if d.state.ViewMode == ViewKanban {
-		list.keyHint = "v"
-	}
 	list.selected = d.state.ViewMode == ViewList
 	grid := newActionControl("Grid", nil, false, func() { d.setView(ViewGrid) })
-	switch d.state.ViewMode {
-	case ViewKanban:
-		grid.keyHint = "g"
-	case ViewList:
-		grid.keyHint = "v"
-	default:
-		board.keyHint = "g or v"
-	}
 	grid.selected = d.state.ViewMode == ViewGrid
 	refresh := newActionControl("Refresh", theme.ViewRefreshIcon(), false, func() {
 		if d.OnRefresh != nil {
@@ -590,7 +576,7 @@ func (d *Dashboard) mainSummary(wt git.Worktree) fyne.CanvasObject {
 
 func (d *Dashboard) helpBar() fyne.CanvasObject {
 	hint := shortcutLabel
-	viewKeys := hint("Board/Grid", "g") + " · " + hint("Cycle view", "v")
+	viewKeys := hint("Switch view", "v")
 	text := "Projects · " + hint("Select mode", "↑ ↓") + " · " + hint("Add repository", "a") + " · " + hint("Add sandbox mode", "n") + " · " + hint("Remove mode", "x") + " · " + hint("Worktrees", "Enter or Tab")
 	if d.keyboardActive {
 		arrows := "↑ ↓ ← →"

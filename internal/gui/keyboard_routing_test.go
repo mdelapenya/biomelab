@@ -226,9 +226,17 @@ func TestWorkspaceShortcutStripWrapsAcrossInspector(t *testing.T) {
 		if footer.Size().Width != root.Size().Width || len(text.lines(text.Size().Width)) < 2 {
 			t.Fatal("shortcut strip is truncated inside browser pane")
 		}
-		for _, hint := range []string{"Board/Grid [g]", "Cycle view [v]", shortcutLabel("Inspector", platformShortcut("I")), "Terminal [Enter]", "Send PR [Shift+P]", shortcutLabel("Theme", platformShortcut("T")), shortcutLabel("Reset zoom", platformShortcut("0"))} {
+		for _, hint := range []string{"Switch view [v]", shortcutLabel("Inspector", platformShortcut("I")), "Terminal [Enter]", "Send PR [Shift+P]", shortcutLabel("Theme", platformShortcut("T")), shortcutLabel("Reset zoom", platformShortcut("0"))} {
 			if !strings.Contains(text.value, hint) {
 				t.Fatalf("missing existing/new hint %q", hint)
+			}
+		}
+		if strings.Count(text.value, "Switch view [v]") != 1 || strings.Contains(text.value, "Board/Grid") || strings.Contains(text.value, "Cycle view") {
+			t.Fatalf("view hint is duplicated or retains old wording: %q", text.value)
+		}
+		for _, object := range d.header().(*fyne.Container).Objects {
+			if control, ok := object.(*actionControl); ok && (control.label == "Board" || control.label == "List" || control.label == "Grid") && control.keyHint != "" {
+				t.Errorf("%s button shows view shortcut %q", control.label, control.keyHint)
 			}
 		}
 		for _, line := range text.lines(text.Size().Width) {
