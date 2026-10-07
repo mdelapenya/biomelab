@@ -14,8 +14,7 @@ offers an explicit external-terminal action. Fyne is upgraded to 2.8.1, the
 terminal baseline is `v0.0.0-20260927151117-c8f30fa130e3`, and Unix PTY is
 1.1.24. The terminal module uses a [documented local compatibility
 patch](../third_party/fyne-terminal/BIOMELAB.md). No upstream issues, comments,
-or PRs have been posted. Native Windows desktop acceptance remains pending; see
-the [Windows reviewer handoff](windows-terminal-handoff.md).
+or PRs have been posted. Native Windows desktop acceptance remains pending.
 
 The following historical research and acceptance plan predates implementation.
 Its revision IDs describe the
@@ -160,4 +159,4 @@ For any future upstream report, first capture a minimal reproducer, dependency S
 
 Completion requires one process per deliberately opened card/context, no OS window for supported integrated actions, uninterrupted sessions while switching views, functioning terminal input and scrollback, correct final resize, and no owned-process leaks after Stop/Quit. Inspect actual light/dark, narrow-window, zoomed, Board/List/Grid, and expanded-terminal renders. Profile rapid resize and sustained output; confirm hidden sessions do not freeze navigation and memory stays bounded by the configured session/history limits.
 
-The initial documentation review did not execute application tests. Implementation validation includes the full Go suite, GUI/backend race tests, terminal compatibility tests, and rendered drawer inspection. Native Windows desktop acceptance and interactive agent/TUI acceptance on Linux and macOS ARM remain outstanding; see the [known limitations](known-limitations.md) and [Windows reviewer handoff](windows-terminal-handoff.md).
+The initial documentation review did not execute application tests. Implementation validation includes the full Go suite, GUI/backend race tests, terminal compatibility tests, and rendered drawer inspection. Native Windows desktop acceptance and interactive agent/TUI acceptance on Linux and macOS ARM remain outstanding; see the [known limitations](known-limitations.md).
