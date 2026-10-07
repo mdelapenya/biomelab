@@ -27,6 +27,36 @@ func runGit(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
+func TestCreateWorktreeNativeGitInteroperability(t *testing.T) {
+	dir, _ := setupTestRepo(t)
+	repo, err := OpenRepository(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const branch = "native-compatible"
+	if err := repo.CreateWorktree(branch); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, ".biomelab-worktrees", branch)
+	backlink, err := os.ReadFile(filepath.Join(dir, ".git", "worktrees", branch, "gitdir"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Native Git removes this literal suffix when resolving the checkout.
+	// In particular, a Windows backlink must not end in "\\.git".
+	if !strings.HasSuffix(strings.TrimSpace(string(backlink)), "/.git") {
+		t.Fatalf("backlink incompatible with native Git: %q", backlink)
+	}
+	runGit(t, dir, "worktree", "lock", path)
+	runGit(t, dir, "worktree", "unlock", path)
+	if err := repo.RemoveWorktree(branch); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("native Git did not remove checkout: %v", err)
+	}
+}
+
 func TestCreateWorktree_PreservesCollisionTargets(t *testing.T) {
 	t.Run("existing branch", func(t *testing.T) {
 		dir, raw := setupTestRepo(t)
@@ -470,13 +500,13 @@ func setupWorktreeManually(t *testing.T, repoDir, wtName, branchName string) str
 		}
 	}
 
-	writeFile(filepath.Join(metaDir, "gitdir"), filepath.Join(wtPath, ".git")+"\n")
+	writeFile(filepath.Join(metaDir, "gitdir"), filepath.ToSlash(filepath.Join(wtPath, ".git"))+"\n")
 	writeFile(filepath.Join(metaDir, "HEAD"), "ref: refs/heads/"+branchName+"\n")
 	writeFile(filepath.Join(metaDir, "commondir"), "../..\n")
 	if err := os.MkdirAll(filepath.Join(metaDir, "refs"), 0o755); err != nil {
 		t.Fatalf("failed to create refs dir: %v", err)
 	}
-	writeFile(filepath.Join(wtPath, ".git"), "gitdir: "+metaDir+"\n")
+	writeFile(filepath.Join(wtPath, ".git"), "gitdir: "+filepath.ToSlash(metaDir)+"\n")
 
 	// Create the branch reference (may need intermediate dirs for slashed names).
 	refsDir := filepath.Join(repoDir, ".git", "refs", "heads")

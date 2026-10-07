@@ -3,6 +3,7 @@ package git
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -48,7 +49,7 @@ func TestRemoveWorktreeRefusesChangedDataWithoutMutations(t *testing.T) {
 				t.Fatal(err)
 			}
 			err = repo.RemoveWorktree(branch)
-			if err == nil || !strings.Contains(err.Error(), "modified or untracked files") || !strings.Contains(err.Error(), path) {
+			if err == nil || !strings.Contains(err.Error(), "modified or untracked files") || !strings.Contains(err.Error(), strconv.Quote(path)) {
 				t.Fatalf("missing actionable refusal: %v", err)
 			}
 			data, err := os.ReadFile(file)

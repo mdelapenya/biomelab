@@ -774,6 +774,16 @@ func (r *Repository) CreateWorktree(branchName string) error {
 		if out, cliErr := cmd.CombinedOutput(); cliErr != nil {
 			return fmt.Errorf("create worktree from unborn branch: %w: %s", cliErr, strings.TrimSpace(string(out)))
 		}
+	} else if filepath.Separator == '\\' {
+		// go-git writes this backlink with OS separators. Native Git strips
+		// the literal "/.git" suffix when listing linked worktrees, so a
+		// Windows "\\.git" suffix makes it register the .git file as the
+		// checkout path instead. Normalize newly created metadata so native
+		// lock/remove commands recognize the checkout without forcing them.
+		gitdirPath := filepath.Join(metadataPath, "gitdir")
+		if err := os.WriteFile(gitdirPath, []byte(filepath.ToSlash(filepath.Join(wtFS.Root(), ".git"))+"\n"), 0o644); err != nil {
+			return fmt.Errorf("worktree created at %q, but cannot normalize its Git backlink: %w", wtPath, err)
+		}
 	}
 	// Ensure .biomelab dir exists for new worktree so external tools can write
 	// files without needing to create the directory themselves.
