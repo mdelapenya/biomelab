@@ -730,14 +730,24 @@ func (t *Terminal) Feed(data []byte) {
 		t.Refresh()
 	}
 	follow := true
-	if t.scrollContainer != nil {
-		follow = t.scrollContainer.Offset.Y >= t.scrollContainer.Content.MinSize().Height-t.scrollContainer.Size().Height-2
+	if sc := t.scrollContainer; sc != nil {
+		follow = sc.Offset.Y >= sc.Content.Size().Height-sc.Size().Height-2
 	}
 	data = append(t.feedPending, data...)
 	t.feedPending = append([]byte(nil), t.handleOutput(data)...)
 	t.Refresh()
-	if follow && t.scrollContainer != nil {
-		t.scrollContainer.ScrollToBottom()
+	if sc := t.scrollContainer; sc != nil {
+		// Scroll clamps offsets against Content.Size(), which only grows on
+		// the next layout pass. Size the content to the new history now so a
+		// burst of rows (one ConPTY/PTY read) can be followed immediately
+		// instead of resetting the viewport to the top of the scrollback.
+		min, size := sc.Content.MinSize(), sc.Content.Size()
+		if min.Height > size.Height || min.Width > size.Width {
+			sc.Content.Resize(fyne.NewSize(max(min.Width, size.Width), max(min.Height, size.Height)))
+		}
+		if follow {
+			sc.ScrollToBottom()
+		}
 	}
 }
 

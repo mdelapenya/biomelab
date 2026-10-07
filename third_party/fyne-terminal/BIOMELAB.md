@@ -34,8 +34,15 @@ This is a local compatibility patch, not an upstream release.
   zero-cell layouts when rebuilding the workspace, retaining the last valid
   PTY dimensions.
 - `Feed` preserves the scroll position when reading earlier output and follows
-  the bottom when already there. The scroll wheel never sends unconditional
-  cursor-key input into the shell.
+  the bottom when already there. It sizes the scroll content to the new history
+  before scrolling, because the Fyne scroller clamps against the content's
+  laid-out size; without that, a burst of rows arriving in one read (typical
+  of ConPTY) left the viewport pinned at the top of the scrollback. The scroll
+  wheel never sends unconditional cursor-key input into the shell.
+- The upstream exit-code tests that spawn `RunLocalShell` are skipped on
+  Windows: the retained ActiveState ConPTY path never reports an exit code
+  there, so the test would spin until the package timeout. Biomelab's Windows
+  transport lives in `internal/embeddedterminal` and has its own tests.
 - The module's minimum Go version and Fyne requirement match the Fyne 2.8 line.
 
 The application owns process cancellation, input queuing, PTY cleanup, and

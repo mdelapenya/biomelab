@@ -214,6 +214,11 @@ func (a *App) ensureCardTerminals() *cardTerminals {
 	expand := newActionControl("Expand / Restore", theme.ViewFullScreenIcon(), false, func() {
 		p.expanded = !p.expanded
 		a.dashboard.Rebuild()
+		// Tapping the control unfocused the terminal; without this the next
+		// keystrokes land on workspace shortcuts instead of the shell.
+		if s := p.sessions[p.key]; s != nil && s.running && a.window != nil {
+			a.window.Canvas().Focus(s.view)
+		}
 	})
 	var more *actionControl
 	more = newActionControl("", theme.MoreHorizontalIcon(), false, func() {

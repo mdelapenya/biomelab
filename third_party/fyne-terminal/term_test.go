@@ -3,6 +3,7 @@ package terminal
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"testing"
 	"time"
 
@@ -26,6 +27,12 @@ func TestExitCode(t *testing.T) {
 }
 
 func testExitCodeN(t *testing.T, n int) {
+	if runtime.GOOS == "windows" {
+		// The upstream Windows RunLocalShell path (ActiveState conpty) never
+		// reports an exit code, so this loop spins until the package timeout.
+		// Biomelab drives ConPTY itself; see internal/embeddedterminal.
+		t.Skip("upstream RunLocalShell exit codes are not observable on Windows")
+	}
 	term := New()
 	term.Resize(fyne.NewSize(45, 45))
 	go func() {

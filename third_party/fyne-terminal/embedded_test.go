@@ -100,3 +100,28 @@ func BenchmarkEmbeddedResize(b *testing.B) {
 		term.Resize(fyne.NewSize(float32(780+i%40), 400))
 	}
 }
+
+func TestEmbeddedFollowsOutputBurst(t *testing.T) {
+	term := New()
+	term.Refresh()
+	term.Resize(fyne.NewSize(500, 150))
+	var burst bytes.Buffer
+	for i := 0; i < 300; i++ {
+		fmt.Fprintf(&burst, "line-%d\r\n", i)
+	}
+	// ConPTY and PTYs deliver large bursts in one read; the view must still
+	// land on the newest row instead of staying at the top of the history.
+	term.Feed(burst.Bytes())
+	sc := term.scrollContainer
+	require.NotNil(t, sc)
+	bottom := sc.Content.MinSize().Height - sc.Size().Height
+	require.Greater(t, bottom, float32(0))
+	require.InDelta(t, bottom, sc.Offset.Y, 1, "viewport should follow the burst to the last row")
+	term.Feed([]byte("tail\r\n"))
+	bottom = sc.Content.MinSize().Height - sc.Size().Height
+	require.InDelta(t, bottom, sc.Offset.Y, 1, "viewport should keep following later output")
+	// A reader who scrolled up must not be yanked back down.
+	sc.ScrollToTop()
+	term.Feed([]byte("more\r\n"))
+	require.Equal(t, float32(0), sc.Offset.Y)
+}
