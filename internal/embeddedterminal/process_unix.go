@@ -21,6 +21,8 @@ import (
 type Process struct {
 	stopped chan struct{}
 	file    *os.File
+	fdMu    sync.Mutex // serializes Setsize/Fd with Close
+	closed  bool
 	cmd     *exec.Cmd
 	done    chan struct{}
 	stop    sync.Once
@@ -74,6 +76,11 @@ func (p *Process) Read(b []byte) (int, error) {
 
 func (p *Process) Write(b []byte) (int, error) { return p.file.Write(b) }
 func (p *Process) Resize(rows, cols uint16) error {
+	p.fdMu.Lock()
+	defer p.fdMu.Unlock()
+	if p.closed {
+		return io.ErrClosedPipe
+	}
 	return pty.Setsize(p.file, &pty.Winsize{Rows: max(rows, 1), Cols: max(cols, 1)})
 }
 
@@ -82,10 +89,13 @@ func (p *Process) Resize(rows, cols uint16) error {
 func (p *Process) Stop() {
 	p.stop.Do(func() {
 		_ = syscall.Kill(-p.cmd.Process.Pid, syscall.SIGHUP)
-		_ = p.file.Close()
 		p.cancel()
 		go func() {
 			defer close(p.stopped)
+			p.fdMu.Lock()
+			p.closed = true
+			_ = p.file.Close()
+			p.fdMu.Unlock()
 			timer := time.NewTimer(250 * time.Millisecond)
 			defer timer.Stop()
 			<-timer.C

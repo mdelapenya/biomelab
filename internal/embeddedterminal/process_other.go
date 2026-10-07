@@ -1,4 +1,4 @@
-//go:build !darwin && !linux
+//go:build !darwin && !linux && !windows
 
 package embeddedterminal
 
@@ -13,7 +13,7 @@ import (
 type Process struct{}
 
 func Start(context.Context, string, []string, uint16, uint16) (*Process, error) {
-	return nil, errors.New("integrated terminals currently support macOS and Linux; use Open in external terminal")
+	return nil, errors.New("integrated terminals are unavailable on this platform; use Open in external terminal")
 }
 func (*Process) Read([]byte) (int, error)    { return 0, io.EOF }
 func (*Process) Write([]byte) (int, error)   { return 0, io.ErrClosedPipe }
