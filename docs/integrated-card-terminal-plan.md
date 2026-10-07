@@ -4,15 +4,21 @@ Add a persistent terminal for each card, displayed in a resizable workspace draw
 
 Implementation started on 2026-10-07 after rebasing this branch onto `origin/main`
 at `c222218`, which includes merged PR #94. The historical terminal reference
-remains untouched. The initial macOS/Linux implementation now includes the
-persistent drawer, process lifecycle, keyboard routing, bounded scrollback, and
-external fallback. Fyne is upgraded to 2.8.1, the terminal baseline is
-`v0.0.0-20260927151117-c8f30fa130e3`, and Unix PTY is 1.1.24. The terminal module
-uses a [documented local compatibility patch](../third_party/fyne-terminal/BIOMELAB.md).
-Windows still uses the existing external terminal. No upstream issues, comments,
-or PRs have been posted.
+remains untouched. The integrated drawer now supports macOS/Linux PTY and
+Windows ConPTY, with shared session lifecycle, keyboard routing, and bounded
+scrollback. Windows ConPTY is app-owned through `x/sys/windows`; it requires
+Windows 10 version 1809 or later, or Windows 11. The default shell resolves
+`pwsh.exe -NoLogo`, `powershell.exe -NoLogo`, then `%COMSPEC%` or `cmd.exe`. If
+ConPTY is unavailable, startup reports an error and the terminal menu still
+offers an explicit external-terminal action. Fyne is upgraded to 2.8.1, the
+terminal baseline is `v0.0.0-20260927151117-c8f30fa130e3`, and Unix PTY is
+1.1.24. The terminal module uses a [documented local compatibility
+patch](../third_party/fyne-terminal/BIOMELAB.md). No upstream issues, comments,
+or PRs have been posted. Native Windows desktop acceptance remains pending; see
+the [Windows reviewer handoff](windows-terminal-handoff.md).
 
-The original research and acceptance plan follows. Its revision IDs describe the
+The following historical research and acceptance plan predates implementation.
+Its revision IDs describe the
 2026-10-06 research snapshot; the merged main revision above supersedes the
 pending-redesign integration step.
 
@@ -43,7 +49,7 @@ Adapt the feature to these current contracts:
 | `sandbox.RunAttachArgs`, `ExecAgentArgs`, and `ContainerPath` select current launch behavior | Reuse current argument builders and their tests; do not import old sandbox continuation flags |
 | The redesign exposes Main and inspector terminal callbacks alongside Enter | Route all entry points through one integrated controller and preserve existing keyboard navigation |
 | Dashboard/shell content is rebuilt for refresh, theme, zoom, and view changes | Keep session ownership outside rebuildable content and reconnect the view without restarting processes |
-| Current platform support includes Windows external terminals | Keep that path working while validating a separately implemented ConPTY backend |
+| Current platform support includes Windows external terminals | Keep explicit external open/reuse available alongside the app-owned ConPTY transport |
 
 The first implementation deliverable is an updated dependency matrix with exact versions, required patches, supported platforms, and passing baseline checks. The old prototype is consulted only after these current contracts are established.
 
@@ -154,4 +160,4 @@ For any future upstream report, first capture a minimal reproducer, dependency S
 
 Completion requires one process per deliberately opened card/context, no OS window for supported integrated actions, uninterrupted sessions while switching views, functioning terminal input and scrollback, correct final resize, and no owned-process leaks after Stop/Quit. Inspect actual light/dark, narrow-window, zoomed, Board/List/Grid, and expanded-terminal renders. Profile rapid resize and sustained output; confirm hidden sessions do not freeze navigation and memory stays bounded by the configured session/history limits.
 
-The initial documentation review did not execute application tests. Implementation validation now includes the full Go suite, GUI/backend race tests, terminal compatibility tests, and rendered drawer inspection. Native desktop acceptance for interactive agent TUIs and Windows ConPTY remains outstanding; see the known limitations.
+The initial documentation review did not execute application tests. Implementation validation includes the full Go suite, GUI/backend race tests, terminal compatibility tests, and rendered drawer inspection. Native Windows desktop acceptance and interactive agent/TUI acceptance on Linux and macOS ARM remain outstanding; see the [known limitations](known-limitations.md) and [Windows reviewer handoff](windows-terminal-handoff.md).

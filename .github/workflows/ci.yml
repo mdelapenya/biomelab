@@ -99,6 +99,10 @@ jobs:
           export BIOMELAB_CONSOLE_TRACE_DIR="$(cygpath -w "$trace_dir")"
           go test -race -count=1 -v ./internal/terminal 2>&1 | tee "$trace_dir/test.log"
 
+      - name: Test app-owned Windows ConPTY backend
+        if: always() && runner.os == 'Windows'
+        run: go test -race -count=1 -v ./internal/embeddedterminal
+
       - name: Upload Windows terminal validation logs
         if: always() && runner.os == 'Windows'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

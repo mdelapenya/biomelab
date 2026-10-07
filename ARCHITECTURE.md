@@ -64,7 +64,7 @@ internal/
   process/process.go   Shared process enumeration types (Lister, Info, OSLister)
   provider/            PRProvider interface, GitHub (gh), GitLab (glab), detection
   sandbox/sandbox.go   Docker Sandbox (sbx) CLI wrapper
-  embeddedterminal/    App-owned Unix PTY process lifecycle; unsupported-platform stub
+  embeddedterminal/    App-owned Unix PTY and Windows ConPTY process lifecycles
   terminal/            Terminal detection, launch, activation (platform-specific)
   github/pr.go         GitHub-specific PR helpers (ParsePRRef, ValidatePR)
   github/issue.go      GitHub issue reference parsing and authenticated gh lookup
@@ -498,17 +498,30 @@ label in one call.
 ## Integrated terminal ownership
 
 `terminal_drawer.go` owns a UI-thread session map keyed by canonical repository,
-worktree path, mode, sandbox, and agent. Dashboard content wraps its browser and
-inspector in a vertical split, retaining the toolbar, Main checkout, and footer.
-The map belongs to App, so dashboard rebuilds never recreate transports. Every
-asynchronous callback checks session identity before changing state or output.
+worktree path, mode, sandbox, and agent. In the normal drawer layout, dashboard
+content retains the toolbar, Main checkout, and footer. When an expanded terminal
+belongs to a linked task in List view, its owning-task header replaces the pinned
+Main card above the terminal. The map belongs to App, so dashboard rebuilds never
+recreate transports. Every asynchronous callback checks session identity before
+changing state or output.
 
-`internal/embeddedterminal` starts argv directly in a PTY on macOS/Linux, owns
-cancellation, closes the PTY, signals the process group, and reaps the child.
+`internal/embeddedterminal` starts argv directly in a PTY on macOS/Linux and a
+ConPTY on Windows. Windows requires ConPTY (Windows 10 version 1809 or later,
+or Windows 11); if it is unavailable, startup reports an error and the explicit
+Open in external terminal action remains available. The default shell is
+`pwsh.exe -NoLogo`, then `powershell.exe -NoLogo`, then `%COMSPEC%` or
+`cmd.exe`. The Windows backend uses `x/sys/windows` and starts the child
+suspended, assigns it to a kill-on-close Job Object, then resumes it, so the
+owned process tree is contained before user code can spawn descendants. Stop,
+restart, app quit, and confirmed worktree removal clean up the owned process
+tree. Removal waits for terminal cleanup off the UI thread with a bounded
+timeout; on timeout it reports an error and does not delete the worktree.
+
 The GUI queues input and applies output through the Fyne event loop with bounded
-backpressure. Final widget dimensions go directly to the PTY. App shutdown
+backpressure. Resize events are coalesced and delivered to the PTY/ConPTY by a
+worker off the UI thread. Hiding the drawer or window keeps running sessions alive; reopening a running session
+reuses it, and reopening an exited session starts a fresh process. App shutdown
 cancels transports and waits with a deadline independently of renderer workers.
-Windows continues through the existing external-terminal controller.
 
 The terminal widget is pinned to a local source snapshot in
 `third_party/fyne-terminal`; its provenance, compatibility changes, tests, and

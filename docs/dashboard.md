@@ -47,7 +47,7 @@ Detection matches local processes to worktree paths. Terminal detection follows 
 ## Everyday workflow
 
 1. Click **New Worktree**, or select the main card and press `c`, to create a branch and linked worktree under `.biomelab-worktrees/`. Creation does not automatically launch a terminal.
-2. Select its card and press `Enter` to open or focus its integrated terminal on macOS/Linux. In sandbox mode this starts or reuses the card's agent session. Windows keeps the external-terminal workflow. Press `e` to open your configured editor.
+2. Select its card and press `Enter` to open or focus its integrated terminal. On Windows this uses ConPTY (Windows 10 version 1809 or later, or Windows 11); if ConPTY is unavailable, startup reports an error and **Open in external terminal** remains available as an explicit action. In sandbox mode this starts or reuses the card's agent session. Press `e` to open your configured editor.
 3. Use `m` or right-click to prepare task notes and a PR title. See [notes and activity](notes-and-activity.md).
 4. Commit your changes, then press `Shift+P` on the linked card. Review any dirty/stash warning, choose the remote, and confirm the push and PR/MR creation. If a request already exists, BiomeLab offers push-only behavior.
 5. When finished, press `d` on a linked card and confirm deletion. This removes its directory, branch, and metadata; open IDEs remain running. The main worktree cannot be deleted this way.
@@ -119,29 +119,38 @@ Interface labels, headings, and explanatory text use proportional type; technica
 
 ## Integrated terminal
 
-On macOS and Linux, Enter, Main's Terminal action, and the inspector's Open
-Terminal action open a drawer below the worktree browser. Each worktree/mode/agent
-context retains its own shell or sandbox connection. Selecting another card shows
+Enter, Main's Terminal action, and the inspector's Open Terminal action open a
+drawer below the worktree browser on macOS, Linux, and supported Windows systems.
+Windows uses an app-owned ConPTY process. Its default shell is `pwsh.exe -NoLogo`,
+then `powershell.exe -NoLogo`, then `%COMSPEC%` or `cmd.exe`. Each
+worktree/mode/agent context retains its own shell or sandbox connection. Selecting another card shows
 its existing terminal or an Open terminal prompt; selection alone starts nothing.
 View changes, refresh, theme changes, and hiding the drawer keep sessions alive.
 
 Tab, Escape, and control keys belong to the focused terminal. Use
 **Ctrl+Shift+Space** or click a card to return to workspace navigation. Use the
 normal platform terminal clipboard shortcuts: Cmd+C/V on macOS and
-Ctrl+Shift+C/V on Linux. Scroll the viewport to read its bounded history.
+Ctrl+Shift+C/V on Linux and Windows. Scroll the viewport to read its bounded
+history.
 
 **Hide** collapses the drawer without stopping anything. **Expand / Restore**
-uses the worktree-browser area for the terminal while retaining the Main checkout
-and workspace controls. Short windows automatically use this expanded layout
+uses the worktree-browser area for the terminal while retaining workspace
+controls. While expanded, the pinned card above the terminal shows
+the selected worktree's repository, mode, task or branch, and path; restoring
+the drawer restores the Main checkout card. Short windows automatically use this expanded layout
 until there is room for both panes. The session menu offers **Stop session**, **Restart
 session**, and **Open in external terminal**. Stop/Restart asks before terminating
-a running shell or agent. Exited output stays visible for inspection; opening
-that card’s terminal again starts a fresh session. Hiding and reopening a running
-session preserves it.
+a running shell or agent. Typing `exit` and ending the shell normally releases
+terminal focus and collapses the drawer; opening that card’s terminal again
+starts a fresh session. Startup errors and abnormal exits stay visible for
+inspection. Hiding and reopening a running session preserves it.
 The external action creates or reuses a separate OS terminal; it does not transfer
 the embedded shell.
 
 Closing the window to the tray keeps sessions alive. Quitting stops owned local
-PTY processes. Removing a worktree, repository registration, or sandbox disposes
-its related terminals after the removal succeeds. Sessions and scrollback are
+PTY/ConPTY process trees. Removing a worktree first stops its related terminal
+and waits for cleanup off the UI thread; if cleanup exceeds its bounded wait,
+deletion is skipped and an error is shown. That worktree's terminal stays
+unavailable until cleanup is confirmed, then removal can be retried. Repository registration or sandbox
+removal disposes its related terminals. Sessions and scrollback are
 not restored across application restarts.
