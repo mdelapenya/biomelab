@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -213,17 +214,25 @@ func TestNaturalExitWithDescendantHoldingPTYEndsSession(t *testing.T) {
 }
 
 func TestNaturalExitKeepsOutputForSlowReader(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		// The scenario cannot arise on macOS: a session leader's exit first
+		// waits for its tty output to drain (XNU proc_exit calls ttywait),
+		// then revokes the controlling tty, so descendants lose it and the
+		// master reaches EOF at once. The PTY child is always a session
+		// leader, so there is never output left behind for the exit
+		// watcher's idle timer to cut off. CI showed both halves: the root
+		// would not exit with unread output, and with a descendant writing
+		// afterwards the read hit EOF immediately with 0 bytes.
+		t.Skip("macOS drains and revokes the tty when the session leader exits")
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	// The root exits at once, leaving a background child that ignores SIGHUP
-	// and keeps the PTY open: the case in which the exit watcher decides when
-	// the session ends. The child writes the output only after the root has
-	// exited, so the root never has unread output of its own (on macOS a
-	// session leader's exit waits for its tty to drain) and the watcher's
-	// idle timer runs on Linux and macOS alike. The reader then drains
-	// slowly, as when each chunk waits for a busy UI thread. Time spent
-	// outside Read must not count as idle, or the tail is thrown away. The
-	// output stays below the smallest PTY buffer (about 1 KiB on macOS).
+	// Linux: the root exits at once, leaving a background child that ignores
+	// SIGHUP and keeps the PTY open, the case in which the exit watcher
+	// decides when the session ends. The child writes the output after the
+	// root has exited. The reader then drains slowly, as when each chunk
+	// waits for a busy UI thread. Time spent outside Read must not count as
+	// idle, or the tail is thrown away.
 	p, err := Start(ctx, t.TempDir(), []string{"/bin/sh", "-c",
 		`trap '' HUP; (sleep 0.2; i=0; while [ $i -lt 20 ]; do echo "line $i"; i=$((i+1)); done; printf TAIL-END) & exit 0`}, 24, 80)
 	if err != nil {

@@ -328,9 +328,16 @@ func TestConPTYStopUnblocksBlockedRead(t *testing.T) {
 	readMarker(t, p, "CHILD|READY|END")
 	readDone := make(chan error, 1)
 	go func() {
+		// ConPTY may still deliver bytes queued after the marker (line
+		// endings, VT sequences); what matters is that the read that is
+		// blocked once they are consumed ends with EOF.
 		var b [1]byte
-		_, err := p.Read(b[:])
-		readDone <- err
+		for {
+			if _, err := p.Read(b[:]); err != nil {
+				readDone <- err
+				return
+			}
+		}
 	}()
 	p.Stop()
 	waitSignal(t, p.stopped, "blocked-read teardown")
