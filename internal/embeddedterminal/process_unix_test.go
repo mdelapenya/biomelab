@@ -215,22 +215,20 @@ func TestNaturalExitWithDescendantHoldingPTYEndsSession(t *testing.T) {
 func TestNaturalExitKeepsOutputForSlowReader(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	// The root writes a little output and exits at once. The reader then
-	// drains it in small chunks, slowly, as when each chunk waits for a busy
-	// UI thread. Time spent outside Read must not count as idle, or the tail
-	// is thrown away. The output stays far below the smallest PTY buffer
-	// (about 1 KiB on macOS), so the root never blocks on an unread PTY.
+	// The root writes a little output and exits. The reader drains it in
+	// small chunks, slowly, as when each chunk waits for a busy UI thread.
+	// Time spent outside Read must not count as idle, or the tail is thrown
+	// away. The output stays below the smallest PTY buffer (about 1 KiB on
+	// macOS), so the root never blocks writing it.
 	p, err := Start(ctx, t.TempDir(), []string{"/bin/sh", "-c",
 		`i=0; while [ $i -lt 20 ]; do echo "line $i"; i=$((i+1)); done; printf TAIL-END; exit 0`}, 24, 80)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer p.Stop()
-	select {
-	case <-p.done: // the root has exited before the first read
-	case <-time.After(5 * time.Second):
-		t.Fatal("root did not exit")
-	}
+	// Do not wait for the root before reading: on Linux it exits at once,
+	// but on macOS closing the tty waits for unread output to drain, so the
+	// root only finishes exiting while the reader is part-way through.
 	var out []byte
 	buf := make([]byte, 48)
 	deadline := time.Now().Add(20 * time.Second)
