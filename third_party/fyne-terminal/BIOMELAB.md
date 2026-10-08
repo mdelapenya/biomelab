@@ -91,6 +91,8 @@ This is a local compatibility patch, not an upstream release.
   there, so the test would spin until the package timeout. Biomelab's Windows
   transport lives in `internal/embeddedterminal` and has its own tests.
 - The module's minimum Go version and Fyne requirement match the Fyne 2.8 line.
+- Comment-only typo fixes in `apc.go`, `select.go` and
+  `internal/widget/termgrid.go` (worth sending upstream with the rest).
 
 The application owns process cancellation, input queuing, PTY cleanup, and
 process reaping in `internal/embeddedterminal`. The upstream Run APIs are retained
