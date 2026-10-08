@@ -327,10 +327,15 @@ func (p *Process) teardown() {
 		windows.CloseHandle(h)
 	}
 	p.members = nil
-	for {
+	// The accounting poll shares the same deadline: a member that cannot be
+	// ended (or a failing query) must not hold WaitStopped forever, since
+	// restart waits on it with no timeout of its own. Worktree deletion has
+	// its own bound and reports cleanup as pending.
+	for time.Now().Before(deadline) {
 		var accounting jobBasicAccounting
-		if err := windows.QueryInformationJobObject(p.job, windows.JobObjectBasicAccountingInformation,
-			uintptr(unsafe.Pointer(&accounting)), uint32(unsafe.Sizeof(accounting)), nil); err == nil && accounting.activeProcesses == 0 {
+		err := windows.QueryInformationJobObject(p.job, windows.JobObjectBasicAccountingInformation,
+			uintptr(unsafe.Pointer(&accounting)), uint32(unsafe.Sizeof(accounting)), nil)
+		if err != nil || accounting.activeProcesses == 0 {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
