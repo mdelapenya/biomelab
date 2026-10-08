@@ -98,6 +98,19 @@ func openTracked(base string, launch func(string) error) (*Session, error) {
 }
 
 func startTracked(launch func(string) error, initialize func(*Session)) (*Session, error) {
+	return startTrackedWithTimeout(launch, initialize, registrationTimeout(runtime.GOOS))
+}
+
+func registrationTimeout(goos string) time.Duration {
+	if goos == "windows" {
+		// A fresh PowerShell may need to load and compile console-host detection
+		// before it can write the session record.
+		return 30 * time.Second
+	}
+	return 2 * time.Second
+}
+
+func startTrackedWithTimeout(launch func(string) error, initialize func(*Session), timeout time.Duration) (*Session, error) {
 	dir, err := os.MkdirTemp("", "biomelab-session-")
 	if err != nil {
 		return nil, err
@@ -110,7 +123,7 @@ func startTracked(launch func(string) error, initialize func(*Session)) (*Sessio
 		session.Cleanup()
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()

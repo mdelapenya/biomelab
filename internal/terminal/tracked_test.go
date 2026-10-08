@@ -126,6 +126,39 @@ func TestPendingSessionCanResolveLaterAndOffersRecovery(t *testing.T) {
 	}
 }
 
+func TestRegistrationTimeoutPolicy(t *testing.T) {
+	if got := registrationTimeout("windows"); got != 30*time.Second {
+		t.Fatalf("Windows registration timeout = %s, want 30s", got)
+	}
+	if got := registrationTimeout("linux"); got != 2*time.Second {
+		t.Fatalf("POSIX registration timeout = %s, want 2s", got)
+	}
+}
+
+func TestTrackedTimeoutRetainsSessionForLateRegistration(t *testing.T) {
+	launches := 0
+	s, err := startTrackedWithTimeout(func(string) error {
+		launches++
+		return nil
+	}, nil, 20*time.Millisecond)
+	if s != nil {
+		t.Cleanup(s.Cleanup)
+	}
+	if !errors.Is(err, errSessionStarting) || s == nil || launches != 1 {
+		t.Fatalf("timeout returned session=%v err=%v launches=%d", s, err, launches)
+	}
+	record := []byte(strconv.Itoa(os.Getpid()) + "\n\n\n\n")
+	if err := os.WriteFile(filepath.Join(s.markerDir, "session"), record, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.resolve(context.Background()); err != nil || !s.ready || s.born == 0 {
+		t.Fatalf("late registration failed: ready=%v birth=%d err=%v", s.ready, s.born, err)
+	}
+	if launches != 1 {
+		t.Fatalf("late registration launched %d shells, want one", launches)
+	}
+}
+
 func TestActivateXWindowRejectsAmbiguity(t *testing.T) {
 	for _, tt := range []struct {
 		name, window, output string

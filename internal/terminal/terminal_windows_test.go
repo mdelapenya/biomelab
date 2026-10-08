@@ -203,6 +203,42 @@ func TestWindowsVisibleConsoleHelper(t *testing.T) {
 	os.Exit(0)
 }
 
+// The shell can need more than the old two-second registration window while
+// PowerShell loads its console-host detection on a cold Windows runner.
+func TestWindowsTrackedStartupAcceptsDelayedRegistration(t *testing.T) {
+	const delay = 3 * time.Second
+	wrote := make(chan error, 1)
+	launches := 0
+	session, err := startTracked(func(markerDir string) error {
+		launches++
+		go func() {
+			time.Sleep(delay)
+			pending := filepath.Join(markerDir, "pending")
+			record := []byte(strconv.Itoa(os.Getpid()) + "\n\n\n\n")
+			err := os.WriteFile(pending, record, 0600)
+			if err == nil {
+				err = os.Rename(pending, filepath.Join(markerDir, "session"))
+			}
+			wrote <- err
+		}()
+		return nil
+	}, nil)
+	if session != nil {
+		t.Cleanup(session.Cleanup)
+	}
+	select {
+	case writeErr := <-wrote:
+		if writeErr != nil {
+			t.Fatalf("publish delayed session: %v", writeErr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for delayed session record publisher")
+	}
+	if err != nil || session == nil || !session.ready || session.born == 0 || launches != 1 {
+		t.Fatalf("delayed registration: session=%+v err=%v launches=%d", session, err, launches)
+	}
+}
+
 func TestWindowsIntentionalLaunchCreatesInteractiveLongLivedConsole(t *testing.T) {
 	shellPath, err := exec.LookPath("powershell.exe")
 	if err != nil {
