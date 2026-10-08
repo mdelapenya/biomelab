@@ -104,24 +104,8 @@ func (t *Terminal) handleColorMode(modeStr string) {
 		t.underline = true
 	case 5:
 		t.blinking = true
-	case 7: // reverse
-		if t.reversed {
-			break
-		}
-		bg, fg := t.currentBG, t.currentFG
+	case 7: // reverse video: applied when cells are drawn, see displayColors
 		t.reversed = true
-		t.reversedFGNil, t.reversedBGNil = fg == nil, bg == nil
-		if fg == nil {
-			t.currentBG = theme.Color(theme.ColorNameForeground)
-		} else {
-			t.currentBG = fg
-		}
-		if bg == nil {
-			t.currentFG = theme.Color(theme.ColorNameDisabledButton)
-		} else {
-			t.currentFG = bg
-		}
-		t.reversedFGSub, t.reversedBGSub = t.currentFG, t.currentBG
 	case 9:
 		t.strikethrough = true
 	case 22:
@@ -130,21 +114,8 @@ func (t *Terminal) handleColorMode(modeStr string) {
 		t.italic = false
 	case 24:
 		t.underline = false
-	case 27: // reverse off: swap back what SGR 7 swapped
-		if !t.reversed {
-			break
-		}
+	case 27: // reverse video off
 		t.reversed = false
-		fg, bg := t.currentBG, t.currentFG
-		// A theme colour that SGR 7 substituted for a default, and that was
-		// not changed since, becomes the default again.
-		if t.reversedFGNil && fg == t.reversedBGSub {
-			fg = nil
-		}
-		if t.reversedBGNil && bg == t.reversedFGSub {
-			bg = nil
-		}
-		t.currentFG, t.currentBG = fg, bg
 	case 30, 31, 32, 33, 34, 35, 36, 37:
 		t.currentFG = t.indexedColor(mode - 30)
 	case 39:
@@ -223,4 +194,23 @@ func (t *Terminal) indexedColor(index int) color.Color {
 		return basicColors[index]
 	}
 	return brightColors[index-8]
+}
+
+// displayColors returns the colours a new cell is drawn with. Reverse video
+// (SGR 7) is an attribute rather than an in-place swap of the current
+// colours, so colour changes while it is on apply to the logical layers and
+// SGR 27 simply stops swapping. Default (nil) colours are substituted with
+// theme colours at draw time.
+func (t *Terminal) displayColors() (fg, bg color.Color) {
+	if !t.reversed {
+		return t.currentFG, t.currentBG
+	}
+	fg, bg = t.currentBG, t.currentFG
+	if fg == nil {
+		fg = theme.Color(theme.ColorNameDisabledButton)
+	}
+	if bg == nil {
+		bg = theme.Color(theme.ColorNameForeground)
+	}
+	return fg, bg
 }

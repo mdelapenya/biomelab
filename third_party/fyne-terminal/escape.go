@@ -230,7 +230,8 @@ func escapeEraseChars(t *Terminal, msg string) {
 	}
 
 	row := t.content.Row(t.rowOffset() + t.cursorRow)
-	cellStyle := &widget.CustomTextGridStyle{FGColor: t.currentFG, BGColor: t.currentBG}
+	fg, bg := t.displayColors()
+	cellStyle := &widget.CustomTextGridStyle{FGColor: fg, BGColor: bg}
 	// Extend row if cursor is beyond current length
 	for len(row.Cells) < t.cursorCol+count {
 		row.Cells = append(row.Cells, widget.TextGridCell{Rune: ' ', Style: cellStyle})
@@ -261,6 +262,7 @@ func escapeDeleteLines(t *Terminal, msg string) {
 	for i := t.scrollBottom - lines + 1; i <= t.scrollBottom; i++ {
 		t.content.SetRow(off+i, widget.TextGridRow{})
 	}
+	t.cursorCol = 0 // DL leaves the cursor at the left margin (VT102, xterm)
 }
 
 // escapeScrollDown handles CSI Ps T (SD - Scroll Down).
@@ -345,7 +347,8 @@ func escapeInsertChars(t *Terminal, msg string) {
 	}
 
 	newCells := make([]widget.TextGridCell, chars)
-	cellStyle := &widget.CustomTextGridStyle{FGColor: t.currentFG, BGColor: t.currentBG, TextStyle: fyne.TextStyle{Monospace: true}}
+	fg, bg := t.displayColors()
+	cellStyle := &widget.CustomTextGridStyle{FGColor: fg, BGColor: bg, TextStyle: fyne.TextStyle{Monospace: true}}
 	for i := range newCells {
 		newCells[i] = widget.TextGridCell{
 			Rune:  ' ',
@@ -386,6 +389,7 @@ func escapeInsertLines(t *Terminal, msg string) {
 	for i := t.cursorRow; i < t.cursorRow+rows; i++ {
 		t.content.SetRow(off+i, widget.TextGridRow{})
 	}
+	t.cursorCol = 0 // IL leaves the cursor at the left margin (VT102, xterm)
 }
 
 func escapeMoveCursorUp(t *Terminal, msg string) {
@@ -698,7 +702,8 @@ func (t *Terminal) eraseThroughCursor(cells []widget.TextGridCell) []widget.Text
 	if keep >= len(cells) {
 		return nil
 	}
-	blank := widget.TextGridCell{Rune: ' ', Style: &widget.CustomTextGridStyle{FGColor: t.currentFG, BGColor: t.currentBG}}
+	fg, bg := t.displayColors()
+	blank := widget.TextGridCell{Rune: ' ', Style: &widget.CustomTextGridStyle{FGColor: fg, BGColor: bg}}
 	out := make([]widget.TextGridCell, keep, len(cells))
 	for i := range out {
 		out[i] = blank

@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"fmt"
 	"testing"
 
 	"fyne.io/fyne/v2"
@@ -48,27 +49,67 @@ func TestDeleteAndInsertLinesRespectScrollRegion(t *testing.T) {
 	assert.Equal(t, []string{"r1", "r2", "r3", "r4", "r5", "r6"}, visibleRows(term)[:6])
 }
 
-// SGR 27 undoes reverse video, restoring the colours in effect before SGR 7.
-func TestReverseVideoOffRestoresColours(t *testing.T) {
+// Reverse video swaps the drawn colours without disturbing the logical ones,
+// so SGR 27 restores them and colours set while reversed land on the right
+// layer.
+func TestReverseVideoIsADrawAttribute(t *testing.T) {
 	term := New()
 	term.Resize(fyne.NewSize(500, 150))
 	term.handleOutput([]byte("\x1b[31;44m"))
-	fg, bg := term.currentFG, term.currentBG
+	red, blue := term.currentFG, term.currentBG
+
 	term.handleOutput([]byte("\x1b[7m"))
-	assert.Equal(t, bg, term.currentFG)
-	assert.Equal(t, fg, term.currentBG)
+	fg, bg := term.displayColors()
+	assert.Equal(t, blue, fg)
+	assert.Equal(t, red, bg)
 	term.handleOutput([]byte("\x1b[27m"))
-	assert.Equal(t, fg, term.currentFG)
-	assert.Equal(t, bg, term.currentBG)
+	fg, bg = term.displayColors()
+	assert.Equal(t, red, fg)
+	assert.Equal(t, blue, bg)
 
-	// Default colours come back as defaults, and 27 without 7 is a no-op.
-	term.handleOutput([]byte("\x1b[0m\x1b[7m\x1b[27m"))
-	assert.Nil(t, term.currentFG)
-	assert.Nil(t, term.currentBG)
-	term.handleOutput([]byte("\x1b[31m\x1b[27m"))
-	assert.Equal(t, fg, term.currentFG)
+	// A colour set while reversed is the logical foreground: after 27 it is
+	// drawn as foreground on the default background, not as a background.
+	term.handleOutput([]byte("\x1b[0m\x1b[7m\x1b[31m\x1b[27m"))
+	fg, bg = term.displayColors()
+	assert.Equal(t, red, fg)
+	assert.Nil(t, bg)
 
-	// SGR 0 ends reverse video, so a later 27 does not swap again.
-	term.handleOutput([]byte("\x1b[7m\x1b[0m\x1b[32m\x1b[27m"))
-	assert.Nil(t, term.currentBG)
+	// Defaults stay defaults; while reversed they draw as theme colours.
+	term.handleOutput([]byte("\x1b[0m\x1b[7m"))
+	fg, bg = term.displayColors()
+	assert.NotNil(t, fg)
+	assert.NotNil(t, bg)
+	term.handleOutput([]byte("\x1b[27m"))
+	fg, bg = term.displayColors()
+	assert.Nil(t, fg)
+	assert.Nil(t, bg)
+
+	// SGR 0 ends reverse video.
+	term.handleOutput([]byte("\x1b[7m\x1b[0m"))
+	assert.False(t, term.reversed)
+}
+
+// IL and DL leave the cursor at the left margin.
+func TestInsertDeleteLinesHomeTheColumn(t *testing.T) {
+	term := termWithRows(t)
+	term.handleOutput([]byte("\x1b[3;5H\x1b[L"))
+	assert.Equal(t, 0, term.cursorCol)
+	term.handleOutput([]byte("\x1b[3;5H\x1b[M"))
+	assert.Equal(t, 0, term.cursorCol)
+}
+
+// A custom scroll region that no longer fits after the screen shrinks is
+// reset, so line operations cannot write rows past the screen.
+func TestShrinkResetsOversizedScrollRegion(t *testing.T) {
+	term := New()
+	term.Resize(fyne.NewSize(500, 400))
+	rows := int(term.config.Rows)
+	term.handleOutput([]byte(fmt.Sprintf("\x1b[2;%dr", rows)))
+	assert.Equal(t, rows-1, term.scrollBottom)
+	term.Resize(fyne.NewSize(500, 150))
+	assert.LessOrEqual(t, term.scrollBottom, int(term.config.Rows)-1)
+
+	before := len(term.content.Rows)
+	term.handleOutput([]byte("\x1b[2;1H\x1b[M\x1b[L"))
+	assert.LessOrEqual(t, len(term.content.Rows), max(before, int(term.config.Rows)))
 }

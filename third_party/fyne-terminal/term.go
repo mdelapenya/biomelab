@@ -63,14 +63,11 @@ type Terminal struct {
 	bell, debug, focused                   bool
 	bold, italic, underline, strikethrough bool
 	currentFG, currentBG                   color.Color
-	// Reverse video (SGR 7) swaps the colours in place; these record it so
-	// SGR 27 can swap back, restoring defaults that SGR 7 substituted.
-	reversed                     bool
-	reversedFGNil, reversedBGNil bool
-	reversedFGSub, reversedBGSub color.Color
-	cursorRow, cursorCol         int
-	savedRow, savedCol           int
-	scrollTop, scrollBottom      int
+	// reversed is reverse video (SGR 7), applied when cells are drawn.
+	reversed                bool
+	cursorRow, cursorCol    int
+	savedRow, savedCol      int
+	scrollTop, scrollBottom int
 
 	cursor                   *canvas.Rectangle
 	cursorHidden, bufferMode bool // buffer mode is an xterm extension that impacts control keys
@@ -290,6 +287,11 @@ func (t *Terminal) Resize(s fyne.Size) {
 	}
 	if t.scrollBottom == 0 || t.scrollBottom == oldRows-1 {
 		t.scrollBottom = int(t.config.Rows) - 1
+	}
+	if t.scrollBottom > int(t.config.Rows)-1 || t.scrollTop >= t.scrollBottom {
+		// A custom region no longer fits the shrunk screen: reset it to the
+		// full screen (as xterm does), so line operations stay on screen.
+		t.scrollTop, t.scrollBottom = 0, int(t.config.Rows)-1
 	}
 	if t.cursorCol >= int(cols) || t.cursorRow >= int(rows) {
 		// we got narrower, keep the cursor on screen so that output will wrap

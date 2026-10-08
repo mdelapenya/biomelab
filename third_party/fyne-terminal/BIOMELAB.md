@@ -68,8 +68,15 @@ This is a local compatibility patch, not an upstream release.
 - DL and IL act only at and below the cursor inside the scroll region and
   delete or insert at most the lines left there (upstream mutated the region
   from outside it, and IL with a count above one copied rows from above the
-  cursor). SGR 27 swaps back what SGR 7 swapped, restoring default colours,
-  instead of clearing both colours; SGR 0 ends reverse video.
+  cursor), and leave the cursor at the left margin. A custom scroll region
+  that no longer fits after the screen shrinks is reset to the full screen.
+- Reverse video is a draw-time attribute: SGR 7/27 toggle it and new cells
+  swap the current colours when drawn, substituting theme colours for
+  defaults. Upstream swapped `currentFG`/`currentBG` in place, so SGR 27
+  cleared both colours and colours set while reversed landed on the wrong
+  layer. The upstream colour tests now compare the drawn colours, and the
+  `7` then `37` case expects xterm behaviour (37 colours the drawn
+  background).
 - The blink ticker is stopped when the renderer that created its grid is
   destroyed, instead of leaking one goroutine per restarted session.
 - OSC 7 (shell-reported working directory) is parsed by hand and stored in

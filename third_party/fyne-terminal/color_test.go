@@ -29,13 +29,15 @@ func testColor(t *testing.T, tests map[string]struct {
 			terminal := New()
 			terminal.handleOutput([]byte(test.inputSeq))
 
-			// Verify the actual results match the expected results
-			if !reflect.DeepEqual(terminal.currentFG, test.expectedFg) {
-				t.Errorf("Foreground color mismatch. Got %v, expected %v", terminal.currentFG, test.expectedFg)
+			// Verify the drawn colours match (reverse video is applied at draw
+			// time in the Biomelab patch, so compare displayColors).
+			fg, bg := terminal.displayColors()
+			if !reflect.DeepEqual(fg, test.expectedFg) {
+				t.Errorf("Foreground color mismatch. Got %v, expected %v", fg, test.expectedFg)
 			}
 
-			if !reflect.DeepEqual(terminal.currentBG, test.expectedBg) {
-				t.Errorf("Background color mismatch. Got %v, expected %v", terminal.currentBG, test.expectedBg)
+			if !reflect.DeepEqual(bg, test.expectedBg) {
+				t.Errorf("Background color mismatch. Got %v, expected %v", bg, test.expectedBg)
 			}
 			if terminal.bold != test.expectedStyle.Bold {
 				t.Errorf("Bold flag mismatch. Got %v, expected %v", terminal.bold, test.expectedStyle.Bold)
@@ -179,9 +181,12 @@ func TestHandleOutput_ANSI_Colors(t *testing.T) {
 			expectedStyle: fyne.TextStyle{Bold: true},
 		},
 		"reverse video": {
+			// 37 sets the logical foreground, which reverse video draws as the
+			// background (xterm). Upstream swapped in place and coloured the
+			// drawn foreground instead; see BIOMELAB.md.
 			inputSeq:   esc("[7m") + esc("[37m"),
-			expectedFg: &color.RGBA{170, 170, 170, 255},
-			expectedBg: color.NRGBA{255, 255, 255, 255},
+			expectedFg: color.NRGBA{34, 34, 34, 255},
+			expectedBg: &color.RGBA{170, 170, 170, 255},
 		},
 		"underline": {
 			inputSeq:      esc("[4m"),
