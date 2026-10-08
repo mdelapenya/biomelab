@@ -495,20 +495,30 @@ func TestFrozenJobRejectsNewMembers(t *testing.T) {
 		t.Cleanup(func() { windows.CloseHandle(h) })
 		return h
 	}
-	member := start()
-	if err := windows.AssignProcessToJobObject(job, member); err != nil {
-		t.Fatal(err)
+	// Two members: freezing must work above the limit of one, as in real
+	// teardowns (shell, agent and their children).
+	members := []windows.Handle{start(), start()}
+	for _, m := range members {
+		if err := windows.AssignProcessToJobObject(job, m); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := freezeJob(job); err != nil {
-		t.Fatal(err)
+		t.Fatalf("freezing a job with %d members: %v", len(members), err)
 	}
-	if s, _ := windows.WaitForSingleObject(member, 0); s != uint32(windows.WAIT_TIMEOUT) {
-		t.Fatal("freezing the job must not affect existing members")
+	for _, m := range members {
+		if s, _ := windows.WaitForSingleObject(m, 0); s != uint32(windows.WAIT_TIMEOUT) {
+			t.Fatal("freezing the job must not affect existing members")
+		}
 	}
 	late := start()
-	if err := windows.AssignProcessToJobObject(job, late); err == nil {
+	err = windows.AssignProcessToJobObject(job, late)
+	switch {
+	case err == nil:
 		if s, _ := windows.WaitForSingleObject(late, 2000); s != windows.WAIT_OBJECT_0 {
 			t.Fatal("a process joining a frozen job kept running")
 		}
+	case !errors.Is(err, windows.ERROR_NOT_ENOUGH_QUOTA):
+		t.Fatalf("joining a frozen job failed for an unexpected reason: %v", err)
 	}
 }

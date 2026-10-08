@@ -169,9 +169,7 @@ func Start(ctx context.Context, dir string, argv []string, rows, cols uint16) (_
 	if err != nil {
 		return nil, err
 	}
-	limit := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{}
-	limit.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-	if _, err = windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&limit)), uint32(unsafe.Sizeof(limit))); err != nil {
+	if err = setJobLimits(job, 0); err != nil {
 		return nil, err
 	}
 	app, err := windows.UTF16PtrFromString(path)
@@ -388,14 +386,24 @@ func (p *Process) terminateJob() {
 	})
 }
 
-// freezeJob stops the job from gaining members. With an active-process limit
-// of one, which every live job already meets, a process that would join the
-// job (a new child of a member) is terminated as it is associated, so the
-// following snapshot lists every member that can still run.
-func freezeJob(job windows.Handle) error {
+// freezeJob stops the job from gaining members. The active-process limit only
+// applies to new associations: existing members keep running even when there
+// are more of them than the limit, while a process that would join the job (a
+// new child of a member) is refused or terminated as it is associated. The
+// following snapshot therefore lists every member that can still run.
+func freezeJob(job windows.Handle) error { return setJobLimits(job, 1) }
+
+// setJobLimits applies the job limits Biomelab relies on in one place, so
+// creation and teardown cannot drift apart: SetInformationJobObject
+// replaces the whole structure. Every job kills its members when its last
+// handle closes; activeLimit > 0 also caps the active process count.
+func setJobLimits(job windows.Handle, activeLimit uint32) error {
 	limit := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{}
-	limit.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | windows.JOB_OBJECT_LIMIT_ACTIVE_PROCESS
-	limit.BasicLimitInformation.ActiveProcessLimit = 1
+	limit.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+	if activeLimit > 0 {
+		limit.BasicLimitInformation.LimitFlags |= windows.JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+		limit.BasicLimitInformation.ActiveProcessLimit = activeLimit
+	}
 	_, err := windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&limit)), uint32(unsafe.Sizeof(limit)))
 	return err
 }
