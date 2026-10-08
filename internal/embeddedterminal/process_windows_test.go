@@ -410,3 +410,41 @@ func TestJobProcessIDsGrowsPastInitialCapacity(t *testing.T) {
 		}
 	}
 }
+
+// A reused PID must not be waited on as a member: processInJob tells job
+// members apart from unrelated processes.
+func TestProcessInJobDistinguishesMembers(t *testing.T) {
+	job, err := windows.CreateJobObject(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.CloseHandle(job)
+	defer windows.TerminateJobObject(job, 1)
+	start := func() *exec.Cmd {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestConPTYHelper$", "--", "child")
+		cmd.Env = append(os.Environ(), "BIOMELAB_CONPTY_HELPER=1")
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+		return cmd
+	}
+	open := func(pid int) windows.Handle {
+		h, err := windows.OpenProcess(windows.SYNCHRONIZE|windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(pid))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { windows.CloseHandle(h) })
+		return h
+	}
+	member, outsider := open(start().Process.Pid), open(start().Process.Pid)
+	if err := windows.AssignProcessToJobObject(job, member); err != nil {
+		t.Fatal(err)
+	}
+	if !processInJob(member, job) {
+		t.Fatal("job member not reported as in the job")
+	}
+	if processInJob(outsider, job) {
+		t.Fatal("unrelated process reported as a job member")
+	}
+}

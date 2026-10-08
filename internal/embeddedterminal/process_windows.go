@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -319,8 +320,12 @@ func (p *Process) teardown() {
 	// every member process object is signaled and the job reports no active
 	// members. Accounting and the job PID list both drop before the process
 	// object is signaled, so wait on handles captured while members were alive.
+	// One budget for all members, so a large job cannot stretch this to
+	// members×timeout.
+	deadline := time.Now().Add(memberWaitBudget)
 	for _, h := range p.members {
-		_, _ = windows.WaitForSingleObject(h, 5000)
+		remaining := max(time.Until(deadline), 0)
+		_, _ = windows.WaitForSingleObject(h, uint32(remaining/time.Millisecond))
 		windows.CloseHandle(h)
 	}
 	p.members = nil
@@ -349,23 +354,43 @@ func (p *Process) teardown() {
 	close(p.stopped)
 }
 
-// terminateJob captures SYNCHRONIZE handles for the job's current members and
-// then terminates the job, exactly once. Teardown waits on those handles,
-// bounded per process, before releasing WaitStopped. Members beyond the fixed
-// list are still covered by the accounting loop.
+// terminateJob captures SYNCHRONIZE handles for every current job member and
+// then terminates the job, exactly once. Teardown waits on those handles
+// (within memberWaitBudget) before releasing WaitStopped: job accounting can
+// reach zero before a member's process object is signaled, so an uncaptured
+// member could still hold the worktree when WaitStopped opens.
 func (p *Process) terminateJob() {
 	p.terminate.Do(func() {
-		// Capture every member, however many: accounting can reach zero
-		// before a member's process object is signaled, so an uncaptured
-		// member could still hold the worktree when WaitStopped opens.
-		ids, _ := jobProcessIDs(p.job, jobPIDListInitial)
+		ids, err := jobProcessIDs(p.job, jobPIDListInitial)
+		if err != nil {
+			log.Printf("embedded terminal: listing job members before teardown: %v", err)
+		}
 		for _, pid := range ids {
-			if h, err := windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(pid)); err == nil {
-				p.members = append(p.members, h)
+			h, err := windows.OpenProcess(windows.SYNCHRONIZE|windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+			if err != nil {
+				continue // already gone
 			}
+			// The member may have exited after the listing and its id been
+			// reused; only wait on processes that are still in this job.
+			if !processInJob(h, p.job) {
+				windows.CloseHandle(h)
+				continue
+			}
+			p.members = append(p.members, h)
 		}
 		_ = windows.TerminateJobObject(p.job, 1)
 	})
+}
+
+// memberWaitBudget bounds the total wait for captured job members.
+const memberWaitBudget = 5 * time.Second
+
+var procIsProcessInJob = windows.NewLazySystemDLL("kernel32.dll").NewProc("IsProcessInJob")
+
+func processInJob(process, job windows.Handle) bool {
+	var in int32
+	r, _, _ := procIsProcessInJob.Call(uintptr(process), uintptr(job), uintptr(unsafe.Pointer(&in)))
+	return r != 0 && in != 0
 }
 
 // jobPIDListInitial is the PID capacity of the first job query; the buffer
@@ -389,8 +414,13 @@ func jobProcessIDs(job windows.Handle, capacity int) ([]uintptr, error) {
 		}
 		counts := (*[2]uint32)(unsafe.Pointer(&buf[0]))
 		assigned, listed := int(counts[0]), int(counts[1])
-		if listed >= assigned || attempt >= 8 {
-			return append([]uintptr(nil), buf[headerWords:headerWords+min(listed, len(buf)-headerWords)]...), nil
+		ids := append([]uintptr(nil), buf[headerWords:headerWords+min(listed, len(buf)-headerWords)]...)
+		if listed >= assigned {
+			return ids, nil
+		}
+		if attempt >= 8 {
+			// The job keeps outgrowing the buffer; report the partial list.
+			return ids, fmt.Errorf("job still growing after %d attempts: listed %d of %d members", attempt+1, listed, assigned)
 		}
 		capacity = assigned + 16
 	}
