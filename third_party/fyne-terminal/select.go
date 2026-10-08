@@ -58,12 +58,20 @@ func (t *Terminal) clearSelectedText() {
 
 // SelectedText gets the text that is currently selected.
 func (t *Terminal) SelectedText() string {
+	if !t.hasSelectedText() {
+		// getSelectedRange reports (0,0,0,0) here, which would otherwise
+		// read back the first cell of the terminal.
+		return ""
+	}
 	sr, sc, er, ec := t.getSelectedRange()
 	return widget2.GetTextRange(t.content, t.blockMode, sr, sc, er, ec)
 }
 
 func (t *Terminal) copySelectedText(clipboard fyne.Clipboard) {
 	// copy start and end sel to clipboard and clear the sel style
+	if !t.hasSelectedText() {
+		return // nothing selected: leave the clipboard untouched
+	}
 	text := t.SelectedText()
 	clipboard.SetContent(text)
 	t.clearSelectedText()
