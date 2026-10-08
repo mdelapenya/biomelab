@@ -62,6 +62,11 @@ func (r *render) Objects() []fyne.CanvasObject {
 }
 
 func (r *render) Destroy() {
+	// A grid that showed blinking text runs a ticker goroutine; end it with
+	// the renderer so replaced or restarted sessions do not leak it.
+	if r.term.content != nil {
+		r.term.content.StopBlink()
+	}
 }
 
 func (r *render) moveCursor() {

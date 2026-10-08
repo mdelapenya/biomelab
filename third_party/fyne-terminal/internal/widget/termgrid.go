@@ -18,13 +18,27 @@ type TermGrid struct {
 	widget.TextGrid
 
 	tickerCancel context.CancelFunc
+	// stopped is set once the owning renderer is destroyed, so a refresh
+	// already queued by the ticker cannot start a new blink goroutine.
+	stopped bool
 }
 
 // CreateRenderer is a private method to Fyne which links this widget to it's renderer
 func (t *TermGrid) CreateRenderer() fyne.WidgetRenderer {
 	t.ExtendBaseWidget(t)
+	t.stopped = false
 
 	return t.TextGrid.CreateRenderer()
+}
+
+// StopBlink ends the blink goroutine and keeps it from restarting until the
+// grid is rendered again. Call it when the owning renderer is destroyed.
+func (t *TermGrid) StopBlink() {
+	t.stopped = true
+	if t.tickerCancel != nil {
+		t.tickerCancel()
+		t.tickerCancel = nil
+	}
 }
 
 // NewTermGrid creates a new empty TextGrid widget.
@@ -58,7 +72,7 @@ func (t *TermGrid) refreshBlink(blink bool) {
 	t.TextGrid.Refresh()
 
 	switch {
-	case shouldBlink && t.tickerCancel == nil:
+	case shouldBlink && t.tickerCancel == nil && !t.stopped:
 		t.runBlink()
 	case !shouldBlink && t.tickerCancel != nil:
 		t.tickerCancel()
@@ -76,6 +90,7 @@ func (t *TermGrid) runBlink() {
 	ticker := time.NewTicker(blinkingInterval)
 	blinking := false
 	go func() {
+		defer ticker.Stop()
 		for {
 			select {
 			case <-tickerContext.Done():
