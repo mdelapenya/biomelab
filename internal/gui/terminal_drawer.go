@@ -606,9 +606,15 @@ func (p *cardTerminals) shutdown() {
 	go func() { p.transports.Wait(); close(done) }()
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-time.After(terminalShutdownTimeout):
 	}
 }
+
+// terminalShutdownTimeout bounds how long Quit waits for owned process trees.
+// It exceeds the backends' own teardown bound (five seconds for the Unix
+// process-group wait) so a tree that is still exiting is normally waited
+// for; it only matters when cleanup is slow, never on a normal quit.
+const terminalShutdownTimeout = 6 * time.Second
 
 // Collapse only the browser region when the window cannot fit two useful panes.
 // Keep the preference independently of the clamped geometry, like the sidebar.
