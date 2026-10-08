@@ -2,6 +2,7 @@ package gui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image/color"
 	"io"
@@ -360,14 +361,11 @@ func (a *App) startCardTerminal(key cardTerminalKey, wt git.Worktree, previous *
 	go func() {
 		defer close(s.done)
 		defer cancel()
-		if previous != nil {
-			if previous.stopped != nil {
-				<-previous.stopped
-			} else {
-				<-previous.done
-			}
+		var process *embeddedterminal.Process
+		err := waitPreviousSession(ctx, previous, restartCleanupTimeout)
+		if err == nil {
+			process, err = embeddedterminal.Start(ctx, dir, args, 24, 80)
 		}
-		process, err := embeddedterminal.Start(ctx, dir, args, 24, 80)
 		if err != nil {
 			close(s.stopped)
 			p.transports.Done()
@@ -455,6 +453,37 @@ func (a *App) startCardTerminal(key cardTerminalKey, wt git.Worktree, previous *
 		}, false)
 	}()
 }
+
+// restartCleanupTimeout bounds how long a restart waits for the previous
+// session's process tree. The backends keep WaitStopped honest (it opens only
+// once the tree has ended, which worktree deletion relies on), so a tree that
+// cannot be ended must fail the restart visibly instead of leaving it in
+// "Starting" forever.
+var restartCleanupTimeout = 10 * time.Second
+
+var errPreviousSessionRunning = errors.New("the previous session is still shutting down; try again in a moment")
+
+// waitPreviousSession waits for previous (if any) to finish its teardown.
+func waitPreviousSession(ctx context.Context, previous *cardTerminalSession, timeout time.Duration) error {
+	if previous == nil {
+		return nil
+	}
+	done := previous.done
+	if previous.stopped != nil {
+		done = previous.stopped
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return nil
+	case <-timer.C:
+		return errPreviousSessionRunning
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func (a *App) finishCardTerminalSession(key cardTerminalKey, s *cardTerminalSession, stopped bool, err error) {
 	p := a.cardTerminals
 	if p == nil || p.closed || p.sessions[key] != s {
@@ -611,9 +640,11 @@ func (p *cardTerminals) shutdown() {
 }
 
 // terminalShutdownTimeout bounds how long Quit waits for owned process trees.
-// It exceeds the backends' own teardown bound (five seconds for the Unix
-// process-group wait) so a tree that is still exiting is normally waited
-// for; it only matters when cleanup is slow, never on a normal quit.
+// A normal teardown finishes well within it. It exceeds the Unix backend's
+// five-second process-group wait; on Windows teardown has no fixed bound (it
+// waits for the job to empty, after its five-second member budget), so a
+// tree that cannot be ended is abandoned here rather than keeping Biomelab
+// open. The job's kill-on-close limit still ends it when Biomelab exits.
 const terminalShutdownTimeout = 6 * time.Second
 
 // Collapse only the browser region when the window cannot fit two useful panes.

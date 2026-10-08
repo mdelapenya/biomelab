@@ -327,18 +327,29 @@ func (p *Process) teardown() {
 		windows.CloseHandle(h)
 	}
 	p.members = nil
-	// The accounting poll shares the same deadline: a member that cannot be
-	// ended (or a failing query) must not hold WaitStopped forever, since
-	// restart waits on it with no timeout of its own. Worktree deletion has
-	// its own bound and reports cleanup as pending.
-	for time.Now().Before(deadline) {
+	// WaitStopped stays honest: it opens only once the job is empty, because
+	// worktree deletion relies on it and Windows cannot delete a directory a
+	// live process still uses. Callers bound their own waits instead
+	// (deletion reports cleanup as pending, restart fails visibly, Quit has a
+	// deadline). Past the member budget, poll slowly; a query that keeps
+	// failing is logged rather than mistaken for an empty job.
+	loggedErr := false
+	for {
 		var accounting jobBasicAccounting
 		err := windows.QueryInformationJobObject(p.job, windows.JobObjectBasicAccountingInformation,
 			uintptr(unsafe.Pointer(&accounting)), uint32(unsafe.Sizeof(accounting)), nil)
-		if err != nil || accounting.activeProcesses == 0 {
+		if err == nil && accounting.activeProcesses == 0 {
 			break
 		}
-		time.Sleep(10 * time.Millisecond)
+		if err != nil && !loggedErr && time.Now().After(deadline) {
+			log.Printf("embedded terminal: querying job accounting during teardown: %v", err)
+			loggedErr = true
+		}
+		if time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		} else {
+			time.Sleep(250 * time.Millisecond)
+		}
 	}
 	p.lifeMu.Lock()
 	select {

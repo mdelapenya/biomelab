@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -63,6 +64,9 @@ func terminalHasOutputLine(text, marker string) bool {
 	return false
 }
 
+// goroutineDumps records the tests that already logged a goroutine dump.
+var goroutineDumps sync.Map
+
 func drainWindowsTerminalEvents(t *testing.T, events <-chan func(), ready func() bool, session ...*cardTerminalSession) {
 	t.Helper()
 	deadline := time.NewTimer(30 * time.Second)
@@ -78,9 +82,13 @@ func drainWindowsTerminalEvents(t *testing.T, events <-chan func(), ready func()
 			fn()
 		case <-recheck.C:
 		case <-deadline.C:
-			// Dump every goroutine so a hang in CI shows where it is stuck.
-			buf := make([]byte, 1<<20)
-			t.Logf("goroutines at timeout:\n%s", buf[:runtime.Stack(buf, true)])
+			// Dump every goroutine so a hang in CI shows where it is stuck;
+			// once per test and capped, so repeated timeouts cannot flood the
+			// log and truncate the state line below.
+			if _, dumped := goroutineDumps.LoadOrStore(t.Name(), true); !dumped {
+				buf := make([]byte, 256<<10)
+				t.Logf("goroutines at timeout:\n%s", buf[:runtime.Stack(buf, true)])
+			}
 			if len(session) == 0 {
 				t.Fatal("Windows terminal operation timed out")
 			}

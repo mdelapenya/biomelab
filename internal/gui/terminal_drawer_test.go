@@ -3,6 +3,7 @@ package gui
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"image/color"
 	"image/png"
@@ -451,5 +452,33 @@ func TestTerminalStopEscapeRestoresInputWithoutStopping(t *testing.T) {
 	keys.press(fyne.KeyEscape)
 	if stopped || a.dialogOpen || w.Canvas().Focused() != s.view {
 		t.Fatal("Escape stopped session or lost terminal focus")
+	}
+}
+
+// A restart waits for the previous session's teardown, but a tree that
+// cannot be ended fails the restart instead of leaving it starting forever.
+func TestWaitPreviousSessionIsBounded(t *testing.T) {
+	ctx := context.Background()
+	if err := waitPreviousSession(ctx, nil, time.Second); err != nil {
+		t.Fatalf("no previous session: %v", err)
+	}
+
+	stopped := make(chan struct{})
+	prev := &cardTerminalSession{done: make(chan struct{}), stopped: stopped}
+	close(prev.done) // the session goroutine ended, but teardown has not
+	if err := waitPreviousSession(ctx, prev, 50*time.Millisecond); !errors.Is(err, errPreviousSessionRunning) {
+		t.Fatalf("stuck teardown: got %v, want errPreviousSessionRunning", err)
+	}
+
+	close(stopped)
+	if err := waitPreviousSession(ctx, prev, time.Second); err != nil {
+		t.Fatalf("finished teardown: %v", err)
+	}
+
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	stuck := &cardTerminalSession{done: make(chan struct{}), stopped: make(chan struct{})}
+	if err := waitPreviousSession(canceled, stuck, time.Second); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled wait: got %v", err)
 	}
 }
