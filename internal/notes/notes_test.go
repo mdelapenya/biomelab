@@ -24,7 +24,7 @@ func initRepo(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("worktree: %v", err)
 	}
-	f, err := wt.Filesystem.Create("README.md")
+	f, err := wt.Filesystem().Create("README.md")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
