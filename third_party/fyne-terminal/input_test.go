@@ -69,10 +69,12 @@ func TestTerminal_TypedKey(t *testing.T) {
 
 		"PageUp":    {fyne.KeyPageUp, false, false, []byte{asciiEscape, '[', '5', '~'}},
 		"PageDown":  {fyne.KeyPageDown, false, false, []byte{asciiEscape, '[', '6', '~'}},
-		"Home":      {fyne.KeyHome, false, false, []byte{asciiEscape, 'O', 'H'}},
+		"Home":      {fyne.KeyHome, false, false, []byte{asciiEscape, '[', 'H'}}, // normal mode (DECCKM reset); Biomelab patch
+		"Home app":  {fyne.KeyHome, true, false, []byte{asciiEscape, 'O', 'H'}},
 		"Insert":    {fyne.KeyInsert, false, false, []byte{asciiEscape, '[', '2', '~'}},
 		"Delete":    {fyne.KeyDelete, false, false, []byte{asciiEscape, '[', '3', '~'}},
-		"End":       {fyne.KeyEnd, false, false, []byte{asciiEscape, 'O', 'F'}},
+		"End":       {fyne.KeyEnd, false, false, []byte{asciiEscape, '[', 'F'}},
+		"End app":   {fyne.KeyEnd, true, false, []byte{asciiEscape, 'O', 'F'}},
 		"Enter":     {fyne.KeyEnter, false, false, []byte{'\n'}}, // Modify as needed for Windows or bufferMode
 		"Tab":       {fyne.KeyTab, false, false, []byte{'\t'}},
 		"Escape":    {fyne.KeyEscape, false, false, []byte{asciiEscape}},

@@ -283,8 +283,28 @@ func (t *Terminal) Resize(s fyne.Size) {
 	}
 	oldRows := int(t.config.Rows)
 	t.config.Columns, t.config.Rows = cols, rows
+	// Screen-relative rows (the cursor and the DECSC position) follow the
+	// content: shrinking moves top rows into history by however far the
+	// screen's first row actually moved. Growing pads the grid above, so
+	// nothing moves.
 	if int(rows) < oldRows {
-		t.cursorRow = max(0, t.cursorRow-(oldRows-int(rows)))
+		shift := t.rowOffset() - off
+		t.cursorRow = max(0, t.cursorRow-shift)
+		t.savedRow = max(0, t.savedRow-shift)
+	}
+	if t.altSavedGrid != nil && oldRows > 0 {
+		// The main screen saved by the alternate screen gets the same
+		// treatment, or restoring it would put the cursor on the wrong row
+		// (in history after a grow, below the prompt after a shrink).
+		savedOff := max(len(t.altSavedGrid)-oldRows, 0)
+		if int(rows) > oldRows {
+			for len(t.altSavedGrid) < savedOff+int(rows) {
+				t.altSavedGrid = append(t.altSavedGrid, widget.TextGridRow{})
+			}
+		} else {
+			shift := max(len(t.altSavedGrid)-int(rows), 0) - savedOff
+			t.altSavedRow = max(0, t.altSavedRow-shift)
+		}
 	}
 	if t.scrollBottom == 0 || t.scrollBottom == oldRows-1 {
 		t.scrollBottom = int(t.config.Rows) - 1

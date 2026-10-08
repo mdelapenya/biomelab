@@ -3,6 +3,7 @@ package terminal
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"testing"
 
 	"fyne.io/fyne/v2"
@@ -137,14 +138,45 @@ func TestCursorKeyModeFollowsDECCKM(t *testing.T) {
 	assert.Equal(t, "\x1b[A", in.String())
 }
 
-// Leaving the alternate screen after a shrink keeps the cursor on screen.
-func TestExitAltBufferClampsCursor(t *testing.T) {
+// Leaving the alternate screen after a resize puts the cursor back on the
+// prompt it left, whether the screen grew or shrank meanwhile.
+func TestExitAltBufferRestoresCursorAfterResize(t *testing.T) {
+	for name, sizes := range map[string][2]fyne.Size{
+		"grow":   {fyne.NewSize(500, 200), fyne.NewSize(500, 450)},
+		"shrink": {fyne.NewSize(500, 450), fyne.NewSize(500, 200)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			term := New()
+			term.Resize(sizes[0])
+			var out strings.Builder
+			for i := 0; i < 60; i++ { // enough to create scrollback
+				fmt.Fprintf(&out, "line %d\r\n", i)
+			}
+			out.WriteString("PROMPT>")
+			term.handleOutput([]byte(out.String()))
+			promptRow := term.rowOffset() + term.cursorRow
+			promptCol := term.cursorCol
+
+			term.handleOutput([]byte("\x1b[?1049h\x1b[2Jfull screen app"))
+			term.Resize(sizes[1])
+			term.handleOutput([]byte("\x1b[?1049l"))
+
+			assert.Less(t, term.cursorRow, int(term.config.Rows))
+			assert.Equal(t, promptRow, term.rowOffset()+term.cursorRow, "cursor back on the prompt row")
+			assert.Equal(t, promptCol, term.cursorCol)
+			assert.True(t, strings.HasPrefix(term.content.RowText(promptRow), "PROMPT>"))
+		})
+	}
+}
+
+// DECRC (ESC 8) after a shrink stays on screen.
+func TestRestoreCursorAfterShrinkStaysOnScreen(t *testing.T) {
 	term := New()
-	term.Resize(fyne.NewSize(500, 400))
+	term.Resize(fyne.NewSize(500, 450))
 	rows := int(term.config.Rows)
-	term.handleOutput([]byte(fmt.Sprintf("\x1b[%d;1H\x1b[?1049h", rows)))
-	term.Resize(fyne.NewSize(500, 150))
-	term.handleOutput([]byte("\x1b[?1049l"))
+	term.handleOutput([]byte(fmt.Sprintf("\x1b[%d;1H\x1b7", rows)))
+	term.Resize(fyne.NewSize(500, 200))
+	term.handleOutput([]byte("\x1b8"))
 	assert.Less(t, term.cursorRow, int(term.config.Rows))
 }
 

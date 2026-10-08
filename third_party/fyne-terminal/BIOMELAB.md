@@ -94,10 +94,14 @@ This is a local compatibility patch, not an upstream release.
 - Print mode (CSI 5 i ... CSI 4 i) is bounded: without a printer only the
   bytes needed to spot the terminator are kept, and a job over 4 MiB is
   dropped.
-- DECCKM (CSI ? 1 h/l) selects application arrow keys. Upstream toggled
-  that from the alternate-screen mode 1049 and ignored mode 1.
-- Leaving the alternate screen restores the cursor through `moveCursor`,
-  clamped to a screen that may have shrunk meanwhile.
+- DECCKM (CSI ? 1 h/l) selects application arrow, Home and End keys. Upstream
+  toggled that from the alternate-screen mode 1049, ignored mode 1, and
+  always sent SS3 for Home and End.
+- Resizing keeps screen-relative positions on their content: the cursor, the
+  DECSC position and the main screen saved by the alternate screen shift by
+  however far the screen's first row actually moved, and the saved main
+  screen is padded on growth like the visible one. Restores (alternate
+  screen exit, ESC 8, CSI u) go through `moveCursor`, which clamps.
 - Reverse video draws a default foreground in the theme background colour
   (upstream used the disabled-button colour); the upstream colour tests
   expect the theme background.

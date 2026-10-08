@@ -83,11 +83,11 @@ func (t *Terminal) TypedKey(e *fyne.KeyEvent) {
 	case fyne.KeyPageDown:
 		_, _ = t.in.Write([]byte{asciiEscape, '[', '6', '~'})
 	case fyne.KeyHome:
-		_, _ = t.in.Write([]byte{asciiEscape, 'O', 'H'})
+		t.typeCursorKey(e.Name)
 	case fyne.KeyInsert:
 		_, _ = t.in.Write([]byte{asciiEscape, '[', '2', '~'})
 	case fyne.KeyEnd:
-		_, _ = t.in.Write([]byte{asciiEscape, 'O', 'F'})
+		t.typeCursorKey(e.Name)
 	}
 }
 
@@ -270,6 +270,10 @@ func (t *Terminal) typeCursorKey(key fyne.KeyName) {
 		_, _ = t.in.Write([]byte{asciiEscape, cursorPrefix, 'D'})
 	case fyne.KeyRight:
 		_, _ = t.in.Write([]byte{asciiEscape, cursorPrefix, 'C'})
+	case fyne.KeyHome: // like the arrows, Home and End follow DECCKM
+		_, _ = t.in.Write([]byte{asciiEscape, cursorPrefix, 'H'})
+	case fyne.KeyEnd:
+		_, _ = t.in.Write([]byte{asciiEscape, cursorPrefix, 'F'})
 	}
 }
 

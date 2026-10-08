@@ -215,9 +215,8 @@ func (t *Terminal) parseEscState(r rune) (shouldContinue bool) {
 	case '7':
 		t.savedRow = t.cursorRow
 		t.savedCol = t.cursorCol
-	case '8':
-		t.cursorRow = t.savedRow
-		t.cursorCol = t.savedCol
+	case '8': // DECRC, clamped to the current screen
+		t.moveCursor(t.savedRow, t.savedCol)
 	case 'D':
 		t.scrollDown()
 	case 'M':
@@ -255,12 +254,13 @@ func (t *Terminal) parsePrinting(buf []byte, size int) {
 	// Without a printer nothing is spooled; past maxPrintData the job is
 	// dropped. Either way keep only the last bytes needed to recognise the
 	// terminator.
-	if t.printer == nil || len(t.printData) > maxPrintData {
-		if t.printer != nil {
-			t.printOverflow = true
-		}
+	if t.printOverflow || t.printer == nil || len(t.printData) > maxPrintData {
+		// Once anything is discarded the job is incomplete, so it must not
+		// be spooled later (even if a printer is attached mid-job). Keep a
+		// fresh small slice so a large backing array is released.
 		if keep := 3; len(t.printData) > keep {
-			t.printData = append(t.printData[:0], t.printData[len(t.printData)-keep:]...)
+			t.printOverflow = true
+			t.printData = append(make([]byte, 0, keep+4), t.printData[len(t.printData)-keep:]...)
 		}
 	}
 }

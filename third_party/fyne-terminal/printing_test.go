@@ -3,6 +3,7 @@ package terminal
 import (
 	"bytes"
 	_ "embed"
+	"strings"
 	"testing"
 	"unicode/utf16"
 
@@ -143,4 +144,18 @@ func TestPrintModeIsBounded(t *testing.T) {
 	assert.Empty(t, spooled)
 	term.handleOutput([]byte(esc("[5i") + "small" + esc("[4i")))
 	assert.Equal(t, [][]byte{[]byte("small")}, spooled)
+}
+
+// A printer attached part-way through a job must not receive the truncated
+// remainder as if it were the whole job.
+func TestPrinterAttachedMidJobGetsNoTruncatedJob(t *testing.T) {
+	term := New()
+	term.Resize(fyne.NewSize(500, 150))
+	term.handleOutput([]byte(esc("[5i") + strings.Repeat("x", 1024)))
+	var spooled [][]byte
+	term.printer = PrinterFunc(func(d []byte) { spooled = append(spooled, d) })
+	term.handleOutput([]byte("0123456789" + esc("[4i")))
+	assert.Empty(t, spooled)
+	term.handleOutput([]byte(esc("[5i") + "whole" + esc("[4i")))
+	assert.Equal(t, [][]byte{[]byte("whole")}, spooled)
 }
