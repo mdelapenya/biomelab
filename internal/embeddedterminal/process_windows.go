@@ -361,6 +361,12 @@ func (p *Process) teardown() {
 // member could still hold the worktree when WaitStopped opens.
 func (p *Process) terminateJob() {
 	p.terminate.Do(func() {
+		// Freeze membership first: a member could otherwise spawn a child
+		// between the snapshot and TerminateJobObject, and that child would
+		// have no handle to wait on.
+		if err := freezeJob(p.job); err != nil {
+			log.Printf("embedded terminal: freezing job before teardown: %v", err)
+		}
 		ids, err := jobProcessIDs(p.job, jobPIDListInitial)
 		if err != nil {
 			log.Printf("embedded terminal: listing job members before teardown: %v", err)
@@ -380,6 +386,18 @@ func (p *Process) terminateJob() {
 		}
 		_ = windows.TerminateJobObject(p.job, 1)
 	})
+}
+
+// freezeJob stops the job from gaining members. With an active-process limit
+// of one, which every live job already meets, a process that would join the
+// job (a new child of a member) is terminated as it is associated, so the
+// following snapshot lists every member that can still run.
+func freezeJob(job windows.Handle) error {
+	limit := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{}
+	limit.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | windows.JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+	limit.BasicLimitInformation.ActiveProcessLimit = 1
+	_, err := windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&limit)), uint32(unsafe.Sizeof(limit)))
+	return err
 }
 
 // memberWaitBudget bounds the total wait for captured job members.

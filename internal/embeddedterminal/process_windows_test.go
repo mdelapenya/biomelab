@@ -471,3 +471,44 @@ func TestProcessInJobDistinguishesMembers(t *testing.T) {
 		t.Fatal("unrelated process reported as a job member")
 	}
 }
+
+// Once frozen, the job cannot gain a running member: a process associated
+// later is refused or terminated, so the teardown snapshot is complete.
+func TestFrozenJobRejectsNewMembers(t *testing.T) {
+	job, err := windows.CreateJobObject(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.CloseHandle(job)
+	defer windows.TerminateJobObject(job, 1)
+	start := func() windows.Handle {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestConPTYHelper$", "--", "child")
+		cmd.Env = append(os.Environ(), "BIOMELAB_CONPTY_HELPER=1")
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+		h, err := windows.OpenProcess(windows.SYNCHRONIZE|windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(cmd.Process.Pid))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { windows.CloseHandle(h) })
+		return h
+	}
+	member := start()
+	if err := windows.AssignProcessToJobObject(job, member); err != nil {
+		t.Fatal(err)
+	}
+	if err := freezeJob(job); err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := windows.WaitForSingleObject(member, 0); s != uint32(windows.WAIT_TIMEOUT) {
+		t.Fatal("freezing the job must not affect existing members")
+	}
+	late := start()
+	if err := windows.AssignProcessToJobObject(job, late); err == nil {
+		if s, _ := windows.WaitForSingleObject(late, 2000); s != windows.WAIT_OBJECT_0 {
+			t.Fatal("a process joining a frozen job kept running")
+		}
+	}
+}
