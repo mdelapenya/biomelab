@@ -3,6 +3,8 @@ package terminal
 import (
 	"log"
 	"net/url"
+	"os"
+	"runtime"
 	"strings"
 )
 
@@ -33,10 +35,10 @@ func (t *Terminal) handleOSC(code string) {
 // process output, and changing the host process's working directory would
 // affect the whole application (and on Windows would lock the directory).
 func (t *Terminal) setDirectory(uri string) {
-	dir, ok := parseDirectoryURI(uri)
+	dir, ok := parseDirectoryURI(uri, localHostname(), runtime.GOOS == "windows")
 	if !ok {
 		if t.debug {
-			log.Println("Ignoring malformed OSC 7 directory:", uri)
+			log.Println("Ignoring OSC 7 directory:", uri)
 		}
 		return
 	}
@@ -44,19 +46,41 @@ func (t *Terminal) setDirectory(uri string) {
 	t.onConfigure()
 }
 
-// parseDirectoryURI accepts file://host/path (host may be empty) and returns
-// the decoded local path. Windows shells report file://host/C:/dir, so a
-// leading slash before a drive letter is dropped.
-func parseDirectoryURI(uri string) (string, bool) {
-	u, err := url.Parse(uri)
-	if err != nil || u.Scheme != "file" || u.Path == "" {
+// parseDirectoryURI accepts file://host/path and returns the local path. It
+// is parsed by hand rather than with net/url because many shell prompts emit
+// $PWD without percent-encoding, so '?' and '#' are path characters here and
+// a stray '%' must not discard the report. Reports from another host (for
+// example after ssh inside the terminal) are not local paths and are
+// rejected; an empty host or "localhost" means this machine. On Windows a
+// /C:/dir path becomes C:\dir.
+func parseDirectoryURI(uri, hostname string, windows bool) (string, bool) {
+	rest, ok := strings.CutPrefix(uri, "file://")
+	if !ok {
 		return "", false
 	}
-	p := u.Path
-	if len(p) >= 3 && p[0] == '/' && p[2] == ':' && isDriveLetter(p[1]) {
-		p = strings.ReplaceAll(p[1:], "/", `\`)
+	slash := strings.IndexByte(rest, '/')
+	if slash < 0 {
+		return "", false
+	}
+	host, p := rest[:slash], rest[slash:]
+	if host != "" && !strings.EqualFold(host, "localhost") && !strings.EqualFold(host, hostname) {
+		return "", false
+	}
+	if decoded, err := url.PathUnescape(p); err == nil {
+		p = decoded
+	}
+	if windows {
+		if len(p) >= 3 && p[0] == '/' && p[2] == ':' && isDriveLetter(p[1]) {
+			p = p[1:]
+		}
+		p = strings.ReplaceAll(p, "/", `\`)
 	}
 	return p, true
+}
+
+func localHostname() string {
+	name, _ := os.Hostname()
+	return name
 }
 
 func isDriveLetter(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }

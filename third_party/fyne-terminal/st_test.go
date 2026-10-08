@@ -17,6 +17,7 @@ const st = "\x1b\x5c"
 func TestStringSequencesEndWithST(t *testing.T) {
 	var apc string
 	RegisterAPCHandler("st-test:", func(_ *Terminal, s string) { apc = s })
+	t.Cleanup(func() { delete(apcHandlers, "st-test:") })
 
 	for name, tc := range map[string]struct {
 		input, want string
@@ -41,4 +42,25 @@ func TestStringSequencesEndWithST(t *testing.T) {
 			}
 		})
 	}
+}
+
+// An ESC that is not ST aborts the sequence in progress; a partial CSI must
+// not leak its parameters into the next one.
+func TestEscapeAbortsPartialCSI(t *testing.T) {
+	term := New()
+	term.Resize(fyne.NewSize(500, 150))
+	term.handleOutput([]byte("\x1b[5\x1b[Cx")) // aborted "CSI 5", then CUF 1
+	assert.Equal(t, 2, term.cursorCol)
+}
+
+// Unterminated or oversized string payload is capped instead of growing an
+// unbounded string, and the sequence still ends on ST.
+func TestStringPayloadIsCapped(t *testing.T) {
+	term := New()
+	term.Resize(fyne.NewSize(500, 150))
+	payload := strings.Repeat("q", 4*maxStringPayload)
+	term.handleOutput([]byte("\x1bP" + payload))
+	assert.LessOrEqual(t, len(term.state.code), maxStringPayload)
+	term.handleOutput([]byte(st + "after"))
+	assert.Equal(t, "after", term.content.Text())
 }

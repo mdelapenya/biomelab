@@ -137,11 +137,14 @@ func (t *Terminal) handleOutput(buf []byte) []byte {
 		}
 		if t.state.escNext {
 			t.state.escNext = false
-			if r != '\\' && (t.state.osc || t.state.dcs || t.state.apc) {
-				// ESC inside a string sequence that is not ST cancels the
-				// string (as xterm does) and starts a new escape.
+			if r != '\\' {
+				// An ESC that is not ST aborts whatever sequence was in
+				// progress (a string, a partial CSI or a charset selection)
+				// and starts a new one, as xterm does. ST itself is handled by
+				// parseEscState, which needs the collected string.
 				t.state.code = ""
 				t.state.osc, t.state.dcs, t.state.apc = false, false, false
+				t.state.vt100 = 0
 			}
 			if cont := t.parseEscState(r); cont {
 				continue
@@ -255,7 +258,7 @@ func (t *Terminal) parseAPC(r rune) {
 		t.state.code = ""
 		t.state.apc = false
 	} else {
-		t.state.code += string(r)
+		t.appendStringPayload(r)
 	}
 }
 
@@ -266,14 +269,14 @@ func (t *Terminal) parseOSC(r rune) {
 		t.state.code = ""
 		t.state.osc = false
 	} else {
-		t.state.code += string(r)
+		t.appendStringPayload(r)
 	}
 }
 
 // parseDCS collects payload. DCS ends only with ST (ESC, backslash), which
 // the escape path handles; a bare backslash is ordinary payload.
 func (t *Terminal) parseDCS(r rune) {
-	t.state.code += string(r)
+	t.appendStringPayload(r)
 }
 
 func (t *Terminal) handleOutputChar(r rune) {
@@ -413,4 +416,17 @@ func handleShiftIn(t *Terminal) {
 // SetPrinterFunc sets the printer function which is executed when printing.
 func (t *Terminal) SetPrinterFunc(printerFunc PrinterFunc) {
 	t.printer = printerFunc
+}
+
+// maxStringPayload caps the payload kept for one OSC, DCS or APC sequence.
+// It is far above titles, paths and capability queries, and keeps a stray or
+// unterminated sequence (binary output, large images) from growing an
+// unbounded string on the UI thread. Excess payload is dropped; the
+// sequence still ends normally.
+const maxStringPayload = 8 << 10
+
+func (t *Terminal) appendStringPayload(r rune) {
+	if len(t.state.code) < maxStringPayload {
+		t.state.code += string(r)
+	}
 }

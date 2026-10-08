@@ -43,12 +43,17 @@ This is a local compatibility patch, not an upstream release.
   Upstream only completed OSC that way: an APC ended with ST never closed and
   swallowed all later output, a DCS ended with ST ate the next printable
   character, and a bare backslash inside DCS payload ended it early. Any
-  other ESC inside a string now cancels it, as in xterm.
-- OSC 7 (shell-reported working directory) is parsed defensively and stored
-  in `Config.PWD` for listeners. Upstream called `os.Chdir` on the host
-  process, which let any shell output move Biomelab's own working directory
-  (and on Windows lock the worktree), and its malformed-URI fallback could
-  index past short input.
+  other ESC aborts the sequence in progress (string, partial CSI or charset
+  selection), as in xterm, so stale parameters never leak into the next one.
+  OSC, DCS and APC payload is capped at 8 KiB so unterminated or huge
+  sequences cannot grow an unbounded string on the UI thread.
+- OSC 7 (shell-reported working directory) is parsed by hand and stored in
+  `Config.PWD` for listeners. Upstream called `os.Chdir` on the host process,
+  which let any shell output move Biomelab's own working directory (and on
+  Windows lock the worktree), and its malformed-URI fallback could index past
+  short input. Unencoded `?`, `#` and `%` stay part of the path, reports from
+  another host are ignored, and the drive-letter form is only rewritten on
+  Windows.
 - The upstream exit-code tests that spawn `RunLocalShell` are skipped on
   Windows: the retained ActiveState ConPTY path never reports an exit code
   there, so the test would spin until the package timeout. Biomelab's Windows
