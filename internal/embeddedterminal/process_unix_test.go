@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -213,6 +214,15 @@ func TestNaturalExitWithDescendantHoldingPTYEndsSession(t *testing.T) {
 }
 
 func TestNaturalExitKeepsOutputForSlowReader(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		// On macOS a session leader's exit waits for its controlling tty's
+		// output to drain (XNU proc_exit calls ttywait), and the PTY child is
+		// always a session leader. The root therefore cannot finish exiting
+		// with output still unread, so the cut-off this test guards against
+		// cannot occur there, and its precondition (root exited, output
+		// pending) cannot be set up.
+		t.Skip("macOS drains the tty before a session leader exits")
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	// The root writes a little output and exits naturally while a
