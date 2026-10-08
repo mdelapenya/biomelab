@@ -156,7 +156,7 @@ func TestWaitStoppedWaitsForDescendantsToExit(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("WaitStopped did not return after Stop")
 	}
-	if err := syscall.Kill(pid, 0); !errors.Is(err, syscall.ESRCH) {
+	if err := waitPidGone(pid, 2*time.Second); err != nil {
 		t.Fatalf("descendant %d still exists when WaitStopped returned: %v", pid, err)
 	}
 }
@@ -204,7 +204,7 @@ func TestNaturalExitWithDescendantHoldingPTYEndsSession(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("WaitStopped did not return after natural exit")
 	}
-	if err := syscall.Kill(pid, 0); !errors.Is(err, syscall.ESRCH) {
+	if err := waitPidGone(pid, 2*time.Second); err != nil {
 		t.Fatalf("descendant %d survived natural exit: %v", pid, err)
 	}
 }
@@ -212,18 +212,24 @@ func TestNaturalExitWithDescendantHoldingPTYEndsSession(t *testing.T) {
 func TestNaturalExitKeepsOutputForSlowReader(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	// The root fills the PTY buffer and exits at once. The reader then drains
-	// slowly, as when each chunk waits for a busy UI thread. Time spent
-	// outside Read must not count as idle, or the tail is thrown away.
+	// The root writes a little output and exits at once. The reader then
+	// drains it in small chunks, slowly, as when each chunk waits for a busy
+	// UI thread. Time spent outside Read must not count as idle, or the tail
+	// is thrown away. The output stays far below the smallest PTY buffer
+	// (about 1 KiB on macOS), so the root never blocks on an unread PTY.
 	p, err := Start(ctx, t.TempDir(), []string{"/bin/sh", "-c",
-		`i=0; while [ $i -lt 300 ]; do echo "line $i"; i=$((i+1)); done; printf TAIL-END; exit 0`}, 24, 80)
+		`i=0; while [ $i -lt 20 ]; do echo "line $i"; i=$((i+1)); done; printf TAIL-END; exit 0`}, 24, 80)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer p.Stop()
-	<-p.done // the root has exited before the first read
+	select {
+	case <-p.done: // the root has exited before the first read
+	case <-time.After(5 * time.Second):
+		t.Fatal("root did not exit")
+	}
 	var out []byte
-	buf := make([]byte, 1024)
+	buf := make([]byte, 48)
 	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
 		n, err := p.Read(buf)
@@ -231,9 +237,31 @@ func TestNaturalExitKeepsOutputForSlowReader(t *testing.T) {
 		if err != nil {
 			break
 		}
-		time.Sleep(700 * time.Millisecond)
+		time.Sleep(600 * time.Millisecond)
 	}
 	if !strings.Contains(string(out), "TAIL-END") {
 		t.Fatalf("final output cut off after %d bytes; tail: %q", len(out), out[max(0, len(out)-80):])
+	}
+}
+
+// waitPidGone polls until pid no longer exists. A killed descendant is
+// reparented and remains a zombie until init or launchd reaps it; it no
+// longer runs or holds a working directory, but kill(pid, 0) still succeeds
+// for it. A process that was never killed (sleep 30) stays alive far longer
+// than the window, so the check still catches a real survivor.
+func waitPidGone(pid int, window time.Duration) error {
+	deadline := time.Now().Add(window)
+	for {
+		err := syscall.Kill(pid, 0)
+		if errors.Is(err, syscall.ESRCH) {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			if err == nil {
+				return errors.New("process still exists")
+			}
+			return err
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
