@@ -97,7 +97,7 @@ func TestScrollBack_With_Zero_Back_Buffer(t *testing.T) {
 			linesToAdd:        5,
 			scrollLines:       4,
 			expectedOutput:    "Line 5",
-			expectedCursorRow: 0, // Adjust as needed
+			expectedCursorRow: 4, // SU scrolls content only; the cursor stays on row 5 (Biomelab patch)
 			expectedCursorCol: 6, // Assuming cursor is at end of visible text
 		},
 		// Add more test cases here as needed

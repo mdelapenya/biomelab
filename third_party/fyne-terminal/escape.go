@@ -136,15 +136,11 @@ func (t *Terminal) clearScreenFromCursor() {
 func (t *Terminal) clearScreenToCursor() {
 	off := t.rowOffset()
 	contentRow := off + t.cursorRow
-	row := t.content.Row(contentRow)
-	cells := make([]widget.TextGridCell, t.cursorCol)
-	if t.cursorCol < len(row.Cells) {
-		cells = append(cells, row.Cells[t.cursorCol:]...)
-	}
+	// ED 1 is inclusive: erase every earlier row and this row through the
+	// cursor cell.
+	t.content.SetRow(contentRow, widget.TextGridRow{Cells: eraseThroughCursor(t.content.Row(contentRow).Cells, t.cursorCol)})
 
-	t.content.SetRow(contentRow, widget.TextGridRow{Cells: cells})
-
-	for i := off; i < contentRow-1; i++ {
+	for i := off; i < contentRow; i++ {
 		t.content.SetRow(i, widget.TextGridRow{})
 	}
 }
@@ -304,13 +300,9 @@ func escapeEraseInLine(t *Terminal, msg string) {
 			return
 		}
 		t.content.SetRow(t.rowOffset()+t.cursorRow, widget.TextGridRow{Cells: row.Cells[:t.cursorCol]})
-	case 1:
+	case 1: // inclusive of the cursor cell
 		row := t.content.Row(t.rowOffset() + t.cursorRow)
-		if t.cursorCol >= len(row.Cells) {
-			return
-		}
-		cells := make([]widget.TextGridCell, t.cursorCol)
-		t.content.SetRow(t.rowOffset()+t.cursorRow, widget.TextGridRow{Cells: append(cells, row.Cells[t.cursorCol:]...)})
+		t.content.SetRow(t.rowOffset()+t.cursorRow, widget.TextGridRow{Cells: eraseThroughCursor(row.Cells, t.cursorCol)})
 	case 2:
 		t.content.SetRow(t.rowOffset()+t.cursorRow, widget.TextGridRow{})
 	}
@@ -503,20 +495,17 @@ func escapePrivateModeOn(t *Terminal, msg string) {
 	}
 }
 
+// escapeMoveCursor handles CUP (CSI row ; col H). Either parameter may be
+// omitted or zero and then means 1, so "CSI 5 H" is row 5, column 1.
 func escapeMoveCursor(t *Terminal, msg string) {
-	if !strings.Contains(msg, ";") {
-		t.moveCursor(0, 0)
-		return
-	}
-
 	parts := strings.Split(msg, ";")
 	row, _ := strconv.Atoi(parts[0])
 	col := 1
-	if len(parts) == 2 {
+	if len(parts) >= 2 {
 		col, _ = strconv.Atoi(parts[1])
 	}
 
-	t.moveCursor(row-1, col-1)
+	t.moveCursor(max(row, 1)-1, max(col, 1)-1)
 }
 
 func escapeRestoreCursor(t *Terminal, s string) {
@@ -571,17 +560,7 @@ func escapeScrollUp(t *Terminal, msg string) {
 		return
 	}
 
-	// Calculate new cursor position after scrolling
-	newCursorRow := t.cursorRow - lines
-
-	// Make sure we don't scroll above the scroll top
-	if newCursorRow < t.scrollTop {
-		newCursorRow = t.scrollTop
-	}
-
-	// Move cursor to the new position
-	t.moveCursor(newCursorRow, t.cursorCol)
-
+	// SU scrolls the content only; the cursor keeps its screen position.
 	off := t.rowOffset()
 	fullScreen := !t.altBufferActive && t.scrollTop == 0 && t.scrollBottom >= int(t.config.Rows)-1
 	if fullScreen {
@@ -691,4 +670,16 @@ func clampEscapeParams(msg string) string {
 		return msg
 	}
 	return b.String()
+}
+
+// eraseThroughCursor blanks cells from the start of a row through the
+// cursor column, inclusive (EL 1 and the cursor row of ED 1). Rows are
+// sparse, so a cursor past the content erases the whole row.
+func eraseThroughCursor(cells []widget.TextGridCell, cursorCol int) []widget.TextGridCell {
+	keep := cursorCol + 1
+	if keep >= len(cells) {
+		return nil
+	}
+	out := make([]widget.TextGridCell, keep, len(cells))
+	return append(out, cells[keep:]...)
 }

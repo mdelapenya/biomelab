@@ -210,7 +210,8 @@ func (t *Terminal) DoubleTapped(pe *fyne.PointEvent) {
 
 	rowContent := t.content.Rows[row-1].Cells
 
-	if col < 0 || col >= len(rowContent) {
+	// col is 1-based: the last cell of the row is col == len(rowContent).
+	if col < 1 || col > len(rowContent) {
 		return // No valid character under the cursor, do nothing
 	}
 
