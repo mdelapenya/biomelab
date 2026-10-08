@@ -331,9 +331,10 @@ func (p *Process) teardown() {
 	// worktree deletion relies on it and Windows cannot delete a directory a
 	// live process still uses. Callers bound their own waits instead
 	// (deletion reports cleanup as pending, restart fails visibly, Quit has a
-	// deadline). Past the member budget, poll slowly; a query that keeps
-	// failing is logged rather than mistaken for an empty job.
-	loggedErr := false
+	// deadline). Past the member budget, poll slowly and say so once. If the
+	// job cannot be queried at all past the budget, there is nothing left to
+	// verify: log it and release rather than spin forever.
+	loggedWait := false
 	for {
 		var accounting jobBasicAccounting
 		err := windows.QueryInformationJobObject(p.job, windows.JobObjectBasicAccountingInformation,
@@ -341,15 +342,19 @@ func (p *Process) teardown() {
 		if err == nil && accounting.activeProcesses == 0 {
 			break
 		}
-		if err != nil && !loggedErr && time.Now().After(deadline) {
-			log.Printf("embedded terminal: querying job accounting during teardown: %v", err)
-			loggedErr = true
-		}
 		if time.Now().Before(deadline) {
 			time.Sleep(10 * time.Millisecond)
-		} else {
-			time.Sleep(250 * time.Millisecond)
+			continue
 		}
+		if err != nil {
+			log.Printf("embedded terminal: cannot query job accounting during teardown, releasing: %v", err)
+			break
+		}
+		if !loggedWait {
+			log.Printf("embedded terminal: %d job member(s) still active after %s; waiting for them to exit", accounting.activeProcesses, memberWaitBudget)
+			loggedWait = true
+		}
+		time.Sleep(250 * time.Millisecond)
 	}
 	p.lifeMu.Lock()
 	select {

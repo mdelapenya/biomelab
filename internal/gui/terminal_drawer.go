@@ -367,7 +367,6 @@ func (a *App) startCardTerminal(key cardTerminalKey, wt git.Worktree, previous *
 			process, err = embeddedterminal.Start(ctx, dir, args, 24, 80)
 		}
 		if err != nil {
-			close(s.stopped)
 			p.transports.Done()
 			p.dispatch(func() {
 				if current() {
@@ -377,6 +376,25 @@ func (a *App) startCardTerminal(key cardTerminalKey, wt git.Worktree, previous *
 					a.refreshCardTerminal()
 				}
 			}, false)
+			// This session never ran a process, but it replaced previous, so
+			// its barrier must not open before previous's does: deletion and
+			// the next restart only see this session.
+			if previous == nil {
+				close(s.stopped)
+				return
+			}
+			go func() {
+				<-previous.stoppedCh()
+				close(s.stopped)
+				if errors.Is(err, errPreviousSessionRunning) {
+					p.dispatch(func() {
+						if current() && !s.running {
+							s.state = "Stopped: the previous session has ended; restart is available"
+							a.refreshCardTerminal()
+						}
+					}, false)
+				}
+			}()
 			return
 		}
 		resizeDone := make(chan struct{})
@@ -459,19 +477,26 @@ func (a *App) startCardTerminal(key cardTerminalKey, wt git.Worktree, previous *
 // once the tree has ended, which worktree deletion relies on), so a tree that
 // cannot be ended must fail the restart visibly instead of leaving it in
 // "Starting" forever.
-var restartCleanupTimeout = 10 * time.Second
+const restartCleanupTimeout = 10 * time.Second
 
 var errPreviousSessionRunning = errors.New("the previous session is still shutting down; try again in a moment")
+
+// stoppedCh is the barrier that opens once the session's process tree has
+// ended: stopped when the session has one, otherwise done. Restart and
+// worktree deletion both wait on it.
+func (s *cardTerminalSession) stoppedCh() <-chan struct{} {
+	if s.stopped != nil {
+		return s.stopped
+	}
+	return s.done
+}
 
 // waitPreviousSession waits for previous (if any) to finish its teardown.
 func waitPreviousSession(ctx context.Context, previous *cardTerminalSession, timeout time.Duration) error {
 	if previous == nil {
 		return nil
 	}
-	done := previous.done
-	if previous.stopped != nil {
-		done = previous.stopped
-	}
+	done := previous.stoppedCh()
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
@@ -609,11 +634,7 @@ func (a *App) stopCardTerminals(match func(cardTerminalKey) bool) []<-chan struc
 	for key, s := range p.sessions {
 		if match(key) {
 			s.cancel()
-			if s.stopped != nil {
-				stopped = append(stopped, s.stopped)
-			} else {
-				stopped = append(stopped, s.done)
-			}
+			stopped = append(stopped, s.stoppedCh())
 			delete(p.sessions, key)
 		}
 	}

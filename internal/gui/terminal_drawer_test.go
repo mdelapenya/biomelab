@@ -482,3 +482,34 @@ func TestWaitPreviousSessionIsBounded(t *testing.T) {
 		t.Fatalf("canceled wait: got %v", err)
 	}
 }
+
+// A restart that fails before starting a process must not open its barrier
+// while the session it replaced is still tearing down: worktree deletion and
+// the next restart only see the newer session.
+func TestFailedRestartKeepsThePreviousBarrier(t *testing.T) {
+	a, re, _ := terminalFixture(t)
+	wt := re.state.Worktrees[2]
+	p := a.ensureCardTerminals()
+	p.dispatch = func(fn func(), wait bool) { fyne.DoAndWait(fn) }
+	t.Cleanup(p.shutdown)
+
+	previous := &cardTerminalSession{done: make(chan struct{}), stopped: make(chan struct{})}
+	close(previous.done) // its goroutine ended, but its process tree has not
+	key := cardKey(re, wt)
+	fyne.DoAndWait(func() { a.startCardTerminal(key, wt, previous) })
+	var s *cardTerminalSession
+	fyne.DoAndWait(func() { s = p.sessions[key] })
+	s.cancel() // e.g. the worktree is being deleted while the restart waits
+
+	select {
+	case <-s.stopped:
+		t.Fatal("failed restart opened its barrier before the previous session's")
+	case <-time.After(300 * time.Millisecond):
+	}
+	close(previous.stopped)
+	select {
+	case <-s.stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("barrier did not open after the previous session's")
+	}
+}
