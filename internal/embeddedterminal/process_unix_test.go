@@ -5,9 +5,11 @@ package embeddedterminal
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -118,5 +120,43 @@ func TestConcurrentResizeAndStop(t *testing.T) {
 	case <-reaped:
 	case <-time.After(3 * time.Second):
 		t.Fatal("child survived Stop")
+	}
+}
+
+func TestWaitStoppedWaitsForDescendantsToExit(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// The backgrounded subshell ignores HUP and outlives the root's EOF, so
+	// only the group SIGKILL can end it. WaitStopped must not open before it
+	// is gone: deletion and restart rely on that barrier.
+	p, err := Start(ctx, t.TempDir(), []string{"/bin/sh", "-c",
+		`trap '' HUP; (trap '' HUP; while :; do sleep 1; done) & printf 'pid=%s;ready' "$!"; wait`}, 24, 80)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Stop()
+	var out []byte
+	buf := make([]byte, 64)
+	for !strings.Contains(string(out), "ready") {
+		n, err := p.Read(buf)
+		out = append(out, buf[:n]...)
+		if err != nil {
+			t.Fatalf("read %q: %v", out, err)
+		}
+	}
+	var pid int
+	if _, err := fmt.Sscanf(string(out[strings.Index(string(out), "pid="):]), "pid=%d;", &pid); err != nil || pid <= 0 {
+		t.Fatalf("descendant pid from %q: %v", out, err)
+	}
+	p.Stop()
+	stopped := make(chan struct{})
+	go func() { p.WaitStopped(); close(stopped) }()
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("WaitStopped did not return after Stop")
+	}
+	if err := syscall.Kill(pid, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Fatalf("descendant %d still exists when WaitStopped returned: %v", pid, err)
 	}
 }

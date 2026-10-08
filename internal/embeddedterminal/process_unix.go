@@ -101,9 +101,28 @@ func (p *Process) Stop() {
 			<-timer.C
 			// A descendant can survive the direct child's exit. Always signal
 			// the group; ESRCH is the normal already-gone result.
-			_ = syscall.Kill(-p.cmd.Process.Pid, syscall.SIGKILL)
+			pgid := p.cmd.Process.Pid
+			_ = syscall.Kill(-pgid, syscall.SIGKILL)
+			// WaitStopped is the restart and worktree-deletion barrier, so it
+			// must not open while any group member can still hold the worktree
+			// as its cwd. Reap the leader first (an unreaped zombie still
+			// counts as a member), then wait for the group to disappear.
+			// Callers bound this wait themselves.
+			<-p.done
+			waitGroupGone(pgid)
 		}()
 	})
+}
+
+// waitGroupGone polls until no process we can signal remains in group pgid.
+// Signal 0 probes for existence without delivering anything. ESRCH means the
+// group is gone; EPERM can only mean the id was reused by a group we never
+// owned, so it ends the wait too. Descendants orphaned by the SIGKILL are
+// reparented and reaped by init or launchd, which is why polling is enough.
+func waitGroupGone(pgid int) {
+	for syscall.Kill(-pgid, 0) == nil {
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func (p *Process) Close() error { p.Stop(); return nil }
