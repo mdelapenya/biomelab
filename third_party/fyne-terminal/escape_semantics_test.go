@@ -14,10 +14,12 @@ func newSizedTerm() *Terminal {
 	return term
 }
 
+// visibleRows returns the on-screen rows (scrollback excluded), with
+// trailing spaces trimmed.
 func visibleRows(term *Terminal) []string {
 	var out []string
-	for _, line := range strings.Split(term.content.Text(), "\n") {
-		out = append(out, strings.TrimRight(strings.ReplaceAll(line, "\x00", " "), " "))
+	for i := term.rowOffset(); i < term.rowOffset()+int(term.config.Rows); i++ {
+		out = append(out, strings.TrimRight(term.content.RowText(i), " "))
 	}
 	return out
 }
@@ -71,4 +73,43 @@ func TestDoubleClickSelectsWordAtRowEnd(t *testing.T) {
 	cell := term.guessCellSize()
 	term.DoubleTapped(&fyne.PointEvent{Position: fyne.NewPos(6.5*cell.Width, cell.Height/2)})
 	assert.Equal(t, "bar", term.SelectedText())
+}
+
+// While the buffer is still shorter than the screen, SU must still move the
+// visible content up so later output lands on the freed line.
+func TestScrollUpWithShortBuffer(t *testing.T) {
+	term := newSizedTerm()
+	term.handleOutput([]byte("a\r\nb\r\nc\x1b[SX"))
+	rows := visibleRows(term)
+	assert.Equal(t, "b", rows[0])
+	assert.Equal(t, "c", rows[1])
+	assert.Equal(t, " X", rows[2])
+}
+
+// SU scrolls the scroll region even when the cursor is outside it, and never
+// clears rows outside the region.
+func TestScrollUpStaysInsideRegion(t *testing.T) {
+	term := New()
+	term.Resize(fyne.NewSize(500, 300))
+	assert.GreaterOrEqual(t, int(term.config.Rows), 6)
+	term.handleOutput([]byte("\x1b[1;1Hhead\x1b[3;1Hr3\x1b[4;1Hr4\x1b[3;4r\x1b[6;1H\x1b[S"))
+	rows := visibleRows(term)
+	assert.Equal(t, "head", rows[0])
+	assert.Equal(t, "r4", rows[2], "region scrolled although the cursor is below it")
+	assert.Equal(t, "", rows[3])
+
+	term.handleOutput([]byte("\x1b[3;1Hr3\x1b[20S"))
+	rows = visibleRows(term)
+	assert.Equal(t, "head", rows[0], "a count larger than the region must not clear rows above it")
+	assert.Equal(t, "", rows[2])
+}
+
+// Erased cells are spaces carrying the current background, not NUL cells.
+func TestEraseToCursorUsesStyledSpaces(t *testing.T) {
+	term := newSizedTerm()
+	term.handleOutput([]byte("abcd\x1b[44m\x1b[2G\x1b[1K"))
+	cells := term.content.Rows[0].Cells
+	assert.Equal(t, ' ', cells[0].Rune)
+	assert.Equal(t, ' ', cells[1].Rune)
+	assert.NotNil(t, cells[0].Style)
 }

@@ -137,12 +137,13 @@ func (t *Terminal) clearScreenToCursor() {
 	off := t.rowOffset()
 	contentRow := off + t.cursorRow
 	// ED 1 is inclusive: erase every earlier row and this row through the
-	// cursor cell.
-	t.content.SetRow(contentRow, widget.TextGridRow{Cells: eraseThroughCursor(t.content.Row(contentRow).Cells, t.cursorCol)})
-
+	// cursor cell. SetRow on the cursor row materializes it, so the rows
+	// above exist and can be cleared directly with a single refresh.
+	t.content.SetRow(contentRow, widget.TextGridRow{Cells: t.eraseThroughCursor(t.content.Row(contentRow).Cells)})
 	for i := off; i < contentRow; i++ {
-		t.content.SetRow(i, widget.TextGridRow{})
+		t.content.Rows[i] = widget.TextGridRow{}
 	}
+	t.content.Refresh()
 }
 
 func (t *Terminal) handleVT100(code string) {
@@ -302,7 +303,7 @@ func escapeEraseInLine(t *Terminal, msg string) {
 		t.content.SetRow(t.rowOffset()+t.cursorRow, widget.TextGridRow{Cells: row.Cells[:t.cursorCol]})
 	case 1: // inclusive of the cursor cell
 		row := t.content.Row(t.rowOffset() + t.cursorRow)
-		t.content.SetRow(t.rowOffset()+t.cursorRow, widget.TextGridRow{Cells: eraseThroughCursor(row.Cells, t.cursorCol)})
+		t.content.SetRow(t.rowOffset()+t.cursorRow, widget.TextGridRow{Cells: t.eraseThroughCursor(row.Cells)})
 	case 2:
 		t.content.SetRow(t.rowOffset()+t.cursorRow, widget.TextGridRow{})
 	}
@@ -555,22 +556,25 @@ func escapeScrollUp(t *Terminal, msg string) {
 		lines = 1
 	}
 
-	// Ensure we are within the scrollable area
-	if t.cursorRow < t.scrollTop || t.cursorRow > t.scrollBottom {
-		return
-	}
-
-	// SU scrolls the content only; the cursor keeps its screen position.
-	off := t.rowOffset()
+	// SU scrolls the scroll region wherever the cursor is (as xterm does),
+	// and the cursor keeps its screen position.
 	fullScreen := !t.altBufferActive && t.scrollTop == 0 && t.scrollBottom >= int(t.config.Rows)-1
 	if fullScreen {
+		// Materialize the whole screen first: while the buffer is shorter
+		// than the screen, appending rows would not move anything on it.
+		for len(t.content.Rows) < int(t.config.Rows) {
+			t.content.Rows = append(t.content.Rows, widget.TextGridRow{})
+		}
 		// Append new rows, keeping old rows as scrollback
 		for i := 0; i < lines; i++ {
 			t.content.Rows = append(t.content.Rows, widget.TextGridRow{})
 		}
 		t.trimScrollback()
 	} else {
-		// Partial scroll region: shift rows within the region
+		// Partial scroll region: shift rows within the region, and never
+		// clear more than the region holds.
+		off := t.rowOffset()
+		lines = min(lines, t.scrollBottom-t.scrollTop+1)
 		for i := off + t.scrollTop; i <= off+t.scrollBottom-lines; i++ {
 			t.content.SetRow(i, t.content.Row(i+lines))
 		}
@@ -673,13 +677,18 @@ func clampEscapeParams(msg string) string {
 }
 
 // eraseThroughCursor blanks cells from the start of a row through the
-// cursor column, inclusive (EL 1 and the cursor row of ED 1). Rows are
-// sparse, so a cursor past the content erases the whole row.
-func eraseThroughCursor(cells []widget.TextGridCell, cursorCol int) []widget.TextGridCell {
-	keep := cursorCol + 1
+// cursor column, inclusive (EL 1 and the cursor row of ED 1). Erased cells
+// are spaces in the current colours, like ECH. Rows are sparse, so a cursor
+// past the content erases the whole row.
+func (t *Terminal) eraseThroughCursor(cells []widget.TextGridCell) []widget.TextGridCell {
+	keep := t.cursorCol + 1
 	if keep >= len(cells) {
 		return nil
 	}
+	blank := widget.TextGridCell{Rune: ' ', Style: &widget.CustomTextGridStyle{FGColor: t.currentFG, BGColor: t.currentBG}}
 	out := make([]widget.TextGridCell, keep, len(cells))
+	for i := range out {
+		out[i] = blank
+	}
 	return append(out, cells[keep:]...)
 }

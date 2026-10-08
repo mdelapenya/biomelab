@@ -55,6 +55,16 @@ This is a local compatibility patch, not an upstream release.
   one sequence instead of the application.
 - Copy with no selection leaves the clipboard untouched (upstream copied the
   terminal's first character).
+- Erase and cursor semantics follow ECMA-48/xterm: ED 1 and EL 1 erase
+  through the cursor cell (inclusive) with spaces in the current colours,
+  and ED 1 clears every row above the cursor; CUP with only a row parameter
+  goes to that row, column 1; SU scrolls the region wherever the cursor is,
+  never clears outside the region, scrolls a buffer still shorter than the
+  screen, and leaves the cursor in place. The upstream
+  `TestScrollBack_With_Zero_Back_Buffer` expected SU to move the cursor and
+  is updated accordingly.
+- Double-clicking the last character of a row selects its word (the 1-based
+  column bound was off by one).
 - The blink ticker is stopped when the renderer that created its grid is
   destroyed, instead of leaking one goroutine per restarted session.
 - OSC 7 (shell-reported working directory) is parsed by hand and stored in
