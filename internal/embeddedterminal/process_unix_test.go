@@ -208,3 +208,32 @@ func TestNaturalExitWithDescendantHoldingPTYEndsSession(t *testing.T) {
 		t.Fatalf("descendant %d survived natural exit: %v", pid, err)
 	}
 }
+
+func TestNaturalExitKeepsOutputForSlowReader(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// The root fills the PTY buffer and exits at once. The reader then drains
+	// slowly, as when each chunk waits for a busy UI thread. Time spent
+	// outside Read must not count as idle, or the tail is thrown away.
+	p, err := Start(ctx, t.TempDir(), []string{"/bin/sh", "-c",
+		`i=0; while [ $i -lt 300 ]; do echo "line $i"; i=$((i+1)); done; printf TAIL-END; exit 0`}, 24, 80)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Stop()
+	<-p.done // the root has exited before the first read
+	var out []byte
+	buf := make([]byte, 1024)
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		n, err := p.Read(buf)
+		out = append(out, buf[:n]...)
+		if err != nil {
+			break
+		}
+		time.Sleep(700 * time.Millisecond)
+	}
+	if !strings.Contains(string(out), "TAIL-END") {
+		t.Fatalf("final output cut off after %d bytes; tail: %q", len(out), out[max(0, len(out)-80):])
+	}
+}
