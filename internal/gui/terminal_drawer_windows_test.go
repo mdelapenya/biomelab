@@ -5,6 +5,7 @@ package gui
 import (
 	"errors"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -66,11 +67,20 @@ func drainWindowsTerminalEvents(t *testing.T, events <-chan func(), ready func()
 	t.Helper()
 	deadline := time.NewTimer(30 * time.Second)
 	defer deadline.Stop()
+	// Re-check readiness periodically: some conditions (a session's done
+	// channel closing) become true without dispatching another event, and
+	// waiting only for events would then block until the deadline.
+	recheck := time.NewTicker(10 * time.Millisecond)
+	defer recheck.Stop()
 	for !ready() {
 		select {
 		case fn := <-events:
 			fn()
+		case <-recheck.C:
 		case <-deadline.C:
+			// Dump every goroutine so a hang in CI shows where it is stuck.
+			buf := make([]byte, 1<<20)
+			t.Logf("goroutines at timeout:\n%s", buf[:runtime.Stack(buf, true)])
 			if len(session) == 0 {
 				t.Fatal("Windows terminal operation timed out")
 			}
