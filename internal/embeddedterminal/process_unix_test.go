@@ -215,30 +215,48 @@ func TestNaturalExitWithDescendantHoldingPTYEndsSession(t *testing.T) {
 func TestNaturalExitKeepsOutputForSlowReader(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	// The root writes a little output and exits. The reader drains it in
-	// small chunks, slowly, as when each chunk waits for a busy UI thread.
-	// Time spent outside Read must not count as idle, or the tail is thrown
-	// away. The output stays below the smallest PTY buffer (about 1 KiB on
-	// macOS), so the root never blocks writing it.
+	// The root writes a little output and exits naturally while a
+	// background child that ignores SIGHUP keeps the PTY open: the real case
+	// in which the exit watcher must decide when the session ends. Because
+	// the root's close of the tty is not the last one, it exits at once on
+	// Linux and macOS alike (a last close on macOS would wait for unread
+	// output to drain). The reader then drains slowly, as when each chunk
+	// waits for a busy UI thread. Time spent outside Read must not count as
+	// idle, or the tail is thrown away. The output stays below the smallest
+	// PTY buffer (about 1 KiB on macOS), so the root never blocks writing.
 	p, err := Start(ctx, t.TempDir(), []string{"/bin/sh", "-c",
-		`i=0; while [ $i -lt 20 ]; do echo "line $i"; i=$((i+1)); done; printf TAIL-END; exit 0`}, 24, 80)
+		`trap '' HUP; sleep 30 & i=0; while [ $i -lt 20 ]; do echo "line $i"; i=$((i+1)); done; printf TAIL-END; exit 0`}, 24, 80)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer p.Stop()
-	// Do not wait for the root before reading: on Linux it exits at once,
-	// but on macOS closing the tty waits for unread output to drain, so the
-	// root only finishes exiting while the reader is part-way through.
-	var out []byte
-	buf := make([]byte, 48)
-	deadline := time.Now().Add(20 * time.Second)
-	for time.Now().Before(deadline) {
-		n, err := p.Read(buf)
-		out = append(out, buf[:n]...)
-		if err != nil {
-			break
+	select {
+	case <-p.done: // the root has exited before the first read
+	case <-time.After(5 * time.Second):
+		t.Fatal("root did not exit")
+	}
+	if err := p.Wait(); err != nil {
+		t.Fatalf("natural exit status: %v", err)
+	}
+	result := make(chan []byte, 1)
+	go func() {
+		var out []byte
+		buf := make([]byte, 48)
+		for {
+			n, err := p.Read(buf)
+			out = append(out, buf[:n]...)
+			if err != nil {
+				result <- out
+				return
+			}
+			time.Sleep(exitDrainGrace + 300*time.Millisecond)
 		}
-		time.Sleep(exitDrainGrace + 300*time.Millisecond)
+	}()
+	var out []byte
+	select {
+	case out = <-result:
+	case <-time.After(20 * time.Second):
+		t.Fatal("session never reached EOF after the root exited")
 	}
 	if !strings.Contains(string(out), "TAIL-END") {
 		t.Fatalf("final output cut off after %d bytes; tail: %q", len(out), out[max(0, len(out)-80):])
