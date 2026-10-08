@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -327,18 +328,33 @@ func TestConPTYStopUnblocksBlockedRead(t *testing.T) {
 	p := requireConPTY(t, context.Background(), "", helperArgs("child"), 24, 80)
 	readMarker(t, p, "CHILD|READY|END")
 	readDone := make(chan error, 1)
+	var inRead atomic.Int64 // UnixNano when the current Read started, 0 outside Read
 	go func() {
 		// ConPTY may still deliver bytes queued after the marker (line
-		// endings, VT sequences); what matters is that the read that is
-		// blocked once they are consumed ends with EOF.
-		var b [1]byte
+		// endings, VT sequences); drain them, then stay blocked in Read.
+		b := make([]byte, 4096)
 		for {
-			if _, err := p.Read(b[:]); err != nil {
+			inRead.Store(time.Now().UnixNano())
+			_, err := p.Read(b)
+			inRead.Store(0)
+			if err != nil {
 				readDone <- err
 				return
 			}
 		}
 	}()
+	// Only call Stop once the reader has sat blocked in Read with nothing to
+	// read, so the test really covers Stop unblocking a pending read.
+	parked := time.Now().Add(5 * time.Second)
+	for {
+		if since := inRead.Load(); since != 0 && time.Since(time.Unix(0, since)) >= 200*time.Millisecond {
+			break
+		}
+		if time.Now().After(parked) {
+			t.Fatal("reader never blocked in Read")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	p.Stop()
 	waitSignal(t, p.stopped, "blocked-read teardown")
 	select {

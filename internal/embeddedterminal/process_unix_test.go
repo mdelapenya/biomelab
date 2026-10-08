@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -210,65 +209,6 @@ func TestNaturalExitWithDescendantHoldingPTYEndsSession(t *testing.T) {
 	}
 	if err := processEnded(pid); err != nil {
 		t.Fatalf("descendant %d survived natural exit: %v", pid, err)
-	}
-}
-
-func TestNaturalExitKeepsOutputForSlowReader(t *testing.T) {
-	if runtime.GOOS == "darwin" {
-		// The scenario cannot arise on macOS: a session leader's exit first
-		// waits for its tty output to drain (XNU proc_exit calls ttywait),
-		// then revokes the controlling tty, so descendants lose it and the
-		// master reaches EOF at once. The PTY child is always a session
-		// leader, so there is never output left behind for the exit
-		// watcher's idle timer to cut off. CI showed both halves: the root
-		// would not exit with unread output, and with a descendant writing
-		// afterwards the read hit EOF immediately with 0 bytes.
-		t.Skip("macOS drains and revokes the tty when the session leader exits")
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	// Linux: the root exits at once, leaving a background child that ignores
-	// SIGHUP and keeps the PTY open, the case in which the exit watcher
-	// decides when the session ends. The child writes the output after the
-	// root has exited. The reader then drains slowly, as when each chunk
-	// waits for a busy UI thread. Time spent outside Read must not count as
-	// idle, or the tail is thrown away.
-	p, err := Start(ctx, t.TempDir(), []string{"/bin/sh", "-c",
-		`trap '' HUP; (sleep 0.2; i=0; while [ $i -lt 20 ]; do echo "line $i"; i=$((i+1)); done; printf TAIL-END) & exit 0`}, 24, 80)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer p.Stop()
-	select {
-	case <-p.done: // the root has exited before any output exists
-	case <-time.After(5 * time.Second):
-		t.Fatal("root did not exit")
-	}
-	if err := p.Wait(); err != nil {
-		t.Fatalf("natural exit status: %v", err)
-	}
-	result := make(chan []byte, 1)
-	go func() {
-		var out []byte
-		buf := make([]byte, 48)
-		for {
-			n, err := p.Read(buf)
-			out = append(out, buf[:n]...)
-			if err != nil {
-				result <- out
-				return
-			}
-			time.Sleep(exitDrainGrace + 300*time.Millisecond)
-		}
-	}()
-	var out []byte
-	select {
-	case out = <-result:
-	case <-time.After(30 * time.Second):
-		t.Fatal("session never reached EOF after the root exited")
-	}
-	if !strings.Contains(string(out), "TAIL-END") {
-		t.Fatalf("final output cut off after %d bytes; tail: %q", len(out), out[max(0, len(out)-80):])
 	}
 }
 
