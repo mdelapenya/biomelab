@@ -7,6 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -156,7 +159,7 @@ func TestWaitStoppedWaitsForDescendantsToExit(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("WaitStopped did not return after Stop")
 	}
-	if err := waitPidGone(pid, 2*time.Second); err != nil {
+	if err := processEnded(pid); err != nil {
 		t.Fatalf("descendant %d still exists when WaitStopped returned: %v", pid, err)
 	}
 }
@@ -204,7 +207,7 @@ func TestNaturalExitWithDescendantHoldingPTYEndsSession(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("WaitStopped did not return after natural exit")
 	}
-	if err := waitPidGone(pid, 2*time.Second); err != nil {
+	if err := processEnded(pid); err != nil {
 		t.Fatalf("descendant %d survived natural exit: %v", pid, err)
 	}
 }
@@ -237,31 +240,57 @@ func TestNaturalExitKeepsOutputForSlowReader(t *testing.T) {
 		if err != nil {
 			break
 		}
-		time.Sleep(600 * time.Millisecond)
+		time.Sleep(exitDrainGrace + 300*time.Millisecond)
 	}
 	if !strings.Contains(string(out), "TAIL-END") {
 		t.Fatalf("final output cut off after %d bytes; tail: %q", len(out), out[max(0, len(out)-80):])
 	}
 }
 
-// waitPidGone polls until pid no longer exists. A killed descendant is
-// reparented and remains a zombie until init or launchd reaps it; it no
-// longer runs or holds a working directory, but kill(pid, 0) still succeeds
-// for it. A process that was never killed (sleep 30) stays alive far longer
-// than the window, so the check still catches a real survivor.
-func waitPidGone(pid int, window time.Duration) error {
-	deadline := time.Now().Add(window)
-	for {
-		err := syscall.Kill(pid, 0)
-		if errors.Is(err, syscall.ESRCH) {
-			return nil
-		}
-		if time.Now().After(deadline) {
-			if err == nil {
-				return errors.New("process still exists")
-			}
-			return err
-		}
-		time.Sleep(20 * time.Millisecond)
+// processEnded reports whether pid has stopped running: it no longer exists,
+// its id now belongs to another user (EPERM), or it is a zombie. A killed
+// descendant is reparented and stays a zombie until init or launchd reaps it
+// (forever under a PID 1 that never reaps); it no longer runs or holds a
+// working directory, but kill(pid, 0) still succeeds for it. Checked once,
+// so a process that is still running when WaitStopped returns fails.
+func processEnded(pid int) error {
+	switch err := syscall.Kill(pid, 0); {
+	case errors.Is(err, syscall.ESRCH), errors.Is(err, syscall.EPERM):
+		return nil
+	case err != nil:
+		return err
 	}
+	state, err := processState(pid)
+	if err != nil {
+		return err
+	}
+	if state == "Z" || state == "gone" {
+		return nil
+	}
+	return fmt.Errorf("process is still running (state %q)", state)
+}
+
+// processState returns the one-letter scheduler state of pid, from /proc on
+// Linux and from ps elsewhere (macOS).
+func processState(pid int) (string, error) {
+	if b, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid)); err == nil {
+		// The state follows the parenthesised command name, which may
+		// itself contain spaces or parentheses.
+		s := string(b)
+		if i := strings.LastIndexByte(s, ')'); i >= 0 && i+2 < len(s) {
+			return s[i+2 : i+3], nil
+		}
+	}
+	out, err := exec.Command("ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
+	if err != nil {
+		if errors.Is(syscall.Kill(pid, 0), syscall.ESRCH) {
+			return "gone", nil
+		}
+		return "", fmt.Errorf("ps: %w", err)
+	}
+	stat := strings.TrimSpace(string(out))
+	if stat == "" {
+		return "gone", nil
+	}
+	return stat[:1], nil
 }
