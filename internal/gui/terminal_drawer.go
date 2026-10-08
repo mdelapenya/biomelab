@@ -396,8 +396,12 @@ func (a *App) startCardTerminal(key cardTerminalKey, wt git.Worktree, previous *
 			_ = process.Wait()
 			if ctx.Err() != nil {
 				process.Stop()
-				process.WaitStopped()
 			}
+			// Quit waits on transports, so release this one only after the
+			// whole owned process tree is gone. A shell that exited on its
+			// own still needs its transport teardown (which ends lingering
+			// descendants) before Biomelab may exit; shutdown bounds the wait.
+			process.WaitStopped()
 			p.transports.Done()
 		}()
 		defer process.Stop()
