@@ -2,9 +2,8 @@ package terminal
 
 import (
 	"log"
-	"os"
-
-	"fyne.io/fyne/v2/storage"
+	"net/url"
+	"strings"
 )
 
 func (t *Terminal) handleOSC(code string) {
@@ -29,26 +28,38 @@ func (t *Terminal) handleOSC(code string) {
 	}
 }
 
+// setDirectory records the shell-reported working directory (OSC 7) for
+// listeners. It deliberately does not chdir: the sequence is untrusted
+// process output, and changing the host process's working directory would
+// affect the whole application (and on Windows would lock the directory).
 func (t *Terminal) setDirectory(uri string) {
-	u, err := storage.ParseURI(uri)
-	if err != nil {
-		// working around a Fyne bug where file URI does not parse host
-		off := 4
-		count := 0
-		for count < 3 && off < len(uri) {
-			off++
-			if uri[off] == '/' {
-				count++
-			}
-
+	dir, ok := parseDirectoryURI(uri)
+	if !ok {
+		if t.debug {
+			log.Println("Ignoring malformed OSC 7 directory:", uri)
 		}
-		_ = os.Chdir(uri[off:])
 		return
 	}
-
-	// fallback to guessing it's a path
-	_ = os.Chdir(u.Path())
+	t.config.PWD = dir
+	t.onConfigure()
 }
+
+// parseDirectoryURI accepts file://host/path (host may be empty) and returns
+// the decoded local path. Windows shells report file://host/C:/dir, so a
+// leading slash before a drive letter is dropped.
+func parseDirectoryURI(uri string) (string, bool) {
+	u, err := url.Parse(uri)
+	if err != nil || u.Scheme != "file" || u.Path == "" {
+		return "", false
+	}
+	p := u.Path
+	if len(p) >= 3 && p[0] == '/' && p[2] == ':' && isDriveLetter(p[1]) {
+		p = strings.ReplaceAll(p[1:], "/", `\`)
+	}
+	return p, true
+}
+
+func isDriveLetter(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }
 
 func (t *Terminal) setTitle(title string) {
 	t.config.Title = title

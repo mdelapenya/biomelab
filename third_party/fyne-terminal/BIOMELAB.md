@@ -39,6 +39,11 @@ This is a local compatibility patch, not an upstream release.
   laid-out size; without that, a burst of rows arriving in one read (typical
   of ConPTY) left the viewport pinned at the top of the scrollback. The scroll
   wheel never sends unconditional cursor-key input into the shell.
+- OSC 7 (shell-reported working directory) is parsed defensively and stored
+  in `Config.PWD` for listeners. Upstream called `os.Chdir` on the host
+  process, which let any shell output move Biomelab's own working directory
+  (and on Windows lock the worktree), and its malformed-URI fallback could
+  index past short input.
 - The upstream exit-code tests that spawn `RunLocalShell` are skipped on
   Windows: the retained ActiveState ConPTY path never reports an exit code
   there, so the test would spin until the package timeout. Biomelab's Windows
