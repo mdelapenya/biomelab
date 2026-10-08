@@ -31,6 +31,9 @@ func (t *TermGrid) CreateRenderer() fyne.WidgetRenderer {
 	return t.TextGrid.CreateRenderer()
 }
 
+// Blinking reports whether the blink goroutine is running.
+func (t *TermGrid) Blinking() bool { return t.tickerCancel != nil }
+
 // StopBlink ends the blink goroutine and keeps it from restarting until the
 // grid is rendered again. Call it when the owning renderer is destroyed.
 func (t *TermGrid) StopBlink() {

@@ -5,6 +5,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/widget"
@@ -41,17 +42,24 @@ var escapes = map[rune]func(*Terminal, string){
 }
 
 func (t *Terminal) handleEscape(code string) {
+	// Escape sequences come from untrusted process output. Handlers are
+	// bounds-checked individually, but a panic missed there must cost one
+	// sequence, not the whole application.
+	defer func() {
+		if r := recover(); r != nil && t.debug {
+			log.Println("Escape handler panicked:", strconv.QuoteToASCII(code), r)
+		}
+	}()
 	code = trimLeftZeros(code)
 	if code == "" {
 		return
 	}
 
-	// Index runes, not bytes: process output may end a CSI with a multibyte
-	// character, and mixing the two lengths indexed past the rune slice.
-	runes := []rune(code)
-	last := len(runes) - 1
-	if esc, ok := escapes[runes[last]]; ok {
-		esc(t, string(runes[:last]))
+	// Split off the final character as a rune: process output may end a CSI
+	// with a multibyte character.
+	final, size := utf8.DecodeLastRuneInString(code)
+	if esc, ok := escapes[final]; ok {
+		esc(t, clampEscapeParams(code[:len(code)-size]))
 	} else if t.debug {
 		log.Println("Unrecognised Escape:", strconv.QuoteToASCII(code))
 	}
@@ -346,16 +354,17 @@ func escapeInsertChars(t *Terminal, msg string) {
 	}
 
 	contentRow := t.rowOffset() + t.cursorRow
-	if contentRow < 0 || contentRow >= len(t.content.Rows) || t.cursorCol >= len(t.content.Rows[contentRow].Cells) {
-		// Rows are sparse: past the row's content there is nothing to shift
-		// right, and blanks there are indistinguishable from empty cells.
+	row := t.content.Row(contentRow)
+	if t.cursorCol > len(row.Cells) {
+		// Rows are sparse: with the cursor beyond the row's content there
+		// is nothing to shift right.
 		return
 	}
-	row := &t.content.Rows[contentRow]
-	row.Cells = append(row.Cells[:t.cursorCol], append(newCells, row.Cells[t.cursorCol:]...)...)
-	if len(row.Cells) > cols {
-		row.Cells = row.Cells[:cols]
+	cells := append(row.Cells[:t.cursorCol:t.cursorCol], append(newCells, row.Cells[t.cursorCol:]...)...)
+	if len(cells) > cols {
+		cells = cells[:cols]
 	}
+	t.content.SetRow(contentRow, widget.TextGridRow{Cells: cells})
 }
 
 func escapeInsertLines(t *Terminal, msg string) {
@@ -476,12 +485,22 @@ func escapePrivateMode(t *Terminal, msg string, enable bool) {
 	}
 }
 
+// SM/RM without the '?' prefix (ANSI modes such as insert mode) are not
+// implemented; only DEC private modes are handled.
 func escapePrivateModeOff(t *Terminal, msg string) {
-	escapePrivateMode(t, msg[1:], false)
+	if mode, ok := strings.CutPrefix(msg, "?"); ok {
+		escapePrivateMode(t, mode, false)
+	} else if t.debug {
+		log.Println("Unhandled ANSI reset mode", msg)
+	}
 }
 
 func escapePrivateModeOn(t *Terminal, msg string) {
-	escapePrivateMode(t, msg[1:], true)
+	if mode, ok := strings.CutPrefix(msg, "?"); ok {
+		escapePrivateMode(t, mode, true)
+	} else if t.debug {
+		log.Println("Unhandled ANSI set mode", msg)
+	}
 }
 
 func escapeMoveCursor(t *Terminal, msg string) {
@@ -528,6 +547,13 @@ func escapeSetScrollArea(t *Terminal, msg string) {
 			end, _ = strconv.Atoi(parts[1])
 			end--
 		}
+	}
+	// Keep the region on screen; like xterm, ignore a region that is empty
+	// once clamped.
+	start = max(start, 0)
+	end = min(end, int(t.config.Rows)-1)
+	if start >= end {
+		return
 	}
 
 	t.scrollTop = start
@@ -623,11 +649,46 @@ func escapeDeviceAttribute(t *Terminal, code string) {
 	if t.debug {
 		switch code[0] {
 		case '>':
-			log.Println("Unhandled secondary device attribute", code[1])
+			log.Println("Unhandled secondary device attribute", code[1:])
 		case '=':
-			log.Println("Unhandled tertiary device attribute", code[1])
+			log.Println("Unhandled tertiary device attribute", code[1:])
 		default:
 			log.Println("Unknown device attribute", code[0])
 		}
 	}
+}
+
+// maxEscapeParam bounds every numeric CSI parameter. Real terminals never
+// need more (rows, columns and repeat counts are far smaller), and an
+// unbounded value from process output could make a handler allocate or loop
+// without limit on the UI thread.
+const maxEscapeParam = 9999
+
+// clampEscapeParams caps each run of digits in a CSI parameter string at
+// maxEscapeParam, leaving prefixes ('?', '>', '=') and separators untouched.
+func clampEscapeParams(msg string) string {
+	var b strings.Builder
+	changed := false
+	for i := 0; i < len(msg); {
+		if msg[i] < '0' || msg[i] > '9' {
+			b.WriteByte(msg[i])
+			i++
+			continue
+		}
+		j := i
+		for j < len(msg) && msg[j] >= '0' && msg[j] <= '9' {
+			j++
+		}
+		if n, err := strconv.Atoi(msg[i:j]); err != nil || n > maxEscapeParam {
+			b.WriteString(strconv.Itoa(maxEscapeParam))
+			changed = true
+		} else {
+			b.WriteString(msg[i:j])
+		}
+		i = j
+	}
+	if !changed {
+		return msg
+	}
+	return b.String()
 }

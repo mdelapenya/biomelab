@@ -47,6 +47,16 @@ This is a local compatibility patch, not an upstream release.
   selection), as in xterm, so stale parameters never leak into the next one.
   OSC, DCS and APC payload is capped at 8 KiB so unterminated or huge
   sequences cannot grow an unbounded string on the UI thread.
+- Escape handling treats process output as untrusted. CSI final characters
+  are split as runes (a multibyte final used to panic), delete/insert
+  character and SM/RM/DA handlers are bounds-checked, every numeric CSI
+  parameter is clamped to 9999, the scroll region is clamped to the screen,
+  and a recover around each escape handler limits any missed panic to that
+  one sequence instead of the application.
+- Copy with no selection leaves the clipboard untouched (upstream copied the
+  terminal's first character).
+- The blink ticker is stopped when the renderer that created its grid is
+  destroyed, instead of leaking one goroutine per restarted session.
 - OSC 7 (shell-reported working directory) is parsed by hand and stored in
   `Config.PWD` for listeners. Upstream called `os.Chdir` on the host process,
   which let any shell output move Biomelab's own working directory (and on

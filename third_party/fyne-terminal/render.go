@@ -34,6 +34,9 @@ func (l *termContentLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) 
 
 type render struct {
 	term *Terminal
+	// grid is the grid this renderer created. Terminal.CreateRenderer
+	// replaces term.content, so Destroy must not reach for the current one.
+	grid *widget2.TermGrid
 }
 
 func (r *render) Layout(s fyne.Size) {
@@ -63,9 +66,10 @@ func (r *render) Objects() []fyne.CanvasObject {
 
 func (r *render) Destroy() {
 	// A grid that showed blinking text runs a ticker goroutine; end it with
-	// the renderer so replaced or restarted sessions do not leak it.
-	if r.term.content != nil {
-		r.term.content.StopBlink()
+	// the renderer that created the grid, so replaced or restarted sessions
+	// do not leak it and a newer renderer's grid keeps blinking.
+	if r.grid != nil {
+		r.grid.StopBlink()
 	}
 }
 
@@ -103,7 +107,7 @@ func (t *Terminal) CreateRenderer() fyne.WidgetRenderer {
 	inner := container.New(&termContentLayout{grid: t.content}, t.content, t.cursor)
 	t.scrollContainer = container.NewVScroll(inner)
 
-	r := &render{term: t}
+	r := &render{term: t, grid: t.content}
 	t.cursorMoved = r.moveCursor
 	return r
 }
