@@ -104,23 +104,36 @@ func (p *Process) Stop() {
 			pgid := p.cmd.Process.Pid
 			_ = syscall.Kill(-pgid, syscall.SIGKILL)
 			// WaitStopped is the restart and worktree-deletion barrier, so it
-			// must not open while any group member can still hold the worktree
-			// as its cwd. Reap the leader first (an unreaped zombie still
-			// counts as a member), then wait for the group to disappear.
-			// Callers bound this wait themselves.
-			<-p.done
-			waitGroupGone(pgid)
+			// should not open while a member of the shell's process group can
+			// still hold the worktree as its cwd. Reap the leader first (an
+			// unreaped zombie still counts as a member), then wait for the
+			// group to disappear. The wait is bounded: a member stuck in
+			// uninterruptible sleep cannot be killed, a recycled pgid could
+			// otherwise be followed indefinitely, and restart waits on this
+			// barrier without a timeout of its own. Unix allows removing a
+			// directory that is still some process's cwd, so a late release
+			// cannot make deletion fail. Jobs that an interactive shell moved
+			// into their own process groups are outside this barrier.
+			deadline := time.Now().Add(stopGroupTimeout)
+			select {
+			case <-p.done:
+				waitGroupGone(pgid, deadline)
+			case <-time.After(stopGroupTimeout):
+			}
 		}()
 	})
 }
 
-// waitGroupGone polls until no process we can signal remains in group pgid.
-// Signal 0 probes for existence without delivering anything. ESRCH means the
-// group is gone; EPERM can only mean the id was reused by a group we never
-// owned, so it ends the wait too. Descendants orphaned by the SIGKILL are
-// reparented and reaped by init or launchd, which is why polling is enough.
-func waitGroupGone(pgid int) {
-	for syscall.Kill(-pgid, 0) == nil {
+// stopGroupTimeout bounds how long Stop waits for the killed group to exit.
+const stopGroupTimeout = 5 * time.Second
+
+// waitGroupGone polls until no process we can signal remains in group pgid,
+// or until deadline. Signal 0 probes for existence without delivering
+// anything. ESRCH means the group is gone; EPERM means the id now belongs to
+// another user's group, so it ends the wait too. Descendants orphaned by the
+// SIGKILL are reparented and reaped by init or launchd, so polling is enough.
+func waitGroupGone(pgid int, deadline time.Time) {
+	for syscall.Kill(-pgid, 0) == nil && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
