@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"bytes"
 	_ "embed"
 	"testing"
 	"unicode/utf16"
@@ -117,4 +118,29 @@ func TestHandleOutput_Printing_PDF(t *testing.T) {
 	}
 
 	assert.Equal(t, spooledData, examplePDFData)
+}
+
+// An unterminated or oversized print job must not grow without bound.
+func TestPrintModeIsBounded(t *testing.T) {
+	big := bytes.Repeat([]byte("x"), 2*maxPrintData)
+
+	// Without a printer nothing is kept beyond what detects the terminator.
+	term := New()
+	term.Resize(fyne.NewSize(500, 150))
+	term.handleOutput(append([]byte(esc("[5i")), big...))
+	assert.LessOrEqual(t, len(term.printData), 3)
+	assert.True(t, term.state.printing)
+	term.handleOutput([]byte(esc("[4i") + "after"))
+	assert.False(t, term.state.printing)
+	assert.Equal(t, "after", term.content.Text())
+
+	// With a printer, an oversized job is dropped and a later one prints.
+	term = New()
+	term.Resize(fyne.NewSize(500, 150))
+	var spooled [][]byte
+	term.printer = PrinterFunc(func(d []byte) { spooled = append(spooled, d) })
+	term.handleOutput(append(append([]byte(esc("[5i")), big...), []byte(esc("[4i"))...))
+	assert.Empty(t, spooled)
+	term.handleOutput([]byte(esc("[5i") + "small" + esc("[4i")))
+	assert.Equal(t, [][]byte{[]byte("small")}, spooled)
 }

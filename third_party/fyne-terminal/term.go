@@ -109,6 +109,7 @@ type Terminal struct {
 	lastRefresh            time.Time
 	blinking               bool
 	printData              []byte
+	printOverflow          bool // the current print job exceeded maxPrintData
 	printer                Printer
 	cmd                    *exec.Cmd
 	dirWatchDone           chan struct{} // closed to stop checking the working directory of cmd

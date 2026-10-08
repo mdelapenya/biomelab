@@ -248,8 +248,25 @@ func (t *Terminal) parsePrinting(buf []byte, size int) {
 		t.printData = t.printData[:len(t.printData)-4]
 		escapePrinterMode(t, "4")
 		t.state.esc = noEscape
+		return
+	}
+	// Print mode (CSI 5 i) buffers process output until CSI 4 i, so an
+	// unterminated or huge job must not grow without bound on the UI thread.
+	// Without a printer nothing is spooled; past maxPrintData the job is
+	// dropped. Either way keep only the last bytes needed to recognise the
+	// terminator.
+	if t.printer == nil || len(t.printData) > maxPrintData {
+		if t.printer != nil {
+			t.printOverflow = true
+		}
+		if keep := 3; len(t.printData) > keep {
+			t.printData = append(t.printData[:0], t.printData[len(t.printData)-keep:]...)
+		}
 	}
 }
+
+// maxPrintData caps the output buffered for one print job.
+const maxPrintData = 4 << 20
 
 func (t *Terminal) parseAPC(r rune) {
 	if r == 0 {

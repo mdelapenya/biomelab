@@ -96,8 +96,9 @@ func (t *Terminal) exitAltBuffer() {
 		t.content.Rows = t.altSavedGrid
 		t.altSavedGrid = nil
 	}
-	t.cursorRow = t.altSavedRow
-	t.cursorCol = t.altSavedCol
+	// The screen may have been resized while the alternate buffer was
+	// active; restore the cursor through moveCursor so it is clamped.
+	t.moveCursor(t.altSavedRow, t.altSavedCol)
 }
 
 func (t *Terminal) clearScreen() {
@@ -462,15 +463,16 @@ func escapePrivateMode(t *Terminal, msg string, enable bool) {
 				t.onMouseUp = nil
 			}
 		case "1049":
-			t.bufferMode = enable
 			if enable {
 				t.enterAltBuffer()
 			} else {
 				t.exitAltBuffer()
 			}
 		case "1":
-			// DECCKM - cursor key mode (application vs normal)
-			// Affects what sequences arrow keys send; no display impact
+			// DECCKM - cursor key mode: application (SS3) or normal (CSI)
+			// arrow-key sequences. Upstream toggled this from mode 1049
+			// (alternate screen) instead, so TUIs got the wrong arrows.
+			t.bufferMode = enable
 		case "12":
 			// ATT610 - cursor blink mode; no display impact
 		case "2004":
@@ -623,6 +625,15 @@ func escapePrinterMode(t *Terminal, code string) {
 		t.state.printing = true
 	case "4":
 		t.state.printing = false
+		if t.printOverflow {
+			// The job exceeded maxPrintData and was discarded.
+			t.printOverflow = false
+			t.printData = nil
+			if t.debug {
+				log.Println("Print job exceeded the buffer limit and was dropped")
+			}
+			return
+		}
 		if t.printData != nil {
 			if t.printer != nil {
 				// spool the printer
