@@ -65,6 +65,11 @@ This is a local compatibility patch, not an upstream release.
   is updated accordingly.
 - Double-clicking the last character of a row selects its word (the 1-based
   column bound was off by one).
+- DL and IL act only at and below the cursor inside the scroll region and
+  delete or insert at most the lines left there (upstream mutated the region
+  from outside it, and IL with a count above one copied rows from above the
+  cursor). SGR 27 swaps back what SGR 7 swapped, restoring default colours,
+  instead of clearing both colours; SGR 0 ends reverse video.
 - The blink ticker is stopped when the renderer that created its grid is
   destroyed, instead of leaking one goroutine per restarted session.
 - OSC 7 (shell-reported working directory) is parsed by hand and stored in

@@ -248,11 +248,18 @@ func escapeDeleteLines(t *Terminal, msg string) {
 	if lines == 0 {
 		lines = 1
 	}
+	// DL only acts at and below the cursor inside the scroll region, and
+	// deletes at most the lines left there.
+	if t.cursorRow < t.scrollTop || t.cursorRow > t.scrollBottom {
+		return
+	}
+	lines = min(lines, t.scrollBottom-t.cursorRow+1)
+	off := t.rowOffset()
 	for i := t.cursorRow; i <= t.scrollBottom-lines; i++ {
-		t.content.SetRow(t.rowOffset()+i, t.content.Row(t.rowOffset()+i+lines))
+		t.content.SetRow(off+i, t.content.Row(off+i+lines))
 	}
 	for i := t.scrollBottom - lines + 1; i <= t.scrollBottom; i++ {
-		t.content.SetRow(t.rowOffset()+i, widget.TextGridRow{})
+		t.content.SetRow(off+i, widget.TextGridRow{})
 	}
 }
 
@@ -365,13 +372,19 @@ func escapeInsertLines(t *Terminal, msg string) {
 	if rows == 0 {
 		rows = 1
 	}
-	off := t.rowOffset()
-	i := off + t.scrollBottom
-	for ; i > off+t.cursorRow-rows+1; i-- {
-		t.content.SetRow(i, t.content.Row(i-rows))
+	// IL only acts at and below the cursor inside the scroll region: lines
+	// from the cursor down shift by rows, those pushed past the region's
+	// bottom are lost, and at most the room left is inserted.
+	if t.cursorRow < t.scrollTop || t.cursorRow > t.scrollBottom {
+		return
 	}
-	for ; i >= off+t.cursorRow; i-- {
-		t.content.SetRow(i, widget.TextGridRow{})
+	rows = min(rows, t.scrollBottom-t.cursorRow+1)
+	off := t.rowOffset()
+	for i := t.scrollBottom; i >= t.cursorRow+rows; i-- {
+		t.content.SetRow(off+i, t.content.Row(off+i-rows))
+	}
+	for i := t.cursorRow; i < t.cursorRow+rows; i++ {
+		t.content.SetRow(off+i, widget.TextGridRow{})
 	}
 }
 

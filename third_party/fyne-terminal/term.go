@@ -63,9 +63,14 @@ type Terminal struct {
 	bell, debug, focused                   bool
 	bold, italic, underline, strikethrough bool
 	currentFG, currentBG                   color.Color
-	cursorRow, cursorCol                   int
-	savedRow, savedCol                     int
-	scrollTop, scrollBottom                int
+	// Reverse video (SGR 7) swaps the colours in place; these record it so
+	// SGR 27 can swap back, restoring defaults that SGR 7 substituted.
+	reversed                     bool
+	reversedFGNil, reversedBGNil bool
+	reversedFGSub, reversedBGSub color.Color
+	cursorRow, cursorCol         int
+	savedRow, savedCol           int
+	scrollTop, scrollBottom      int
 
 	cursor                   *canvas.Rectangle
 	cursorHidden, bufferMode bool // buffer mode is an xterm extension that impacts control keys

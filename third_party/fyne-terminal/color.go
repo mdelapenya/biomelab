@@ -50,6 +50,7 @@ func (t *Terminal) handleColorEscape(message string) {
 		t.underline = false
 		t.strikethrough = false
 		t.blinking = false
+		t.reversed = false
 		return
 	}
 	if message[0] == '>' || message[0] == '?' {
@@ -89,6 +90,7 @@ func (t *Terminal) handleColorMode(modeStr string) {
 	switch mode {
 	case 0:
 		t.currentBG, t.currentFG = nil, nil
+		t.reversed = false
 		t.bold = false
 		t.blinking = false
 		t.italic = false
@@ -103,7 +105,12 @@ func (t *Terminal) handleColorMode(modeStr string) {
 	case 5:
 		t.blinking = true
 	case 7: // reverse
+		if t.reversed {
+			break
+		}
 		bg, fg := t.currentBG, t.currentFG
+		t.reversed = true
+		t.reversedFGNil, t.reversedBGNil = fg == nil, bg == nil
 		if fg == nil {
 			t.currentBG = theme.Color(theme.ColorNameForeground)
 		} else {
@@ -114,6 +121,7 @@ func (t *Terminal) handleColorMode(modeStr string) {
 		} else {
 			t.currentFG = bg
 		}
+		t.reversedFGSub, t.reversedBGSub = t.currentFG, t.currentBG
 	case 9:
 		t.strikethrough = true
 	case 22:
@@ -122,18 +130,21 @@ func (t *Terminal) handleColorMode(modeStr string) {
 		t.italic = false
 	case 24:
 		t.underline = false
-	case 27: // reverse off
-		bg, fg := t.currentBG, t.currentFG
-		if fg != nil {
-			t.currentBG = nil
-		} else {
-			t.currentBG = fg
+	case 27: // reverse off: swap back what SGR 7 swapped
+		if !t.reversed {
+			break
 		}
-		if bg != nil {
-			t.currentFG = nil
-		} else {
-			t.currentFG = bg
+		t.reversed = false
+		fg, bg := t.currentBG, t.currentFG
+		// A theme colour that SGR 7 substituted for a default, and that was
+		// not changed since, becomes the default again.
+		if t.reversedFGNil && fg == t.reversedBGSub {
+			fg = nil
 		}
+		if t.reversedBGNil && bg == t.reversedFGSub {
+			bg = nil
+		}
+		t.currentFG, t.currentBG = fg, bg
 	case 30, 31, 32, 33, 34, 35, 36, 37:
 		t.currentFG = t.indexedColor(mode - 30)
 	case 39:
