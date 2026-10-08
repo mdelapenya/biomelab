@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -214,34 +213,25 @@ func TestNaturalExitWithDescendantHoldingPTYEndsSession(t *testing.T) {
 }
 
 func TestNaturalExitKeepsOutputForSlowReader(t *testing.T) {
-	if runtime.GOOS == "darwin" {
-		// On macOS a session leader's exit waits for its controlling tty's
-		// output to drain (XNU proc_exit calls ttywait), and the PTY child is
-		// always a session leader. The root therefore cannot finish exiting
-		// with output still unread, so the cut-off this test guards against
-		// cannot occur there, and its precondition (root exited, output
-		// pending) cannot be set up.
-		t.Skip("macOS drains the tty before a session leader exits")
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	// The root writes a little output and exits naturally while a
-	// background child that ignores SIGHUP keeps the PTY open: the real case
-	// in which the exit watcher must decide when the session ends. Because
-	// the root's close of the tty is not the last one, it exits at once on
-	// Linux and macOS alike (a last close on macOS would wait for unread
-	// output to drain). The reader then drains slowly, as when each chunk
-	// waits for a busy UI thread. Time spent outside Read must not count as
-	// idle, or the tail is thrown away. The output stays below the smallest
-	// PTY buffer (about 1 KiB on macOS), so the root never blocks writing.
+	// The root exits at once, leaving a background child that ignores SIGHUP
+	// and keeps the PTY open: the case in which the exit watcher decides when
+	// the session ends. The child writes the output only after the root has
+	// exited, so the root never has unread output of its own (on macOS a
+	// session leader's exit waits for its tty to drain) and the watcher's
+	// idle timer runs on Linux and macOS alike. The reader then drains
+	// slowly, as when each chunk waits for a busy UI thread. Time spent
+	// outside Read must not count as idle, or the tail is thrown away. The
+	// output stays below the smallest PTY buffer (about 1 KiB on macOS).
 	p, err := Start(ctx, t.TempDir(), []string{"/bin/sh", "-c",
-		`trap '' HUP; sleep 30 & i=0; while [ $i -lt 20 ]; do echo "line $i"; i=$((i+1)); done; printf TAIL-END; exit 0`}, 24, 80)
+		`trap '' HUP; (sleep 0.2; i=0; while [ $i -lt 20 ]; do echo "line $i"; i=$((i+1)); done; printf TAIL-END) & exit 0`}, 24, 80)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer p.Stop()
 	select {
-	case <-p.done: // the root has exited before the first read
+	case <-p.done: // the root has exited before any output exists
 	case <-time.After(5 * time.Second):
 		t.Fatal("root did not exit")
 	}
@@ -265,7 +255,7 @@ func TestNaturalExitKeepsOutputForSlowReader(t *testing.T) {
 	var out []byte
 	select {
 	case out = <-result:
-	case <-time.After(20 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("session never reached EOF after the root exited")
 	}
 	if !strings.Contains(string(out), "TAIL-END") {
