@@ -355,21 +355,45 @@ func (p *Process) teardown() {
 // list are still covered by the accounting loop.
 func (p *Process) terminateJob() {
 	p.terminate.Do(func() {
-		var list struct {
-			assigned, listed uint32
-			ids              [256]uintptr
-		}
-		err := windows.QueryInformationJobObject(p.job, windows.JobObjectBasicProcessIdList,
-			uintptr(unsafe.Pointer(&list)), uint32(unsafe.Sizeof(list)), nil)
-		if err == nil || errors.Is(err, windows.ERROR_MORE_DATA) {
-			for _, pid := range list.ids[:min(list.listed, uint32(len(list.ids)))] {
-				if h, err := windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(pid)); err == nil {
-					p.members = append(p.members, h)
-				}
+		// Capture every member, however many: accounting can reach zero
+		// before a member's process object is signaled, so an uncaptured
+		// member could still hold the worktree when WaitStopped opens.
+		ids, _ := jobProcessIDs(p.job, jobPIDListInitial)
+		for _, pid := range ids {
+			if h, err := windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(pid)); err == nil {
+				p.members = append(p.members, h)
 			}
 		}
 		_ = windows.TerminateJobObject(p.job, 1)
 	})
+}
+
+// jobPIDListInitial is the PID capacity of the first job query; the buffer
+// grows when the job holds more processes.
+const jobPIDListInitial = 64
+
+// jobProcessIDs returns the ids of every process currently in job. The
+// JOBOBJECT_BASIC_PROCESS_ID_LIST result is two DWORD counts followed by a
+// ULONG_PTR array at offset 8. When the buffer is too small the call reports
+// how many processes are assigned, so retry with room for all of them (plus
+// slack, since the job may still be growing).
+func jobProcessIDs(job windows.Handle, capacity int) ([]uintptr, error) {
+	const headerBytes = 8
+	headerWords := headerBytes / int(unsafe.Sizeof(uintptr(0)))
+	for attempt := 0; ; attempt++ {
+		buf := make([]uintptr, headerWords+max(capacity, 1))
+		err := windows.QueryInformationJobObject(job, windows.JobObjectBasicProcessIdList,
+			uintptr(unsafe.Pointer(&buf[0])), uint32(len(buf))*uint32(unsafe.Sizeof(uintptr(0))), nil)
+		if err != nil && !errors.Is(err, windows.ERROR_MORE_DATA) {
+			return nil, err
+		}
+		counts := (*[2]uint32)(unsafe.Pointer(&buf[0]))
+		assigned, listed := int(counts[0]), int(counts[1])
+		if listed >= assigned || attempt >= 8 {
+			return append([]uintptr(nil), buf[headerWords:headerWords+min(listed, len(buf)-headerWords)]...), nil
+		}
+		capacity = assigned + 16
+	}
 }
 
 func (p *Process) Close() error { p.Stop(); return nil }

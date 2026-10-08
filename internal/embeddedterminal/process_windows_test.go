@@ -368,3 +368,45 @@ func TestConPTYStopWhileProducingLargeOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// More members than the first query can hold must still all be captured,
+// or WaitStopped could open while an uncaptured member holds the worktree.
+func TestJobProcessIDsGrowsPastInitialCapacity(t *testing.T) {
+	job, err := windows.CreateJobObject(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.CloseHandle(job)
+	defer windows.TerminateJobObject(job, 1)
+	want := map[uintptr]bool{}
+	for i := 0; i < 3; i++ {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestConPTYHelper$", "--", "child")
+		cmd.Env = append(os.Environ(), "BIOMELAB_CONPTY_HELPER=1")
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+		h, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(cmd.Process.Pid))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := windows.AssignProcessToJobObject(job, h); err != nil {
+			windows.CloseHandle(h)
+			t.Fatal(err)
+		}
+		windows.CloseHandle(h)
+		want[uintptr(cmd.Process.Pid)] = true
+	}
+	got, err := jobProcessIDs(job, 1) // force the growth path
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d job members %v, want %d", len(got), got, len(want))
+	}
+	for _, pid := range got {
+		if !want[pid] {
+			t.Fatalf("unexpected job member %d in %v", pid, got)
+		}
+	}
+}
