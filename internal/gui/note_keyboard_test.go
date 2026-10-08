@@ -18,6 +18,8 @@ type noteShortcutDriver struct {
 	modifiers fyne.KeyModifier
 }
 
+func (d noteShortcutDriver) HasSecondaryDisplay() bool { return false }
+
 func (d noteShortcutDriver) CurrentKeyModifiers() fyne.KeyModifier { return d.modifiers }
 func (d noteShortcutDriver) CreateSplashWindow() fyne.Window       { return d.CreateWindow("splash") }
 

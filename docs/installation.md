@@ -40,7 +40,7 @@ Requires [Git](https://git-scm.com/), [Task](https://taskfile.dev/), and a C too
 ```bash
 # Install a C toolchain for your OS
 #   macOS:    xcode-select --install
-#   Linux:    sudo apt install gcc libgl1-mesa-dev xorg-dev
+#   Linux:    sudo apt install gcc libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols
 #   Windows:  scoop install gcc           (PowerShell; or MSYS2 / WinLibs)
 
 git clone https://github.com/mdelapenya/biomelab.git

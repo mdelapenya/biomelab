@@ -253,7 +253,11 @@ func walkKitDialog(obj fyne.CanvasObject, visit func(fyne.CanvasObject)) {
 
 func kitDialogControls(win fyne.Window) (cards []*widget.Card, checks []*dialogCheck, buttons map[string]*dialogButton, labels []string) {
 	buttons = make(map[string]*dialogButton)
-	walkKitDialog(win.Canvas().Overlays().Top().(*widget.PopUp).Content, func(obj fyne.CanvasObject) {
+	popup, ok := popupFromOverlay(win.Canvas().Overlays().Top())
+	if !ok {
+		return
+	}
+	walkKitDialog(popup.Content, func(obj fyne.CanvasObject) {
 		switch w := obj.(type) {
 		case *widget.Card:
 			cards = append(cards, w)
@@ -294,7 +298,7 @@ func TestKitDialogPagesAndContinuesWithFullSelection(t *testing.T) {
 		t.Fatalf("missing kind badges: %v", labels)
 	}
 	var fallbackLogos int
-	walkKitDialog(win.Canvas().Overlays().Top().(*widget.PopUp).Content, func(obj fyne.CanvasObject) {
+	walkKitDialog(requirePopup(t, win.Canvas().Overlays().Top()).Content, func(obj fyne.CanvasObject) {
 		if img, ok := obj.(*canvas.Image); ok && img.Resource != nil && img.Resource.Name() == "kit-fallback.svg" {
 			fallbackLogos++
 		}
@@ -346,7 +350,7 @@ func TestKitDialogBoundsStayStableAcrossUnevenPages(t *testing.T) {
 	}
 	snapshot := func() bounds {
 		win.Canvas().Capture() // force test driver to lay out the rendered popup
-		popup := win.Canvas().Overlays().Top().(*widget.PopUp)
+		popup := requirePopup(t, win.Canvas().Overlays().Top())
 		var viewport *container.Scroll
 		var footer *dialogButton
 		walkKitDialog(popup.Content, func(obj fyne.CanvasObject) {
@@ -397,7 +401,7 @@ func TestKitDialogBoundsStayStableAcrossUnevenPages(t *testing.T) {
 		}
 	}
 	// A late, wide logo must not increase the card's minimum width or move the footer.
-	popup := win.Canvas().Overlays().Top().(*widget.PopUp)
+	popup := requirePopup(t, win.Canvas().Overlays().Top())
 	var logoBox *fyne.Container
 	walkKitDialog(popup.Content, func(obj fyne.CanvasObject) {
 		if box, ok := obj.(*fyne.Container); ok && len(box.Objects) == 1 {

@@ -43,6 +43,7 @@ func (m *messageDialog) restoreOverlay() {
 	m.restoring = true
 	m.Hide()
 	m.Show()
+	m.overlay = m.parent.Canvas().Overlays().Top()
 	m.restoring = false
 	if m.restoreFocus != nil {
 		m.restoreFocus()
@@ -100,6 +101,9 @@ func (a *App) showWindowInformation(parent fyne.Window, title, message string) {
 			return
 		}
 		a.activeDialog, a.dialogOpen = nil, false
+		if message, ok := previous.(*messageDialog); ok {
+			previousOverlay = message.overlay
+		}
 		for _, overlay := range parent.Canvas().Overlays().List() {
 			if overlay == previousOverlay && previous != nil {
 				a.activeDialog, a.dialogOpen = previous, previousOpen

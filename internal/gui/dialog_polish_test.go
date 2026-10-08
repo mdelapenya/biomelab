@@ -65,7 +65,7 @@ func TestDialogIssueFitsNarrowWindowAtZoom(t *testing.T) {
 			w.Show()
 			preview := showIssuePreview(w, github.IssueInfo{Number: 82, Title: "Improve agent handoff and preserve issue context", Body: strings.Repeat("Requirements remain available to the next agent. ", 100), URL: "https://github.com/example/repository/issues/82", State: "OPEN"}, "example/repository", "/Users/developer/"+strings.Repeat("nested/", 30), "main", func() {}, func(string) error { return nil })
 			defer preview.Hide()
-			popup := w.Canvas().Overlays().Top().(*widget.PopUp)
+			popup := requirePopup(t, w.Canvas().Overlays().Top())
 			if popup.Size().Width > 640 || popup.Size().Height > 560 {
 				t.Fatalf("zoomed issue popup exceeds window: %v", popup.Size())
 			}
@@ -109,7 +109,7 @@ func TestDialogModeChoicesRemainSeparate(t *testing.T) {
 	d := showModeSelection(w, func() {}, func() {}, func() {})
 	defer d.Hide()
 	var sandbox, regular *dialogButton
-	walkSetupContent(w.Canvas().Overlays().Top().(*widget.PopUp).Content, func(object fyne.CanvasObject) {
+	walkSetupContent(requirePopup(t, w.Canvas().Overlays().Top()).Content, func(object fyne.CanvasObject) {
 		if button, ok := object.(*dialogButton); ok {
 			switch button.Text {
 			case "Sandbox (recommended)":

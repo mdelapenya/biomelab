@@ -41,7 +41,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install system dependencies
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc libgl1-mesa-dev xorg-dev
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols
 
       - name: Lint
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
@@ -69,7 +69,7 @@ jobs:
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc libgl1-mesa-dev xorg-dev
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols
 
       - name: Test all packages with race detector
         run: |
@@ -84,6 +84,11 @@ jobs:
             go test -race -count=1 -v ./...
           fi
 
+      - name: Test embedded terminal compatibility patch
+        run: |
+          go test github.com/fyne-io/terminal/...
+          go test -race github.com/fyne-io/terminal/... -run TestEmbedded
+
       - name: Validate native Windows terminal integration
         if: always() && runner.os == 'Windows'
         run: |
@@ -93,6 +98,10 @@ jobs:
           mkdir -p "$trace_dir"
           export BIOMELAB_CONSOLE_TRACE_DIR="$(cygpath -w "$trace_dir")"
           go test -race -count=1 -v ./internal/terminal 2>&1 | tee "$trace_dir/test.log"
+
+      - name: Test app-owned Windows ConPTY backend
+        if: always() && runner.os == 'Windows'
+        run: go test -race -count=1 -v ./internal/embeddedterminal
 
       - name: Upload Windows terminal validation logs
         if: always() && runner.os == 'Windows'
@@ -148,7 +157,7 @@ jobs:
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc libgl1-mesa-dev xorg-dev
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols
 
       - name: Install Task
         uses: go-task/setup-task@70f2430ad412f838533de8c0515c749ffb2b8bd3 # v1.1.0

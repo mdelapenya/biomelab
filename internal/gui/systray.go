@@ -72,6 +72,7 @@ func (a *App) setupSystemTray() {
 		a.trayDepsItem,
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Quit", func() {
+			a.closeCardTerminals()
 			a.stopAllRefresh()
 			a.fyneApp.Quit()
 		}),

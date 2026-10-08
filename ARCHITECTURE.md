@@ -64,6 +64,7 @@ internal/
   process/process.go   Shared process enumeration types (Lister, Info, OSLister)
   provider/            PRProvider interface, GitHub (gh), GitLab (glab), detection
   sandbox/sandbox.go   Docker Sandbox (sbx) CLI wrapper
+  embeddedterminal/    App-owned Unix PTY and Windows ConPTY process lifecycles
   terminal/            Terminal detection, launch, activation (platform-specific)
   github/pr.go         GitHub-specific PR helpers (ParsePRRef, ValidatePR)
   github/issue.go      GitHub issue reference parsing and authenticated gh lookup
@@ -177,14 +178,14 @@ UI; cancellation kills the direct process, not an entire process tree.
 
 Terminal, editor and system-file launches have a separate visibility policy.
 The Windows save-dialog helper suppresses its PowerShell console while preserving
-the requested WinForms dialog. Terminal actions coalesce pending requests and keep per-card, per-mode session
+the requested WinForms dialog. External terminal actions coalesce pending requests and keep per-card, per-mode session
 identities (host shell PID, creation time, and TTY/window ID). A private launch
 handshake runs before any sandbox command, so directory changes and remote
 attachments do not break reuse. Regular mode also discovers unmanaged terminals
 with a fresh scan, resolving path aliases and preferring the deepest containing
 worktree. Closed sessions can be replaced; inspection and activation failures
 retain the association. An unresolved handshake can be explicitly forgotten
-after 30 seconds; the next Enter retries. Associations last until app exit.
+after 30 seconds; the next external-terminal action retries. Associations last until app exit.
 Errors update the originating repo's status without automatic relaunch. Windows
 launch prefers `wt.exe`; its PowerShell fallback uses a hidden helper to start
 the final visible interactive `pwsh.exe`/`powershell.exe` console, avoiding the
@@ -493,3 +494,40 @@ label in one call.
 - `rgt init` hook installer needs a TTY; biomelab writes `.claude/settings.json` itself via `regent.EnsureClaudeHooks`. Don't rely on `--agent claude` to skip the prompt — it doesn't.
 - `widget.Accordion` misbehaves inside `container.NewVScroll` (clicks don't toggle). Use a button + visibility toggle instead — see the regent log dialog's tools collapsible.
 - The shared regent log window is keyed by `App.regentLogWindow` (single instance). Don't spawn a new window per worktree; reuse via `regentLogReload`.
+
+## Integrated terminal ownership
+
+`terminal_drawer.go` owns a UI-thread session map keyed by canonical repository,
+worktree path, mode, sandbox, and agent. In the normal drawer layout, dashboard
+content retains the toolbar, Main checkout, and footer. When an expanded terminal
+belongs to a linked task in List view, its owning-task header replaces the pinned
+Main card above the terminal. The map belongs to App, so dashboard rebuilds never
+recreate transports. Every asynchronous callback checks session identity before
+changing state or output.
+
+`internal/embeddedterminal` starts argv directly in a PTY on macOS/Linux and a
+ConPTY on Windows. Windows requires ConPTY (Windows 10 version 1809 or later,
+or Windows 11); if it is unavailable, startup reports an error and the explicit
+Open in external terminal action remains available. The default shell is
+`pwsh.exe -NoLogo`, then `powershell.exe -NoLogo`, then `%COMSPEC%` or
+`cmd.exe`. The Windows backend uses `x/sys/windows` and starts the child
+suspended, assigns it to a kill-on-close Job Object, then resumes it, so the
+owned process tree is contained before user code can spawn descendants. Stop,
+restart, app quit, and confirmed worktree removal clean up the owned process
+tree. Removal waits for terminal cleanup off the UI thread with a bounded
+timeout; on timeout it reports an error and does not delete the worktree.
+
+The GUI queues input and applies output through the Fyne event loop with bounded
+backpressure. Resize events are coalesced and delivered to the PTY/ConPTY by a
+worker off the UI thread. Hiding the drawer or window keeps running sessions alive; reopening a running session
+reuses it, and reopening an exited session starts a fresh process. App shutdown
+cancels transports and waits with a deadline independently of renderer workers.
+
+The terminal widget is pinned to a local source snapshot in
+`third_party/fyne-terminal`; its provenance, compatibility changes, tests, and
+upstream-removal criteria are in `BIOMELAB.md` there. The app uses the thread-owned
+Feed API instead of the upstream widget's process runner. The integrated terminal
+is the main shell's focused input surface; its Ctrl+Shift+Space action returns to
+workspace navigation. Modal ownership continues to use the existing dialog
+lifecycle. Fyne 2.8 overlay recreation changes object identity, which modal
+restoration now tracks explicitly.

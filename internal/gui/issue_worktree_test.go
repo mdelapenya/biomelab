@@ -10,7 +10,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
-	"fyne.io/fyne/v2/widget"
 
 	"github.com/mdelapenya/biomelab/internal/config"
 	gitrepo "github.com/mdelapenya/biomelab/internal/git"
@@ -47,7 +46,7 @@ func TestIssueFlowEndToEndWithInjectedOperations(t *testing.T) {
 			complete := make(chan struct{})
 			a.issueFlow.onPreview = func() { close(previewReady) }
 			a.issueFlow.onComplete = func() { close(complete) }
-			popup, ok := a.window.Canvas().Overlays().Top().(*widget.PopUp)
+			popup, ok := popupFromOverlay(a.window.Canvas().Overlays().Top())
 			if !ok {
 				t.Fatal("input dialog did not open")
 			}

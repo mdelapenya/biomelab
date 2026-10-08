@@ -23,7 +23,7 @@ All pipelines build for three platforms:
 ### Build dependencies
 
 - **macOS**: Xcode Command Line Tools (pre-installed on runners). `lipo` for universal binaries.
-- **Linux**: `gcc libgl1-mesa-dev xorg-dev` (installed in workflow).
+- **Linux**: `gcc libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols` (installed in workflow).
 - **Windows**: MinGW GCC (pre-installed on `windows-latest` runners).
 - **All**: Go (from `go.mod`), Task CLI, fyne CLI.
 

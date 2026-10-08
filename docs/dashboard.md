@@ -42,12 +42,12 @@ an image to inspect the full-size layout:
 | IDEs | VS Code, Cursor, Zed, Windsurf, GoLand, IntelliJ, PyCharm, Neovim, Vim |
 | Terminals | Terminal.app, iTerm2, Alacritty, kitty, WezTerm, gnome-terminal, Konsole, Tilix, xfce4-terminal, Hyper, Windows Terminal |
 
-Detection matches local processes to worktree paths. Terminal detection follows shell ancestry to a recognized emulator; editor or background shells are not treated as terminal sessions. Recognition does not guarantee that an emulator supports window activation on every platform; see [terminal troubleshooting](configuration.md#troubleshooting). Terminals opened by Biomelab are remembered per card and mode, including sandbox attachments, for the current app run. Enter reuses them even after changing directories. Regular mode can also discover external terminals within the worktree or its subdirectories. After restarting Biomelab, sandbox associations and sessions moved outside their worktree cannot be recovered. Agent detection is separate from recording conversations in re_gent.
+Detection matches local processes to worktree paths. Terminal detection follows shell ancestry to a recognized emulator; editor or background shells are not treated as terminal sessions. Recognition does not guarantee that an emulator supports window activation on every platform; see [terminal troubleshooting](configuration.md#troubleshooting). Terminals opened by Biomelab are remembered per card and mode, including sandbox attachments, for the current app run. The external-terminal fallback reuses them even after changing directories. Regular mode can also discover external terminals within the worktree or its subdirectories. After restarting Biomelab, sandbox associations and sessions moved outside their worktree cannot be recovered. Agent detection is separate from recording conversations in re_gent.
 
 ## Everyday workflow
 
 1. Click **New Worktree**, or select the main card and press `c`, to create a branch and linked worktree under `.biomelab-worktrees/`. Creation does not automatically launch a terminal.
-2. Select its card and press `Enter` to activate an existing host terminal or open one. In sandbox mode this opens or reuses the card's agent session. Press `e` to open your configured editor.
+2. Select its card and press `Enter` to open or focus its integrated terminal. On Windows this uses ConPTY (Windows 10 version 1809 or later, or Windows 11); if ConPTY is unavailable, startup reports an error and **Open in external terminal** remains available as an explicit action. In sandbox mode this starts or reuses the card's agent session. Press `e` to open your configured editor.
 3. Use `m` or right-click to prepare task notes and a PR title. See [notes and activity](notes-and-activity.md).
 4. Commit your changes, then press `Shift+P` on the linked card. Review any dirty/stash warning, choose the remote, and confirm the push and PR/MR creation. If a request already exists, BiomeLab offers push-only behavior.
 5. When finished, press `d` on a linked card and confirm deletion. This removes its directory, branch, and metadata; open IDEs remain running. The main worktree cannot be deleted this way.
@@ -84,7 +84,7 @@ The shortcut strip spans the full workspace below the browser and inspector. It 
 | `↓` | Navigate down within column / grid row / List | Any card |
 | `←` | Navigate left | Linked cards |
 | `→` | Navigate right | Linked cards |
-| `Enter` | Activate existing terminal or open new | Any card |
+| `Enter` | Open or focus card terminal | Any card |
 | `e` | Open in editor | Any card |
 | `m` | Open note editor (right-click also works) | Any card |
 | `l` | Open regent activity log | Any card |
@@ -116,3 +116,41 @@ Use the visible confirmation button or `Enter` to confirm standard confirmation 
 Interface labels, headings, and explanatory text use proportional type; technical values such as branches, paths, and commands use monospace. Dashboard surfaces and dialogs share the theme and zoom settings.
 
 `Ctrl/Cmd+T` switches dark/light theme and saves it. The tray also offers **Theme**, **Show Config**, Docker Sandbox documentation, and **Dependencies**. Closing the main window hides it; choose **Quit** in the tray to exit. Zoom uses `Ctrl/Cmd+=`, `Ctrl/Cmd+-`, and `Ctrl/Cmd+0`.
+
+## Integrated terminal
+
+Enter, Main's Terminal action, and the inspector's Open Terminal action open a
+drawer below the worktree browser on macOS, Linux, and supported Windows systems.
+Windows uses an app-owned ConPTY process. Its default shell is `pwsh.exe -NoLogo`,
+then `powershell.exe -NoLogo`, then `%COMSPEC%` or `cmd.exe`. Each
+worktree/mode/agent context retains its own shell or sandbox connection. Selecting another card shows
+its existing terminal or an Open terminal prompt; selection alone starts nothing.
+View changes, refresh, theme changes, and hiding the drawer keep sessions alive.
+
+Tab, Escape, and control keys belong to the focused terminal. Use
+**Ctrl+Shift+Space** or click a card to return to workspace navigation. Use the
+normal platform terminal clipboard shortcuts: Cmd+C/V on macOS and
+Ctrl+Shift+C/V on Linux and Windows. Scroll the viewport to read its bounded
+history.
+
+**Hide** collapses the drawer without stopping anything. **Expand / Restore**
+uses the worktree-browser area for the terminal while retaining workspace
+controls. While expanded, the pinned card above the terminal shows
+the selected worktree's repository, mode, task or branch, and path; restoring
+the drawer restores the Main checkout card. Short windows automatically use this expanded layout
+until there is room for both panes. The session menu offers **Stop session**, **Restart
+session**, and **Open in external terminal**. Stop/Restart asks before terminating
+a running shell or agent. Typing `exit` and ending the shell normally releases
+terminal focus and collapses the drawer; opening that card’s terminal again
+starts a fresh session. Startup errors and abnormal exits stay visible for
+inspection. Hiding and reopening a running session preserves it.
+The external action creates or reuses a separate OS terminal; it does not transfer
+the embedded shell.
+
+Closing the window to the tray keeps sessions alive. Quitting stops owned local
+PTY/ConPTY process trees. Removing a worktree first stops its related terminal
+and waits for cleanup off the UI thread; if cleanup exceeds its bounded wait,
+deletion is skipped and an error is shown. That worktree's terminal stays
+unavailable until cleanup is confirmed, then removal can be retried. Repository registration or sandbox
+removal disposes its related terminals. Sessions and scrollback are
+not restored across application restarts.

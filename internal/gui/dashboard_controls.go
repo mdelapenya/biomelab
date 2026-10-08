@@ -205,6 +205,26 @@ func (b *boardLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 // wireDashboardActions resolves the active repository on every click. A
 // callback from an old dashboard is ignored after a repository switch.
 func (a *App) wireDashboardActions(d *Dashboard) {
+	d.expandedTerminalOwner = func() (cardTerminalKey, bool) {
+		p := a.cardTerminals
+		if a.dashboard != d || p == nil || !p.visible || (!p.expanded && !p.autoExpanded) {
+			return cardTerminalKey{}, false
+		}
+		re, wt, ok := a.selectedTerminalTarget()
+		if !ok || re.dashboard != d {
+			return cardTerminalKey{}, false
+		}
+		return cardKey(re, wt), true
+	}
+	d.wrapBody = func(body fyne.CanvasObject, mainPanelHeightDelta float32) fyne.CanvasObject {
+		if a.dashboard == d {
+			if p := a.cardTerminals; p != nil {
+				p.mainPanelHeightDelta = mainPanelHeightDelta
+			}
+			return a.wrapCardTerminal(body)
+		}
+		return body
+	}
 	run := func(main bool, fn func()) {
 		re := a.activeRepo()
 		if a.dialogOpen || re == nil || re.dashboard != d || a.dashboard != d {
@@ -252,6 +272,7 @@ func (a *App) wireDashboardActions(d *Dashboard) {
 	}
 	d.OnCardSelected = func(_ int) {
 		if a.dashboard == d {
+			a.leaveCardTerminal()
 			a.focus = focusRight
 			a.updatePanelFocus()
 		}

@@ -60,7 +60,7 @@ tasks:
         msg: |
           No C compiler found on PATH — required for CGO (Fyne).
             macOS:   xcode-select --install
-            Linux:   sudo apt install gcc libgl1-mesa-dev xorg-dev
+            Linux:   sudo apt install gcc libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols
             Windows: scoop install gcc   (or MSYS2: pacman -S mingw-w64-ucrt-x86_64-gcc)
 
   install-gvm:
@@ -218,6 +218,7 @@ tasks:
       CGO_ENABLED: "1"
     cmds:
       - '{{.GO}} test -v ./...'
+      - '{{.GO}} test github.com/fyne-io/terminal/...'
 
   test-race:
     desc: Run all tests with race detector
@@ -226,6 +227,7 @@ tasks:
       CGO_ENABLED: "1"
     cmds:
       - '{{.GO}} test -race -v ./...'
+      - '{{.GO}} test -race github.com/fyne-io/terminal/... -run TestEmbedded'
 
   install:
     desc: Install biomelab to $GOPATH/bin

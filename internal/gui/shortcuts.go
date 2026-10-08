@@ -1,7 +1,11 @@
 package gui
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"math"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"
@@ -511,7 +515,7 @@ func (a *App) handleEnter() {
 	}
 	wt := re.state.Worktrees[idx]
 
-	a.openOrActivateTerminal(re, wt)
+	a.openCardTerminal(re, wt)
 }
 
 func (a *App) handleEscape() {
@@ -667,6 +671,7 @@ func (a *App) handleDeleteOrRemoveSandbox() {
 					if result.Err != nil {
 						a.setRepoStatus(re, result.ErrorMessage(), true)
 					} else {
+						a.stopCardTerminals(func(k cardTerminalKey) bool { return k.sandbox == sbxName })
 						a.setRepoStatus(re, "Removed "+sbxName, false)
 					}
 					a.refreshRepo(re, re.refreshMgr.TriggerLocal)
@@ -683,9 +688,26 @@ func (a *App) handleDeleteOrRemoveSandbox() {
 	wt := re.state.Worktrees[idx]
 	done := a.openDialog()
 	a.activeDialog = showConfirmDelete(a.window, wt.Branch, wt.Path, done, func() {
+		path := canonicalTerminalPath(wt.Path)
+		removal := a.beginCardTerminalRemoval(path)
+		if removal == nil {
+			return
+		}
+		stopped := a.stopCardTerminals(func(k cardTerminalKey) bool { return k.path == path })
 		go func() {
-			err := ops.RemoveWorktree(re.repo, wt.Name)
+			p := a.cardTerminals
+			err := removeAfterCardTerminalCleanup(p.ctx, stopped, 10*time.Second, func() error {
+				return ops.RemoveWorktree(re.repo, wt.Name)
+			})
+			if p.ctx.Err() != nil {
+				return
+			}
 			fyne.Do(func() {
+				if errors.Is(err, errCardTerminalCleanupPending) {
+					a.releaseCardTerminalRemovalAfterCleanup(path, removal, stopped)
+				} else {
+					a.finishCardTerminalRemoval(path, removal)
+				}
 				if !a.hasRepoEntry(re) {
 					return
 				}
@@ -696,6 +718,33 @@ func (a *App) handleDeleteOrRemoveSandbox() {
 			})
 		}()
 	})
+}
+
+var errCardTerminalCleanupPending = errors.New("terminal cleanup pending")
+
+func waitForCardTerminalCleanup(ctx context.Context, stopped []<-chan struct{}, timeout time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	for _, done := range stopped {
+		select {
+		case <-done:
+		case <-deadline.C:
+			return fmt.Errorf("terminal did not stop within %s; worktree was not deleted: %w", timeout, errCardTerminalCleanupPending)
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return ctx.Err()
+}
+
+func removeAfterCardTerminalCleanup(ctx context.Context, stopped []<-chan struct{}, timeout time.Duration, remove func() error) error {
+	if err := waitForCardTerminalCleanup(ctx, stopped, timeout); err != nil {
+		return err
+	}
+	return remove()
 }
 
 func (a *App) handleFetchPR() {
@@ -1221,6 +1270,10 @@ func (a *App) handleRemoveMode() {
 			a.removeRepoEntry(re)
 			return
 		}
+		root := canonicalTerminalPath(re.group.Path)
+		a.stopCardTerminals(func(k cardTerminalKey) bool {
+			return k.repository == root && k.mode == mode.Type && k.sandbox == mode.SandboxName && k.agent == mode.Agent
+		})
 		re.group.Modes = cfg.Repos[idx].Modes
 		newMi := mi
 		if newMi >= len(re.group.Modes) {

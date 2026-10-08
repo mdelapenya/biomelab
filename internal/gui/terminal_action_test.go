@@ -38,10 +38,10 @@ func TestTerminalActionCoalescesAndReportsFailure(t *testing.T) {
 		}, dispatch: func(f func()) { dispatch <- f },
 	}}
 	t.Cleanup(func() { close(release) })
-	a.handleEnter()
+	openExternalForSelected(a)
 	receiveRefresh(t, started)
 	for range 100 {
-		a.handleEnter()
+		openExternalForSelected(a)
 	}
 	if opens.Load() != 1 {
 		t.Fatal("duplicate pending launch")
@@ -61,7 +61,7 @@ func TestTerminalActionCoalescesAndReportsFailure(t *testing.T) {
 		t.Fatal("failure retried automatically")
 	}
 	a.active = 0
-	a.handleEnter()
+	openExternalForSelected(a)
 	receiveRefresh(t, started)
 	release <- struct{}{}
 	receiveRefresh(t, dispatch)()
@@ -128,7 +128,7 @@ func TestTerminalActionReusesRegularAndSandboxSessions(t *testing.T) {
 				},
 				dispatch: func(f func()) { dispatch <- f },
 			}}
-			act := func() { a.handleEnter(); receiveRefresh(t, dispatch)() }
+			act := func() { openExternalForSelected(a); receiveRefresh(t, dispatch)() }
 			act()
 			// Periodic detection remains empty, as with cd outside the worktree or sbx.
 			for range 3 {
@@ -176,7 +176,7 @@ func TestTerminalActionPreservesSandboxArgumentBoundaries(t *testing.T) {
 		},
 		dispatch: func(f func()) { dispatch <- f },
 	}}
-	a.handleEnter()
+	openExternalForSelected(a)
 	receiveRefresh(t, dispatch)()
 }
 
@@ -198,7 +198,7 @@ func TestTerminalActionFreshDiscoveryAndInspectionErrors(t *testing.T) {
 			// Opening would panic: a fresh live session or inspection error forbids it.
 			dispatch: func(f func()) { dispatch <- f },
 		}}
-		a.handleEnter()
+		openExternalForSelected(a)
 		receiveRefresh(t, dispatch)()
 		if failure && re.state.StatusMessage == "" {
 			t.Fatal("inspection error lost")
@@ -230,7 +230,7 @@ func TestTerminalActionRetainsPendingLaunch(t *testing.T) {
 		dispatch: func(f func()) { dispatch <- f },
 	}}
 	for range 3 {
-		a.handleEnter()
+		openExternalForSelected(a)
 		receiveRefresh(t, dispatch)()
 	}
 	if opens != 1 {
@@ -261,23 +261,23 @@ func TestTerminalActionKeepsSeparateModeSessions(t *testing.T) {
 		activate: func(s *terminal.Session) (bool, error) { activated = s; return true, nil },
 		dispatch: func(f func()) { dispatch <- f },
 	}}
-	a.handleEnter()
+	openExternalForSelected(a)
 	receiveRefresh(t, dispatch)()
 	re.state.ActiveMode = &config.ModeEntry{Type: "sandbox", SandboxName: "box"}
-	a.handleEnter()
+	openExternalForSelected(a)
 	apply := receiveRefresh(t, dispatch)
 	re.state.ActiveMode = nil
 	apply()
 	if re.state.StatusMessage != "" {
 		t.Fatal("old mode error applied")
 	}
-	a.handleEnter()
+	openExternalForSelected(a)
 	receiveRefresh(t, dispatch)()
 	if activated != regular {
 		t.Fatal("regular session lost after mode switch")
 	}
 	re.state.ActiveMode = &config.ModeEntry{Type: "sandbox", SandboxName: "box"}
-	a.handleEnter()
+	openExternalForSelected(a)
 	receiveRefresh(t, dispatch)()
 	if activated != box || opens != 2 {
 		t.Fatal("sandbox session lost after mode switch")
@@ -296,7 +296,7 @@ func TestTerminalActionDropsRemovedTargetResult(t *testing.T) {
 			},
 			dispatch: func(f func()) { dispatch <- f },
 		}}
-		a.handleEnter()
+		openExternalForSelected(a)
 		apply := receiveRefresh(t, dispatch)
 		if removeRepo {
 			a.repos = nil
@@ -324,7 +324,7 @@ func TestTerminalRecoveryRequiresExplicitForget(t *testing.T) {
 			if action == "Escape" {
 				a.handleKeyName(fyne.KeyEscape)
 			} else {
-				popup := win.Canvas().Overlays().Top().(*widget.PopUp)
+				popup := requirePopup(t, win.Canvas().Overlays().Top())
 				var button *widget.Button
 				walkSetupContent(popup.Content, func(obj fyne.CanvasObject) {
 					if b, ok := obj.(*widget.Button); ok && b.Text == action {
@@ -384,17 +384,25 @@ func TestTerminalDiscoveryExcludesOtherMode(t *testing.T) {
 		},
 		dispatch: func(f func()) { dispatch <- f },
 	}}
-	a.handleEnter()
+	openExternalForSelected(a)
 	apply := receiveRefresh(t, dispatch)
 	re.state.ActiveMode = nil
-	a.handleEnter() // Same card's first launch has not completed its UI callback.
+	openExternalForSelected(a) // Same card's first launch has not completed its UI callback.
 	if opens != 1 {
 		t.Fatal("mode switch bypassed pending guard")
 	}
 	apply()
-	a.handleEnter()
+	openExternalForSelected(a)
 	receiveRefresh(t, dispatch)()
 	if opens != 2 {
 		t.Fatal("regular mode did not get its own session")
+	}
+}
+
+// External fallback retains its own reuse contract after Enter becomes embedded.
+func openExternalForSelected(a *App) {
+	if i, ok := a.selectedWorktree(); ok {
+		re := a.activeRepo()
+		a.openOrActivateTerminal(re, re.state.Worktrees[i])
 	}
 }

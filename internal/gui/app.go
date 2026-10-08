@@ -97,6 +97,7 @@ type App struct {
 	issueDeps *issueDependencies
 	issueFlow *issueFlow
 
+	cardTerminals    *cardTerminals
 	terminalDeps     *terminalDependencies
 	terminalActions  map[terminalTarget]bool
 	terminalSessions map[terminalTarget]*terminal.Session
@@ -143,9 +144,8 @@ func (a *App) Run() {
 	content := a.buildContent()
 	a.window.SetContent(content)
 
-	// Register keyboard handlers on the canvas. This works because no child
-	// widget implements Focusable — repo panel uses tappable labels (not
-	// widget.Tree) and cards use tappableCard (Tappable only).
+	// The workspace uses canvas navigation. Focused terminals and dialog
+	// inputs own their keystrokes through Fyne's focused-widget dispatch.
 	setupKeyHandlers(a.window.Canvas(), a.handleKeyName, a.handleRune)
 	registerInspectorShortcuts(a.window.Canvas(), a.toggleInspector)
 
@@ -165,6 +165,9 @@ func (a *App) Run() {
 
 	// System tray: closing the window hides to tray instead of quitting.
 	// SetCloseIntercept is set inside setupSystemTray.
+	terminals := a.ensureCardTerminals()
+	a.fyneApp.Lifecycle().SetOnStopped(terminals.cancel)
+	defer terminals.shutdown()
 	a.setupSystemTray()
 	// Keep the published kit catalog and logos warm for a later picker visit.
 	// Refresh is best-effort and never holds the desktop startup path.
@@ -430,6 +433,7 @@ func (a *App) buildMainLayout() fyne.CanvasObject {
 	// Build repo panel (left side).
 	a.repoPanel = NewRepoPanel(a.collectGroups(), a.sbxStatuses)
 	a.repoPanel.OnModeSelected = func(gi, mi int) {
+		a.leaveCardTerminal()
 		a.focus = focusLeft // clicking the tree means left panel has focus
 		a.switchMode(gi, mi)
 	}
@@ -518,6 +522,10 @@ func (a *App) removeRepoEntry(removed *repoEntry) {
 		return
 	}
 	a.workspaceGeneration++
+	if removed.group != nil {
+		root := canonicalTerminalPath(removed.group.Path)
+		a.stopCardTerminals(func(k cardTerminalKey) bool { return k.repository == root })
+	}
 	current := a.activeRepo()
 	if removed.refreshMgr != nil {
 		removed.refreshMgr.Stop()

@@ -144,7 +144,9 @@ type Dashboard struct {
 
 	// OnCardSelected is called when a card is clicked. The index is the
 	// worktree index (0=main, 1+=linked).
-	OnCardSelected func(idx int)
+	OnCardSelected        func(idx int)
+	wrapBody              func(fyne.CanvasObject, float32) fyne.CanvasObject
+	expandedTerminalOwner func() (cardTerminalKey, bool)
 
 	// OnNoteRequested fires when the user right-clicks a card and wants to
 	// open the per-worktree note editor.
@@ -365,6 +367,20 @@ func (d *Dashboard) build() fyne.CanvasObject {
 		return container.New(&workspaceRootLayout{}, header, inset(container.NewVBox(append(topItems, uiText("No worktrees found.", colorGray, false))...), spaceLG, spaceLG))
 	}
 	mainPanel := inset(d.mainSummary(*main), spaceMD, spaceSM)
+	// prominentMainLayout measures wrapped actions using its last laid-out
+	// width. A freshly built panel otherwise assumes 1000px, which makes the
+	// automatic terminal threshold depend on which summary is currently shown.
+	if d.content != nil && d.content.Size().Width > 0 {
+		mainPanel.Resize(fyne.NewSize(d.content.Size().Width, mainPanel.MinSize().Height))
+	}
+	normalMainHeight := mainPanel.MinSize().Height
+	if d.expandedTerminalOwner != nil {
+		if key, ok := d.expandedTerminalOwner(); ok {
+			if idx := d.state.SelectedCard; idx >= 0 && idx < len(d.state.Worktrees) && canonicalTerminalPath(d.state.Worktrees[idx].Path) == key.path {
+				mainPanel = inset(d.terminalOwnerSummary(d.state.Worktrees[idx], key), spaceMD, spaceSM)
+			}
+		}
+	}
 	top := container.NewVBox(topItems...)
 	var body fyne.CanvasObject
 	linked := d.state.LinkedWorktrees()
@@ -416,9 +432,12 @@ func (d *Dashboard) build() fyne.CanvasObject {
 		d.scroll.Offset = d.gridOffset
 		body = d.scroll
 	}
-	browser := inset(container.NewBorder(top, nil, nil, nil, body), spaceMD, spaceSM)
+	var browser fyne.CanvasObject = inset(container.NewBorder(top, nil, nil, nil, body), spaceMD, spaceSM)
 	if d.inspectorOpen {
-		return container.New(&workspaceRootLayout{footer: true}, header, mainPanel, container.New(&workspacePaneLayout{list: d.state.ViewMode == ViewList}, browser, d.buildInspector()), d.helpBar())
+		browser = container.New(&workspacePaneLayout{list: d.state.ViewMode == ViewList}, browser, d.buildInspector())
+	}
+	if d.wrapBody != nil {
+		browser = d.wrapBody(browser, mainPanel.MinSize().Height-normalMainHeight)
 	}
 	return container.New(&workspaceRootLayout{footer: true}, header, mainPanel, browser, d.helpBar())
 }
@@ -572,6 +591,33 @@ func (d *Dashboard) mainSummary(wt git.Worktree) fyne.CanvasObject {
 		}
 	})
 	return card
+}
+
+func (d *Dashboard) terminalOwnerSummary(wt git.Worktree, key cardTerminalKey) fyne.CanvasObject {
+	repository := d.RepoName
+	if repository == "" {
+		repository = filepath.Base(key.repository)
+	}
+	context := repository + " · " + key.mode
+	if key.agent != "" {
+		context += " / " + key.agent
+	}
+	title := wt.Branch
+	if pr := d.prFor(wt.Branch); pr != nil && pr.Title != "" {
+		title = pr.Title
+	}
+	if title == "" {
+		title = filepath.Base(wt.Path)
+	}
+	heading := newMeasuredText("Terminal · "+context, colorForeground, true, false, false)
+	heading.txt.TextSize = scaledSize(13)
+	task := newMeasuredText(title, colorForeground, true, false, false)
+	task.txt.TextSize = scaledSize(13)
+	branch := newMeasuredText(wt.Branch, colorGray, false, true, false)
+	branch.txt.TextSize = scaledSize(11)
+	path := newMeasuredText(wt.Path, colorDimGray, false, true, true)
+	path.txt.TextSize = scaledSize(11)
+	return makeCard(container.NewVBox(heading, task, branch, path), true, false, nil)
 }
 
 func (d *Dashboard) helpBar() fyne.CanvasObject {

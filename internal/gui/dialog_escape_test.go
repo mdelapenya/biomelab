@@ -288,7 +288,7 @@ func TestSendPREscapeFromNotesControlsDoesNotPublishOrReview(t *testing.T) {
 			done := a.openDialog()
 			a.activeDialog = showSendPRConfirm(w, "owned", git.RemoteInfo{Name: "origin"}, nil, true, func() { closed++; done() }, func(bool) { confirmed++ }, func() { reviewed++ })
 			var target fyne.Focusable
-			walkPolish(w.Canvas().Overlays().Top().(*widget.PopUp).Content, func(o fyne.CanvasObject) {
+			walkPolish(requirePopup(t, w.Canvas().Overlays().Top()).Content, func(o fyne.CanvasObject) {
 				if check, ok := o.(*dialogCheck); ok && focus == "checkbox" {
 					target = check
 				}
@@ -329,7 +329,7 @@ func TestDismissFooterEscapeKeepsExistingChoicesUnsubmitted(t *testing.T) {
 				d.Show()
 			}
 			var cancel *escapeButton
-			walkSetupContent(w.Canvas().Overlays().Top().(*widget.PopUp).Content, func(o fyne.CanvasObject) {
+			walkSetupContent(requirePopup(t, w.Canvas().Overlays().Top()).Content, func(o fyne.CanvasObject) {
 				if button, ok := o.(*escapeButton); ok && button.Text == "Cancel" {
 					cancel = button
 				}

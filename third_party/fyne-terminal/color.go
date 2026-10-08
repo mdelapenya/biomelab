@@ -1,0 +1,216 @@
+package terminal
+
+import (
+	"image/color"
+	"log"
+	"strconv"
+	"strings"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/theme"
+)
+
+var (
+	basicColors = []color.Color{
+		color.Black,
+		&color.RGBA{170, 0, 0, 255},
+		&color.RGBA{0, 170, 0, 255},
+		&color.RGBA{170, 170, 0, 255},
+		&color.RGBA{0, 0, 170, 255},
+		&color.RGBA{170, 0, 170, 255},
+		&color.RGBA{0, 255, 255, 255},
+		&color.RGBA{170, 170, 170, 255},
+	}
+	brightColors = []color.Color{
+		&color.RGBA{85, 85, 85, 255},
+		&color.RGBA{255, 85, 85, 255},
+		&color.RGBA{85, 255, 85, 255},
+		&color.RGBA{255, 255, 85, 255},
+		&color.RGBA{85, 85, 255, 255},
+		&color.RGBA{255, 85, 255, 255},
+		&color.RGBA{85, 255, 255, 255},
+		&color.RGBA{255, 255, 255, 255},
+	}
+	colourBands = []uint8{
+		0x00,
+		0x5f,
+		0x87,
+		0xaf,
+		0xd7,
+		0xff,
+	}
+)
+
+func (t *Terminal) handleColorEscape(message string) {
+	if message == "" || message == "0" {
+		t.currentBG = nil
+		t.currentFG = nil
+		t.bold = false
+		t.italic = false
+		t.underline = false
+		t.strikethrough = false
+		t.blinking = false
+		t.reversed = false
+		return
+	}
+	if message[0] == '>' || message[0] == '?' {
+		if t.debug {
+			log.Println("Strange colour mode", message)
+		}
+		return
+	}
+	modes := strings.Split(message, ";")
+	for i := 0; i < len(modes); i++ {
+		mode := modes[i]
+		if mode == "" {
+			continue
+		}
+
+		if (mode == "38" || mode == "48") && i+1 < len(modes) {
+			nextMode := modes[i+1]
+			if nextMode == "5" && i+2 < len(modes) {
+				t.handleColorModeMap(mode, modes[i+2])
+				i += 2
+			} else if nextMode == "2" && i+4 < len(modes) {
+				t.handleColorModeRGB(mode, modes[i+2], modes[i+3], modes[i+4])
+				i += 4
+			}
+		} else {
+			t.handleColorMode(mode)
+		}
+	}
+}
+
+func (t *Terminal) handleColorMode(modeStr string) {
+	mode, err := strconv.Atoi(modeStr)
+	if err != nil {
+		fyne.LogError("Failed to parse color mode: "+modeStr, err)
+		return
+	}
+	switch mode {
+	case 0:
+		t.currentBG, t.currentFG = nil, nil
+		t.reversed = false
+		t.bold = false
+		t.blinking = false
+		t.italic = false
+		t.underline = false
+		t.strikethrough = false
+	case 1:
+		t.bold = true
+	case 3:
+		t.italic = true
+	case 4:
+		t.underline = true
+	case 5:
+		t.blinking = true
+	case 7: // reverse video: applied when cells are drawn, see displayColors
+		t.reversed = true
+	case 9:
+		t.strikethrough = true
+	case 22:
+		t.bold = false
+	case 23:
+		t.italic = false
+	case 24:
+		t.underline = false
+	case 27: // reverse video off
+		t.reversed = false
+	case 30, 31, 32, 33, 34, 35, 36, 37:
+		t.currentFG = t.indexedColor(mode - 30)
+	case 39:
+		t.currentFG = nil
+	case 40, 41, 42, 43, 44, 45, 46, 47:
+		t.currentBG = t.indexedColor(mode - 40)
+	case 49:
+		t.currentBG = nil
+	case 90, 91, 92, 93, 94, 95, 96, 97:
+		t.currentFG = t.indexedColor(mode - 90 + 8)
+	case 100, 101, 102, 103, 104, 105, 106, 107:
+		t.currentBG = t.indexedColor(mode - 100 + 8)
+	default:
+		if t.debug {
+			log.Println("Unsupported graphics mode", mode)
+		}
+	}
+}
+
+func (t *Terminal) handleColorModeMap(mode, ids string) {
+	var c color.Color
+	id, err := strconv.Atoi(ids)
+	if err != nil {
+		if t.debug {
+			log.Println("Invalid color map ID", ids)
+		}
+		return
+	}
+	if id <= 7 {
+		c = t.indexedColor(id)
+	} else if id <= 15 {
+		c = t.indexedColor(id)
+	} else if id <= 231 {
+		id -= 16
+		b := id % 6
+		id = (id - b) / 6
+		g := id % 6
+		r := (id - g) / 6
+		c = &color.RGBA{colourBands[r], colourBands[g], colourBands[b], 255}
+	} else if id <= 255 {
+		id -= 232
+		inc := 256 / 24
+		y := id * inc
+		c = &color.Gray{uint8(y)}
+	} else if t.debug {
+		log.Println("Invalid colour map ID", id)
+	}
+
+	switch mode {
+	case "38":
+		t.currentFG = c
+	case "48":
+		t.currentBG = c
+	}
+}
+
+func (t *Terminal) handleColorModeRGB(mode, rs, gs, bs string) {
+	r, _ := strconv.Atoi(rs)
+	g, _ := strconv.Atoi(gs)
+	b, _ := strconv.Atoi(bs)
+	c := &color.RGBA{uint8(r), uint8(g), uint8(b), 255}
+
+	switch mode {
+	case "38":
+		t.currentFG = c
+	case "48":
+		t.currentBG = c
+	}
+}
+
+func (t *Terminal) indexedColor(index int) color.Color {
+	if t.Palette != nil {
+		return t.Palette(index)
+	}
+	if index < 8 {
+		return basicColors[index]
+	}
+	return brightColors[index-8]
+}
+
+// displayColors returns the colours a new cell is drawn with. Reverse video
+// (SGR 7) is an attribute rather than an in-place swap of the current
+// colours, so colour changes while it is on apply to the logical layers and
+// SGR 27 simply stops swapping. Default (nil) colours are substituted with
+// theme colours at draw time.
+func (t *Terminal) displayColors() (fg, bg color.Color) {
+	if !t.reversed {
+		return t.currentFG, t.currentBG
+	}
+	fg, bg = t.currentBG, t.currentFG
+	if fg == nil {
+		fg = theme.Color(theme.ColorNameBackground)
+	}
+	if bg == nil {
+		bg = theme.Color(theme.ColorNameForeground)
+	}
+	return fg, bg
+}

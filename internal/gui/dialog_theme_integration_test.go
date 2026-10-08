@@ -193,7 +193,7 @@ func TestMessageEscapeRestoresWorkflowAtZoom(t *testing.T) {
 	workflow := showBranchInput(w, done, func(string) { t.Fatal("message dismissal submitted the worktree") })
 	a.activeDialog = workflow
 	a.showError(errors.New("An unrelated background operation failed. The branch draft must remain available."))
-	popup := w.Canvas().Overlays().Top().(*widget.PopUp)
+	popup := requirePopup(t, w.Canvas().Overlays().Top())
 	if popup.Size().Width > 640 || popup.Size().Height > 460 {
 		t.Fatal("zoomed error message exceeded the window")
 	}
@@ -225,7 +225,7 @@ func TestProductionSecondaryActionsFitNarrowZoom(t *testing.T) {
 			a := &App{window: w, fyneApp: fa, sysdepsCache: cache, sysdepsClosed: true}
 			d := a.showSysDepsDialog()
 			defer d.Hide()
-			popup := w.Canvas().Overlays().Top().(*widget.PopUp)
+			popup := requirePopup(t, w.Canvas().Overlays().Top())
 			if popup.Size().Width > 640 || popup.Size().Height > 480 {
 				t.Fatal("zoomed dependencies exceeded parent bounds")
 			}
