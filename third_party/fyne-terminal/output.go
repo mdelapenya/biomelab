@@ -135,16 +135,22 @@ func (t *Terminal) handleOutput(buf []byte) []byte {
 			t.state.escNext = true
 			continue
 		}
-		if t.state.dcs {
-			t.parseDCS(r)
-			continue
-		}
 		if t.state.escNext {
 			t.state.escNext = false
+			if r != '\\' && (t.state.osc || t.state.dcs || t.state.apc) {
+				// ESC inside a string sequence that is not ST cancels the
+				// string (as xterm does) and starts a new escape.
+				t.state.code = ""
+				t.state.osc, t.state.dcs, t.state.apc = false, false, false
+			}
 			if cont := t.parseEscState(r); cont {
 				continue
 			}
 			t.state.esc = noEscape
+			continue
+		}
+		if t.state.dcs {
+			t.parseDCS(r)
 			continue
 		}
 		if t.state.apc {
@@ -187,13 +193,18 @@ func (t *Terminal) parseEscState(r rune) (shouldContinue bool) {
 	switch r {
 	case '[':
 		return true
-	case '\\':
-		if t.state.osc {
-			code := t.state.code
+	case '\\': // ST ends whichever string sequence is active
+		code := t.state.code
+		switch {
+		case t.state.osc:
 			t.handleOSC(code)
+		case t.state.dcs:
+			t.handleDCS(code)
+		case t.state.apc:
+			t.handleAPC(code)
 		}
 		t.state.code = ""
-		t.state.osc = false
+		t.state.osc, t.state.dcs, t.state.apc = false, false, false
 	case ']':
 		t.state.osc = true
 	case '(', ')':
@@ -259,15 +270,10 @@ func (t *Terminal) parseOSC(r rune) {
 	}
 }
 
+// parseDCS collects payload. DCS ends only with ST (ESC, backslash), which
+// the escape path handles; a bare backslash is ordinary payload.
 func (t *Terminal) parseDCS(r rune) {
-	if r == '\\' {
-		code := t.state.code
-		t.handleDCS(code)
-		t.state.code = ""
-		t.state.dcs = false
-	} else {
-		t.state.code += string(r)
-	}
+	t.state.code += string(r)
 }
 
 func (t *Terminal) handleOutputChar(r rune) {

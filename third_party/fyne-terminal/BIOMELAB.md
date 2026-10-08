@@ -39,6 +39,11 @@ This is a local compatibility patch, not an upstream release.
   laid-out size; without that, a burst of rows arriving in one read (typical
   of ConPTY) left the viewport pinned at the top of the scrollback. The scroll
   wheel never sends unconditional cursor-key input into the shell.
+- String sequences end correctly with ST (ESC followed by a backslash).
+  Upstream only completed OSC that way: an APC ended with ST never closed and
+  swallowed all later output, a DCS ended with ST ate the next printable
+  character, and a bare backslash inside DCS payload ended it early. Any
+  other ESC inside a string now cancels it, as in xterm.
 - OSC 7 (shell-reported working directory) is parsed defensively and stored
   in `Config.PWD` for listeners. Upstream called `os.Chdir` on the host
   process, which let any shell output move Biomelab's own working directory
