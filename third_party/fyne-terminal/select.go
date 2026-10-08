@@ -19,7 +19,7 @@ func (t *Terminal) getSelectedRange() (int, int, int, int) {
 
 	if t.blockMode {
 		if startCol > endCol {
-			// Swap the start and end colums
+			// Swap the start and end columns
 			startCol, endCol = endCol, startCol
 		}
 

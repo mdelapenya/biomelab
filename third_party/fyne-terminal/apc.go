@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// APCHandler handles a APC command for the given terminal.
+// APCHandler handles an APC command for the given terminal.
 type APCHandler func(*Terminal, string)
 
 var apcHandlers = map[string]func(*Terminal, string){}
@@ -27,7 +27,7 @@ func (t *Terminal) handleAPC(code string) {
 	}
 }
 
-// RegisterAPCHandler registers a APC handler for the given APC command string.
+// RegisterAPCHandler registers an APC handler for the given APC command string.
 func RegisterAPCHandler(APC string, handler APCHandler) {
 	apcHandlers[APC] = handler
 }

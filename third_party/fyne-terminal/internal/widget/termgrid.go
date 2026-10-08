@@ -23,7 +23,7 @@ type TermGrid struct {
 	stopped bool
 }
 
-// CreateRenderer is a private method to Fyne which links this widget to it's renderer
+// CreateRenderer is a private method to Fyne which links this widget to its renderer
 func (t *TermGrid) CreateRenderer() fyne.WidgetRenderer {
 	t.ExtendBaseWidget(t)
 	t.stopped = false
