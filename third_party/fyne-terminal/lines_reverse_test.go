@@ -1,10 +1,12 @@
 package terminal
 
 import (
+	"bytes"
 	"fmt"
 	"testing"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/theme"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -112,4 +114,44 @@ func TestShrinkResetsOversizedScrollRegion(t *testing.T) {
 	before := len(term.content.Rows)
 	term.handleOutput([]byte("\x1b[2;1H\x1b[M\x1b[L"))
 	assert.LessOrEqual(t, len(term.content.Rows), max(before, int(term.config.Rows)))
+}
+
+// DECCKM (CSI ? 1 h/l) selects application arrow keys; entering the
+// alternate screen alone does not.
+func TestCursorKeyModeFollowsDECCKM(t *testing.T) {
+	var in bytes.Buffer
+	term := New()
+	term.AttachWriter(NopCloser(&in))
+	term.handleOutput([]byte("\x1b[?1049h"))
+	term.typeCursorKey(fyne.KeyUp)
+	assert.Equal(t, "\x1b[A", in.String())
+
+	in.Reset()
+	term.handleOutput([]byte("\x1b[?1h"))
+	term.typeCursorKey(fyne.KeyUp)
+	assert.Equal(t, "\x1bOA", in.String())
+
+	in.Reset()
+	term.handleOutput([]byte("\x1b[?1l"))
+	term.typeCursorKey(fyne.KeyUp)
+	assert.Equal(t, "\x1b[A", in.String())
+}
+
+// Leaving the alternate screen after a shrink keeps the cursor on screen.
+func TestExitAltBufferClampsCursor(t *testing.T) {
+	term := New()
+	term.Resize(fyne.NewSize(500, 400))
+	rows := int(term.config.Rows)
+	term.handleOutput([]byte(fmt.Sprintf("\x1b[%d;1H\x1b[?1049h", rows)))
+	term.Resize(fyne.NewSize(500, 150))
+	term.handleOutput([]byte("\x1b[?1049l"))
+	assert.Less(t, term.cursorRow, int(term.config.Rows))
+}
+
+// Reverse video draws a default foreground in the theme background colour.
+func TestReverseVideoDefaultForegroundIsBackground(t *testing.T) {
+	term := New()
+	term.handleOutput([]byte("\x1b[7m"))
+	fg, _ := term.displayColors()
+	assert.Equal(t, theme.Color(theme.ColorNameBackground), fg)
 }

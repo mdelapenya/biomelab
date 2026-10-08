@@ -207,7 +207,7 @@ func (t *Terminal) displayColors() (fg, bg color.Color) {
 	}
 	fg, bg = t.currentBG, t.currentFG
 	if fg == nil {
-		fg = theme.Color(theme.ColorNameDisabledButton)
+		fg = theme.Color(theme.ColorNameBackground)
 	}
 	if bg == nil {
 		bg = theme.Color(theme.ColorNameForeground)

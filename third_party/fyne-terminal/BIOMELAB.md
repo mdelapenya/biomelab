@@ -91,6 +91,16 @@ This is a local compatibility patch, not an upstream release.
   there, so the test would spin until the package timeout. Biomelab's Windows
   transport lives in `internal/embeddedterminal` and has its own tests.
 - The module's minimum Go version and Fyne requirement match the Fyne 2.8 line.
+- Print mode (CSI 5 i ... CSI 4 i) is bounded: without a printer only the
+  bytes needed to spot the terminator are kept, and a job over 4 MiB is
+  dropped.
+- DECCKM (CSI ? 1 h/l) selects application arrow keys. Upstream toggled
+  that from the alternate-screen mode 1049 and ignored mode 1.
+- Leaving the alternate screen restores the cursor through `moveCursor`,
+  clamped to a screen that may have shrunk meanwhile.
+- Reverse video draws a default foreground in the theme background colour
+  (upstream used the disabled-button colour); the upstream colour tests
+  expect the theme background.
 - Comment-only typo fixes in `apc.go`, `select.go` and
   `internal/widget/termgrid.go` (worth sending upstream with the rest).
 

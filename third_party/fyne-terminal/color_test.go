@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	widget2 "github.com/fyne-io/terminal/internal/widget"
 	"github.com/stretchr/testify/assert"
@@ -108,12 +109,12 @@ func TestHandleOutput_Normal_Text(t *testing.T) {
 	}{
 		"reverse video": {
 			inputSeq:   esc("[7m"),
-			expectedFg: color.NRGBA{R: 34, G: 34, B: 34, A: 255},
+			expectedFg: theme.Color(theme.ColorNameBackground), // reverse-video default fg (Biomelab patch)
 			expectedBg: color.NRGBA{R: 255, G: 255, B: 255, A: 255},
 		},
 		"reverse video and bold": {
 			inputSeq:      esc("[7m") + esc("[1m"),
-			expectedFg:    color.NRGBA{R: 34, G: 34, B: 34, A: 255},
+			expectedFg:    theme.Color(theme.ColorNameBackground), // reverse-video default fg (Biomelab patch)
 			expectedBg:    color.NRGBA{R: 255, G: 255, B: 255, A: 255},
 			expectedStyle: fyne.TextStyle{Bold: true},
 		},
@@ -185,7 +186,7 @@ func TestHandleOutput_ANSI_Colors(t *testing.T) {
 			// background (xterm). Upstream swapped in place and coloured the
 			// drawn foreground instead; see BIOMELAB.md.
 			inputSeq:   esc("[7m") + esc("[37m"),
-			expectedFg: color.NRGBA{34, 34, 34, 255},
+			expectedFg: theme.Color(theme.ColorNameBackground),
 			expectedBg: &color.RGBA{170, 170, 170, 255},
 		},
 		"underline": {
