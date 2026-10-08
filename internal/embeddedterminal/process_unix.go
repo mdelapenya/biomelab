@@ -28,6 +28,8 @@ type Process struct {
 	stop    sync.Once
 	err     error
 	cancel  context.CancelFunc
+	readEnd sync.Once
+	readEOF chan struct{} // closed when Read first returns an error (EOF)
 }
 
 // Start starts argv directly, preserving argument boundaries. An empty argv
@@ -51,7 +53,7 @@ func Start(ctx context.Context, dir string, argv []string, rows, cols uint16) (*
 		return nil, err
 	}
 	watch, cancel := context.WithCancel(ctx)
-	p := &Process{stopped: make(chan struct{}), file: f, cmd: cmd, done: make(chan struct{}), cancel: cancel}
+	p := &Process{stopped: make(chan struct{}), file: f, cmd: cmd, done: make(chan struct{}), cancel: cancel, readEOF: make(chan struct{})}
 	go func() {
 		p.err = cmd.Wait()
 		close(p.done)
@@ -59,17 +61,34 @@ func Start(ctx context.Context, dir string, argv []string, rows, cols uint16) (*
 	go func() {
 		select {
 		case <-watch.Done():
-			p.Stop()
 		case <-p.done:
+			// The root exited. A descendant that inherited the PTY slave
+			// (for example a background job ignoring SIGHUP) would keep Read
+			// blocked forever, so the session would never finish. Give the
+			// reader a moment to drain the root's final output to EOF, then
+			// tear the group down, as Windows does on root exit.
+			select {
+			case <-p.readEOF:
+			case <-time.After(exitDrainGrace):
+			case <-watch.Done():
+			}
 		}
+		p.Stop()
 	}()
 	return p, nil
 }
+
+// exitDrainGrace is how long a natural exit waits for the PTY to reach EOF
+// on its own before a lingering descendant is torn down.
+const exitDrainGrace = 500 * time.Millisecond
 
 func (p *Process) Read(b []byte) (int, error) {
 	n, err := p.file.Read(b)
 	if errors.Is(err, syscall.EIO) || errors.Is(err, os.ErrClosed) {
 		err = io.EOF
+	}
+	if err != nil {
+		p.readEnd.Do(func() { close(p.readEOF) })
 	}
 	return n, err
 }

@@ -160,3 +160,51 @@ func TestWaitStoppedWaitsForDescendantsToExit(t *testing.T) {
 		t.Fatalf("descendant %d still exists when WaitStopped returned: %v", pid, err)
 	}
 }
+
+func TestNaturalExitWithDescendantHoldingPTYEndsSession(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// The root exits normally while a backgrounded child that ignores HUP
+	// still holds the PTY slave. The session must still reach EOF (so the
+	// drawer can collapse) after the root's final output, and the child
+	// must be gone once WaitStopped returns.
+	p, err := Start(ctx, t.TempDir(), []string{"/bin/sh", "-c",
+		`trap '' HUP; sleep 30 & printf 'pid=%s;ROOT-FINAL' "$!"; exit 0`}, 24, 80)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Stop()
+	result := make(chan []byte, 1)
+	go func() {
+		b, _ := io.ReadAll(p)
+		result <- b
+	}()
+	var out []byte
+	select {
+	case out = <-result:
+	case <-time.After(5 * time.Second):
+		t.Fatal("root exit with a descendant holding the PTY never reached EOF")
+	}
+	if !strings.Contains(string(out), "ROOT-FINAL") {
+		t.Fatalf("final output lost: %q", out)
+	}
+	if err := p.Wait(); err != nil {
+		t.Fatalf("natural exit status: %v", err)
+	}
+	var pid int
+	if i := strings.Index(string(out), "pid="); i < 0 {
+		t.Fatalf("missing descendant pid: %q", out)
+	} else if _, err := fmt.Sscanf(string(out[i:]), "pid=%d;", &pid); err != nil {
+		t.Fatal(err)
+	}
+	stopped := make(chan struct{})
+	go func() { p.WaitStopped(); close(stopped) }()
+	select {
+	case <-stopped:
+	case <-time.After(10 * time.Second):
+		t.Fatal("WaitStopped did not return after natural exit")
+	}
+	if err := syscall.Kill(pid, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Fatalf("descendant %d survived natural exit: %v", pid, err)
+	}
+}
