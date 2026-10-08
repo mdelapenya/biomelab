@@ -46,9 +46,12 @@ func (t *Terminal) handleEscape(code string) {
 		return
 	}
 
+	// Index runes, not bytes: process output may end a CSI with a multibyte
+	// character, and mixing the two lengths indexed past the rune slice.
 	runes := []rune(code)
-	if esc, ok := escapes[runes[len(code)-1]]; ok {
-		esc(t, code[:len(code)-1])
+	last := len(runes) - 1
+	if esc, ok := escapes[runes[last]]; ok {
+		esc(t, string(runes[:last]))
 	} else if t.debug {
 		log.Println("Unrecognised Escape:", strconv.QuoteToASCII(code))
 	}
@@ -195,6 +198,9 @@ func escapeDeleteChars(t *Terminal, msg string) {
 	right := t.cursorCol + i
 
 	row := t.content.Row(t.rowOffset() + t.cursorRow)
+	if t.cursorCol >= len(row.Cells) {
+		return // rows are sparse: nothing to delete past the row's content
+	}
 	cells := row.Cells[:t.cursorCol]
 	if right < len(row.Cells) {
 		cells = append(cells, row.Cells[right:]...)
@@ -340,6 +346,11 @@ func escapeInsertChars(t *Terminal, msg string) {
 	}
 
 	contentRow := t.rowOffset() + t.cursorRow
+	if contentRow < 0 || contentRow >= len(t.content.Rows) || t.cursorCol >= len(t.content.Rows[contentRow].Cells) {
+		// Rows are sparse: past the row's content there is nothing to shift
+		// right, and blanks there are indistinguishable from empty cells.
+		return
+	}
 	row := &t.content.Rows[contentRow]
 	row.Cells = append(row.Cells[:t.cursorCol], append(newCells, row.Cells[t.cursorCol:]...)...)
 	if len(row.Cells) > cols {
