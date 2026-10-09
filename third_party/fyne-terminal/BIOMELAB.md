@@ -23,12 +23,6 @@ This is a local compatibility patch, not an upstream release.
 - Parse each output batch and refresh its cursor together on the UI thread.
   Per-character queued updates previously left the native cursor one batch
   behind; the software test driver hid this by running callbacks inline.
-- Batch cell writes and line-scroll refreshes during `Feed`, then render once
-  per output chunk. This avoids repeated grid rendering while parsing a burst.
-- Clamp the viewport and shrink scroll content when clearing history (ED 3),
-  including when the reader has scrolled away from the bottom.
-- `IgnoreTypedKey` consumes the exact native event that opened/focused the
-  terminal, without dropping the user's next Enter.
 - Retain incomplete UTF-8 across reads instead of dropping split characters.
 - Optional indexed-color palette hook, used by Biomelab for readable ANSI colors
   in both themes, including retained history. Explicit RGB colors stay unchanged.
