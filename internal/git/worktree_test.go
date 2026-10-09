@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-git/go-billy/v6/osfs"
 	gogit "github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	xworktree "github.com/go-git/go-git/v6/x/plumbing/worktree"
@@ -232,6 +233,20 @@ func TestCreateWorktree_NoCommits(t *testing.T) {
 }
 
 // setupTestRepo creates a temporary git repository with an initial commit.
+// disableCommitSigning keeps a developer's global commit.gpgSign=true from
+// making go-git refuse test commits (it has no signer plugin registered).
+func disableCommitSigning(t *testing.T, repo *gogit.Repository) {
+	t.Helper()
+	cfg, err := repo.Config()
+	if err != nil {
+		t.Fatalf("read repo config: %v", err)
+	}
+	cfg.Commit.GpgSign = config.NewOptBool(false)
+	if err := repo.SetConfig(cfg); err != nil {
+		t.Fatalf("disable commit signing: %v", err)
+	}
+}
+
 func setupTestRepo(t *testing.T) (string, *gogit.Repository) {
 	t.Helper()
 	dir := t.TempDir()
@@ -240,6 +255,7 @@ func setupTestRepo(t *testing.T) (string, *gogit.Repository) {
 	if err != nil {
 		t.Fatalf("failed to init repo: %v", err)
 	}
+	disableCommitSigning(t, repo)
 
 	// Create an initial commit so HEAD exists.
 	wt, err := repo.Worktree()

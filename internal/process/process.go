@@ -33,6 +33,7 @@ func (o *OSLister) Processes(ctx context.Context) ([]Info, error) {
 		return nil, err
 	}
 
+	parents := parentPIDs()
 	var result []Info
 	for _, p := range procs {
 		if err := ctx.Err(); err != nil {
@@ -46,9 +47,11 @@ func (o *OSLister) Processes(ctx context.Context) ([]Info, error) {
 		if cl, err := p.CmdlineWithContext(ctx); err == nil {
 			cmdline = cl
 		}
-		var ppid int32
-		if pp, err := p.PpidWithContext(ctx); err == nil {
-			ppid = pp
+		ppid, ok := parents[p.Pid]
+		if !ok {
+			if pp, err := p.PpidWithContext(ctx); err == nil {
+				ppid = pp
+			}
 		}
 		result = append(result, Info{
 			PID:     p.Pid,
@@ -60,7 +63,7 @@ func (o *OSLister) Processes(ctx context.Context) ([]Info, error) {
 	return result, nil
 }
 
-// Enrich fills in Cwd, Status, and Created for a process.
+// Enrich fills in Cwd, Status, and Created for a process, and PPID if unknown.
 func Enrich(ctx context.Context, info *Info) {
 	if ctx.Err() != nil {
 		return
@@ -78,7 +81,11 @@ func Enrich(ctx context.Context, info *Info) {
 	if createTime, err := p.CreateTimeWithContext(ctx); err == nil {
 		info.Created = time.UnixMilli(createTime)
 	}
-	if ppid, err := p.PpidWithContext(ctx); err == nil {
-		info.PPID = ppid
+	// Listings already carry the parent; re-reading it costs a full process
+	// snapshot per call on Windows.
+	if info.PPID == 0 {
+		if ppid, err := p.PpidWithContext(ctx); err == nil {
+			info.PPID = ppid
+		}
 	}
 }
