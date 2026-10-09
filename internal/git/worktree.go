@@ -16,6 +16,7 @@ import (
 	gogit "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
+	gitclient "github.com/go-git/go-git/v6/plumbing/client"
 	"github.com/go-git/go-git/v6/plumbing/format/gitignore"
 	githttp "github.com/go-git/go-git/v6/plumbing/transport/http"
 	xworktree "github.com/go-git/go-git/v6/x/plumbing/worktree"
@@ -230,7 +231,7 @@ func (r *Repository) Fetch(ctx context.Context) error {
 			if isAuthError(err) {
 				auth, credErr := r.resolveCredentialsForRemote(remoteCtx, remote)
 				if credErr == nil {
-					opts.Auth = auth
+					opts.ClientOptions = []gitclient.Option{gitclient.WithHTTPAuth(auth)}
 					err = r.repo.FetchContext(remoteCtx, opts)
 				}
 			}
@@ -862,7 +863,7 @@ func (r *Repository) Pull() error {
 		if ferr != nil && ferr != gogit.NoErrAlreadyUpToDate && isAuthError(ferr) {
 			auth, credErr := r.resolveCredentialsForRemote(ctx, remote)
 			if credErr == nil {
-				fetchOpts.Auth = auth
+				fetchOpts.ClientOptions = []gitclient.Option{gitclient.WithHTTPAuth(auth)}
 				_ = r.repo.FetchContext(ctx, fetchOpts) // best-effort
 			}
 		}
@@ -894,7 +895,7 @@ func (r *Repository) Pull() error {
 		if credErr != nil {
 			return fmt.Errorf("authentication required but credential lookup failed: %w", credErr)
 		}
-		opts.Auth = auth
+		opts.ClientOptions = []gitclient.Option{gitclient.WithHTTPAuth(auth)}
 		err = wt.Pull(opts)
 		if err == gogit.NoErrAlreadyUpToDate {
 			return nil
@@ -963,7 +964,7 @@ func (r *Repository) FetchPRRef(prNumber int, branchName, remoteURL string) erro
 			if credErr != nil {
 				return fmt.Errorf("fetch PR auth: %w", credErr)
 			}
-			opts.Auth = auth
+			opts.ClientOptions = []gitclient.Option{gitclient.WithHTTPAuth(auth)}
 			err = r.repo.FetchContext(ctx, opts)
 		}
 		if err != nil && err != gogit.NoErrAlreadyUpToDate {
@@ -1178,7 +1179,7 @@ func (r *Repository) Push(remoteName, branchName string) error {
 			if credErr != nil {
 				return fmt.Errorf("push auth: %w", credErr)
 			}
-			opts.Auth = auth
+			opts.ClientOptions = []gitclient.Option{gitclient.WithHTTPAuth(auth)}
 			err = remote.PushContext(ctx, opts)
 			if err != nil && err != gogit.NoErrAlreadyUpToDate {
 				return fmt.Errorf("push %s to %s: %w", branchName, remoteName, err)
@@ -1270,7 +1271,7 @@ func RepoRoot(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	root := wt.Filesystem.Root()
+	root := wt.Filesystem().Root()
 	if mainRoot, ok := mainWorktreeRoot(root); ok {
 		return mainRoot, nil
 	}

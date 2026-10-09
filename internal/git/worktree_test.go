@@ -247,7 +247,7 @@ func setupTestRepo(t *testing.T) (string, *gogit.Repository) {
 		t.Fatalf("failed to get worktree: %v", err)
 	}
 
-	f, err := wt.Filesystem.Create("README.md")
+	f, err := wt.Filesystem().Create("README.md")
 	if err != nil {
 		t.Fatalf("failed to create file: %v", err)
 	}
