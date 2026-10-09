@@ -21,6 +21,7 @@ type TermGrid struct {
 	// stopped is set once the owning renderer is destroyed, so a refresh
 	// already queued by the ticker cannot start a new blink goroutine.
 	stopped bool
+	batch   bool
 }
 
 // CreateRenderer is a private method to Fyne which links this widget to its renderer
@@ -56,6 +57,9 @@ func NewTermGrid() *TermGrid {
 // Refresh will be called when this grid should update.
 // We update our blinking status and then call the TextGrid we extended to refresh too.
 func (t *TermGrid) Refresh() {
+	if t.batch {
+		return
+	}
 	t.refreshBlink(false)
 }
 
@@ -106,4 +110,28 @@ func (t *TermGrid) runBlink() {
 			}
 		}
 	}()
+}
+
+// BeginUpdate defers rendering while the UI thread applies a chunk of output.
+func (t *TermGrid) BeginUpdate() { t.batch = true }
+
+// EndUpdate leaves rendering to the terminal's final refresh.
+func (t *TermGrid) EndUpdate() { t.batch = false }
+
+// SetCell avoids TextGrid's per-character renderer work during output parsing.
+func (t *TermGrid) SetCell(row, col int, cell widget.TextGridCell) {
+	if !t.batch {
+		t.TextGrid.SetCell(row, col, cell)
+		return
+	}
+	if row < 0 || col < 0 {
+		return
+	}
+	for len(t.Rows) <= row {
+		t.Rows = append(t.Rows, widget.TextGridRow{})
+	}
+	for len(t.Rows[row].Cells) <= col {
+		t.Rows[row].Cells = append(t.Rows[row].Cells, widget.TextGridCell{})
+	}
+	t.Rows[row].Cells[col] = cell
 }

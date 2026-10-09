@@ -125,3 +125,35 @@ func TestEmbeddedFollowsOutputBurst(t *testing.T) {
 	term.Feed([]byte("more\r\n"))
 	require.Equal(t, float32(0), sc.Offset.Y)
 }
+
+func TestEmbeddedClearHistoryClampsViewport(t *testing.T) {
+	for _, scrolledUp := range []bool{false, true} {
+		term := New()
+		term.Refresh()
+		term.Resize(fyne.NewSize(800, 500))
+		term.Feed([]byte(strings.Repeat("history\r\n", 200)))
+		sc := term.scrollContainer
+		if scrolledUp {
+			sc.Offset.Y /= 2
+			sc.Refresh()
+		}
+		term.Feed([]byte("\x1b[2J\x1b[3J\x1b[Hprompt> "))
+		require.Contains(t, term.Text(), "prompt>")
+		require.LessOrEqual(t, sc.Offset.Y, max(float32(0), sc.Content.MinSize().Height-sc.Size().Height))
+		require.InDelta(t, max(sc.Content.MinSize().Height, sc.Size().Height), sc.Content.Size().Height, 1)
+	}
+}
+
+func BenchmarkEmbeddedOutput2000Lines(b *testing.B) {
+	term := New()
+	term.Refresh()
+	term.Resize(fyne.NewSize(800, 500))
+	data := []byte(strings.Repeat(strings.Repeat("x", 68)+"\r\n", 2000))
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for offset := 0; offset < len(data); offset += 32 * 1024 {
+			term.Feed(data[offset:min(offset+32*1024, len(data))])
+		}
+	}
+}

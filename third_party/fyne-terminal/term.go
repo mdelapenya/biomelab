@@ -79,6 +79,7 @@ type Terminal struct {
 	altSavedCol     int                  // saved cursor col
 	altBufferActive bool                 // true when alternate buffer is in use
 
+	ignoredKey          *fyne.KeyEvent
 	feedPending         []byte
 	OnResize            func(rows, cols uint)
 	OnReturnToWorkspace func()
@@ -763,17 +764,17 @@ func (t *Terminal) Feed(data []byte) {
 		follow = sc.Offset.Y >= sc.Content.Size().Height-sc.Size().Height-2
 	}
 	data = append(t.feedPending, data...)
+	t.content.BeginUpdate()
 	t.feedPending = append([]byte(nil), t.handleOutput(data)...)
+	t.content.EndUpdate()
 	t.Refresh()
 	if sc := t.scrollContainer; sc != nil {
-		// Scroll clamps offsets against Content.Size(), which only grows on
-		// the next layout pass. Size the content to the new history now so a
-		// burst of rows (one ConPTY/PTY read) can be followed immediately
-		// instead of resetting the viewport to the top of the scrollback.
-		min, size := sc.Content.MinSize(), sc.Content.Size()
-		if min.Height > size.Height || min.Width > size.Width {
-			sc.Content.Resize(fyne.NewSize(max(min.Width, size.Width), max(min.Height, size.Height)))
-		}
+		// Reconcile both growth and shrinkage (ED 3 / alternate screen).
+		// Keeping the old height after clearing history leaves an empty viewport.
+		minimum := sc.Content.MinSize()
+		sc.Content.Resize(fyne.NewSize(max(minimum.Width, sc.Size().Width), max(minimum.Height, sc.Size().Height)))
+		sc.Offset.Y = max(0, min(sc.Offset.Y, sc.Content.Size().Height-sc.Size().Height))
+		sc.Refresh()
 		if follow {
 			sc.ScrollToBottom()
 		}

@@ -213,6 +213,9 @@ func (a *App) ensureCardTerminals() *cardTerminals {
 		a.dashboard.Rebuild()
 	})
 	expand := newActionControl("Expand / Restore", theme.ViewFullScreenIcon(), false, func() {
+		if a.window != nil {
+			a.window.Canvas().Unfocus()
+		}
 		p.expanded = !p.expanded
 		a.dashboard.Rebuild()
 		// Tapping the control unfocused the terminal; without this the next
@@ -556,9 +559,11 @@ func (a *App) confirmTerminalStop(restart bool) {
 		s.state = "Stopping"
 		if restart {
 			a.startCardTerminal(key, wt, s)
-			a.window.Canvas().Focus(p.sessions[key].view)
 		}
 		a.refreshCardTerminal()
+		if restart {
+			a.window.Canvas().Focus(p.sessions[key].view)
+		}
 	}
 	if !s.running {
 		action()
@@ -629,6 +634,10 @@ func (a *App) stopCardTerminals(match func(cardTerminalKey) bool) []<-chan struc
 	p := a.cardTerminals
 	if p == nil {
 		return nil
+	}
+	if p.visible && match(p.key) {
+		a.leaveCardTerminal()
+		p.visible = false
 	}
 	var stopped []<-chan struct{}
 	for key, s := range p.sessions {

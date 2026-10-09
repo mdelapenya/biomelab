@@ -71,11 +71,11 @@ func (a *App) setupSystemTray() {
 		sbxDocsItem,
 		a.trayDepsItem,
 		fyne.NewMenuItemSeparator(),
-		fyne.NewMenuItem("Quit", func() {
+		&fyne.MenuItem{Label: "Quit", IsQuit: true, Action: func() {
 			a.closeCardTerminals()
 			a.stopAllRefresh()
 			a.fyneApp.Quit()
-		}),
+		}},
 	)
 	desk.SetSystemTrayMenu(a.trayMenu)
 	desk.SetSystemTrayIcon(AppIcon)

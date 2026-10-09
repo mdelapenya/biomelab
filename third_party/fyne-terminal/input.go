@@ -21,7 +21,16 @@ func (t *Terminal) TypedRune(r rune) {
 }
 
 // TypedKey will be called if a non-printable keyboard event occurs
+// IgnoreTypedKey consumes the remainder of the event that focused the terminal.
+// Event identity ensures a later press of the same key is still delivered.
+func (t *Terminal) IgnoreTypedKey(e *fyne.KeyEvent) { t.ignoredKey = e }
+
 func (t *Terminal) TypedKey(e *fyne.KeyEvent) {
+	ignored := t.ignoredKey
+	t.ignoredKey = nil
+	if e == ignored {
+		return
+	}
 	lastKeyTime = time.Now()
 	if t.modifiedCursor(e.Name, t.modifiers()) {
 		return
