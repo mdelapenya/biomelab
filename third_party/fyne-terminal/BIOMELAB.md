@@ -105,6 +105,22 @@ This is a local compatibility patch, not an upstream release.
 - Reverse video draws a default foreground in the theme background colour
   (upstream used the disabled-button colour); the upstream colour tests
   expect the theme background.
+- Only the rows inside the scroll viewport are drawn. Fyne's TextGrid with
+  `ScrollNone` builds a row widget (two canvas objects per column) for every
+  buffered row, and each row scans every other row on layout; with full
+  scrollback that was hundreds of thousands of objects and an O(rows²) resize
+  that froze the app for tens of seconds. `TermGrid` keeps the whole buffer in
+  `Rows` but renders the visible slice through a small inner TextGrid, redrawn
+  on scroll. Output parsing batches cell writes and refreshes once per chunk.
+- Resizing keeps following the bottom when the viewport was following output
+  (Expand/Restore), keeps a reader's place in history, and remembers the
+  follow state across a hidden, zero-height drawer. Negative layout sizes are
+  ignored like zero sizes instead of wrapping to an enormous screen.
+- Shrinking drops rows below the cursor before pushing the top of the screen
+  into history, as conhost does. ConPTY repaints its viewport after a resize;
+  pushing the prompt into history instead duplicated it in the scrollback.
+- Keypad Enter sends CR like Return (upstream sent LF, which PSReadLine treats
+  as "insert a new line", leaving PowerShell at a `>>` continuation prompt).
 - Comment-only typo fixes in `apc.go`, `select.go` and
   `internal/widget/termgrid.go` (worth sending upstream with the rest).
 

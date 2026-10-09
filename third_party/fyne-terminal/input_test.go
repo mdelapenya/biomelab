@@ -75,7 +75,7 @@ func TestTerminal_TypedKey(t *testing.T) {
 		"Delete":    {fyne.KeyDelete, false, false, []byte{asciiEscape, '[', '3', '~'}},
 		"End":       {fyne.KeyEnd, false, false, []byte{asciiEscape, '[', 'F'}},
 		"End app":   {fyne.KeyEnd, true, false, []byte{asciiEscape, 'O', 'F'}},
-		"Enter":     {fyne.KeyEnter, false, false, []byte{'\n'}}, // Modify as needed for Windows or bufferMode
+		"Enter":     {fyne.KeyEnter, false, false, []byte{'\r'}}, // keypad Enter submits like Return; Biomelab patch
 		"Tab":       {fyne.KeyTab, false, false, []byte{'\t'}},
 		"Escape":    {fyne.KeyEscape, false, false, []byte{asciiEscape}},
 		"Backspace": {fyne.KeyBackspace, false, false, []byte{0x7f}},
@@ -109,7 +109,7 @@ func TestTerminal_TypedKey_LineMode(t *testing.T) {
 		newLineMode bool
 		want        []byte
 	}{
-		"Enter":                 {fyne.KeyEnter, false, []byte{'\n'}},
+		"Enter":                 {fyne.KeyEnter, false, []byte{'\r'}},
 		"Enter with line mode":  {fyne.KeyEnter, true, []byte{'\r'}},
 		"Return":                {fyne.KeyReturn, false, []byte{'\r'}},
 		"Return with line mode": {fyne.KeyReturn, true, []byte{'\r'}},

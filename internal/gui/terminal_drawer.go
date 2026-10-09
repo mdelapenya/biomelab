@@ -573,14 +573,14 @@ func (a *App) confirmTerminalStop(restart bool) {
 	done := a.openDialog()
 	var d dialog.Dialog
 	cancel := newDialogButton("Cancel", func() { d.Hide() }, func() { d.Hide() })
-	label := "Stop session"
+	label, title, body := "Stop session", "Stop terminal session?", "This stops the shell or agent running in this card's terminal."
 	if restart {
-		label = "Restart session"
+		label, title, body = "Restart session", "Restart terminal session?", "This stops the shell or agent running in this card's terminal and starts a new one."
 	}
 	confirm := newDialogButton(label, func() { d.Hide(); action() }, func() { d.Hide() })
 	confirm.Importance = widget.HighImportance
-	d = dialog.NewCustomWithoutButtons("Stop terminal session?", container.NewVBox(
-		dialogText("This stops the shell or agent running in this card's terminal."),
+	d = dialog.NewCustomWithoutButtons(title, container.NewVBox(
+		dialogText(body),
 		dialogFooter(cancel, confirm)), a.window)
 	d.SetOnClosed(func() {
 		done()

@@ -20,11 +20,11 @@ func (t *Terminal) TypedRune(r rune) {
 	_, _ = t.in.Write(b[:size])
 }
 
-// TypedKey will be called if a non-printable keyboard event occurs
 // IgnoreTypedKey consumes the remainder of the event that focused the terminal.
 // Event identity ensures a later press of the same key is still delivered.
 func (t *Terminal) IgnoreTypedKey(e *fyne.KeyEvent) { t.ignoredKey = e }
 
+// TypedKey will be called if a non-printable keyboard event occurs
 func (t *Terminal) TypedKey(e *fyne.KeyEvent) {
 	ignored := t.ignoredKey
 	t.ignoredKey = nil
@@ -45,14 +45,10 @@ func (t *Terminal) TypedKey(e *fyne.KeyEvent) {
 	}
 
 	switch e.Name {
-	case fyne.KeyReturn:
+	case fyne.KeyReturn, fyne.KeyEnter:
+		// Keypad Enter sends CR like Return (xterm numeric keypad mode); LF
+		// makes PSReadLine insert a continuation line instead of submitting.
 		_, _ = t.in.Write([]byte{'\r'})
-	case fyne.KeyEnter:
-		if t.newLineMode {
-			_, _ = t.in.Write([]byte{'\r'})
-			return
-		}
-		_, _ = t.in.Write([]byte{'\n'})
 	case fyne.KeyTab:
 		_, _ = t.in.Write([]byte{'\t'})
 	case fyne.KeyF1:

@@ -2,9 +2,11 @@ package widget
 
 import (
 	"context"
+	"math"
 	"time"
 
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"fyne.io/fyne/v2"
@@ -22,6 +24,11 @@ type TermGrid struct {
 	// already queued by the ticker cannot start a new blink goroutine.
 	stopped bool
 	batch   bool
+
+	// Viewport reports the visible vertical span (offset and height) of the
+	// grid inside its scroller. When set, only those rows are rendered.
+	Viewport func() (top, height float32)
+	view     *widget.TextGrid
 }
 
 // CreateRenderer is a private method to Fyne which links this widget to its renderer
@@ -29,8 +36,86 @@ func (t *TermGrid) CreateRenderer() fyne.WidgetRenderer {
 	t.ExtendBaseWidget(t)
 	t.stopped = false
 
-	return t.TextGrid.CreateRenderer()
+	// Initialise TextGrid's internal content so its methods stay safe to call.
+	// It is never displayed: with ScrollNone, TextGrid builds a row widget (two
+	// canvas objects per column) for every buffered row, and each row scans
+	// every other row on layout. With full scrollback that is hundreds of
+	// thousands of objects and an O(rows²) resize, so only the rows inside
+	// Viewport are drawn, by a small TextGrid holding that slice.
+	t.TextGrid.CreateRenderer()
+	t.view = widget.NewTextGrid()
+	return &termGridRenderer{grid: t}
 }
+
+// PositionForCursorLocation returns the grid-relative position of a cell,
+// measured by the grid that is actually drawn.
+func (t *TermGrid) PositionForCursorLocation(row, col int) fyne.Position {
+	if t.view == nil {
+		return t.TextGrid.PositionForCursorLocation(row, col)
+	}
+	return t.view.PositionForCursorLocation(row, col)
+}
+
+// RenderedRows reports how many buffered rows are currently drawn.
+func (t *TermGrid) RenderedRows() int {
+	if t.view == nil {
+		return len(t.Rows)
+	}
+	return len(t.view.Rows)
+}
+
+type termGridRenderer struct {
+	grid *TermGrid
+}
+
+func (r *termGridRenderer) cellSize() fyne.Size {
+	th := r.grid.Theme()
+	size := fyne.MeasureText("M", th.Size(theme.SizeNameText), fyne.TextStyle{Monospace: true})
+	return fyne.NewSize(float32(math.Round(float64(size.Width))), float32(math.Round(float64(size.Height))))
+}
+
+// window returns the buffered rows [start, end) that intersect the viewport.
+func (r *termGridRenderer) window(cell fyne.Size) (start, end int) {
+	end = len(r.grid.Rows)
+	if r.grid.Viewport == nil || cell.Height <= 0 {
+		return 0, end
+	}
+	top, height := r.grid.Viewport()
+	start = min(max(int(math.Floor(float64(top/cell.Height))), 0), end)
+	end = min(max(int(math.Ceil(float64((top+height)/cell.Height)))+1, start), end)
+	return start, end
+}
+
+func (r *termGridRenderer) Layout(size fyne.Size) {
+	cell := r.cellSize()
+	start, end := r.window(cell)
+	view := r.grid.view
+	view.Rows = r.grid.Rows[start:end]
+	view.TabWidth = r.grid.TabWidth
+	view.ShowWhitespace = r.grid.ShowWhitespace
+	view.Move(fyne.NewPos(0, float32(start)*cell.Height))
+	view.Resize(fyne.NewSize(size.Width, float32(end-start)*cell.Height))
+}
+
+func (r *termGridRenderer) MinSize() fyne.Size {
+	longest := 0
+	for _, row := range r.grid.Rows {
+		longest = max(longest, len(row.Cells))
+	}
+	cell := r.cellSize()
+	return fyne.NewSize(cell.Width*float32(longest), cell.Height*float32(len(r.grid.Rows)))
+}
+
+func (r *termGridRenderer) Refresh() {
+	r.Layout(r.grid.Size())
+	r.grid.view.Refresh()
+}
+
+func (r *termGridRenderer) Objects() []fyne.CanvasObject {
+	return []fyne.CanvasObject{r.grid.view}
+}
+
+func (r *termGridRenderer) Destroy() {}
 
 // Blinking reports whether the blink goroutine is running.
 func (t *TermGrid) Blinking() bool { return t.tickerCancel != nil }
@@ -118,12 +203,8 @@ func (t *TermGrid) BeginUpdate() { t.batch = true }
 // EndUpdate leaves rendering to the terminal's final refresh.
 func (t *TermGrid) EndUpdate() { t.batch = false }
 
-// SetCell avoids TextGrid's per-character renderer work during output parsing.
+// SetCell stores a cell; outside an update batch it also redraws the grid.
 func (t *TermGrid) SetCell(row, col int, cell widget.TextGridCell) {
-	if !t.batch {
-		t.TextGrid.SetCell(row, col, cell)
-		return
-	}
 	if row < 0 || col < 0 {
 		return
 	}
@@ -134,4 +215,7 @@ func (t *TermGrid) SetCell(row, col int, cell widget.TextGridCell) {
 		t.Rows[row].Cells = append(t.Rows[row].Cells, widget.TextGridCell{})
 	}
 	t.Rows[row].Cells[col] = cell
+	if !t.batch {
+		t.Refresh()
+	}
 }
