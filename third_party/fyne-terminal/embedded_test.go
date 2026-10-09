@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/driver/desktop"
 	"github.com/stretchr/testify/require"
 )
@@ -168,7 +169,7 @@ func TestEmbeddedRendersOnlyVisibleRows(t *testing.T) {
 	// O(rows²) layout, freezing the app for tens of seconds on resize.
 	require.LessOrEqual(t, term.content.RenderedRows(), int(term.config.Rows)+2)
 	sc := term.scrollContainer
-	sc.Scrolled(&fyne.ScrollEvent{Scrolled: fyne.NewDelta(0, 400)})
+	wheel(sc, 400)
 	require.LessOrEqual(t, term.content.RenderedRows(), int(term.config.Rows)+2)
 	require.Contains(t, strings.Join(visibleRowTexts(term), "\n"), "history line")
 }
@@ -204,7 +205,7 @@ func TestEmbeddedResizeKeepsFollowingOutput(t *testing.T) {
 	}
 	// A reader in history keeps their place across a resize.
 	sc.ScrollToTop()
-	sc.Scrolled(&fyne.ScrollEvent{Scrolled: fyne.NewDelta(0, -50)})
+	wheel(sc, -50)
 	offset := sc.Offset.Y
 	require.Greater(t, offset, float32(0))
 	term.Resize(fyne.NewSize(600, 300))
@@ -253,4 +254,15 @@ func TestEmbeddedNegativeSizeKeepsDimensions(t *testing.T) {
 	require.Equal(t, cols, c)
 	term.Resize(fyne.NewSize(500, 150))
 	require.Less(t, term.config.Rows, rows)
+}
+
+// wheel scrolls like a mouse wheel without Scroll.Scrolled, whose scroll-end
+// timer (overlay scrollbars, e.g. macOS) runs fyne.Do on its own goroutine
+// under the test driver and races with later tests.
+func wheel(sc *container.Scroll, dy float32) {
+	maxY := max(sc.Content.MinSize().Height-sc.Size().Height, 0)
+	sc.Offset.Y = min(max(sc.Offset.Y-dy, 0), maxY)
+	if sc.OnScrolled != nil {
+		sc.OnScrolled(sc.Offset)
+	}
 }
