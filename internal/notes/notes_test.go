@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	gogit "github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing/object"
 )
 
@@ -19,6 +20,15 @@ func initRepo(t *testing.T) string {
 	repo, err := gogit.PlainInit(dir, false)
 	if err != nil {
 		t.Fatalf("init: %v", err)
+	}
+	// A global commit.gpgSign=true would make go-git refuse the commit.
+	cfg, err := repo.Config()
+	if err != nil {
+		t.Fatalf("config: %v", err)
+	}
+	cfg.Commit.GpgSign = config.NewOptBool(false)
+	if err := repo.SetConfig(cfg); err != nil {
+		t.Fatalf("set config: %v", err)
 	}
 	wt, err := repo.Worktree()
 	if err != nil {

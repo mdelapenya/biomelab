@@ -43,6 +43,10 @@ func setupKeyHandlersWithModifiers(c fyne.Canvas, onKey func(fyne.KeyName), onRu
 			}
 			if ev.Name == fyne.KeyEscape || mods&(fyne.KeyModifierControl|fyne.KeyModifierSuper|fyne.KeyModifierAlt) == 0 {
 				onKey(ev.Name)
+				// Fyne rechecks focus before TypedKey for this same press.
+				if target, ok := c.Focused().(interface{ IgnoreTypedKey(*fyne.KeyEvent) }); ok {
+					target.IgnoreTypedKey(ev)
+				}
 			}
 		})
 	}

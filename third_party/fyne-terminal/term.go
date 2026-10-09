@@ -79,7 +79,9 @@ type Terminal struct {
 	altSavedCol     int                  // saved cursor col
 	altBufferActive bool                 // true when alternate buffer is in use
 
+	ignoredKey          *fyne.KeyEvent
 	feedPending         []byte
+	scrolledBack        bool // reading history rather than following the bottom
 	OnResize            func(rows, cols uint)
 	OnReturnToWorkspace func()
 	scrollbackMax       int
@@ -265,9 +267,16 @@ func (t *Terminal) RemoveListener(listener chan Config) {
 // Resize is called when this terminal widget has been resized.
 // It ensures that the virtual terminal is within the bounds of the widget.
 func (t *Terminal) Resize(s fyne.Size) {
+	if t.content != nil {
+		// Expand/Restore must not strand a viewport that was following output.
+		follow := t.updateFollowing()
+		defer t.reconcileScroll(follow)
+	}
 	cellSize := t.guessCellSize()
-	cols := uint(math.Floor(float64(s.Width) / float64(cellSize.Width)))
-	rows := uint(math.Floor(float64(s.Height) / float64(cellSize.Height)))
+	// Layouts can pass a negative size; converting that to uint would wrap
+	// to an enormous screen, so treat it like the transient zero size.
+	cols := uint(math.Floor(float64(max(s.Width, 0)) / float64(cellSize.Width)))
+	rows := uint(math.Floor(float64(max(s.Height, 0)) / float64(cellSize.Height)))
 	if cols == 0 || rows == 0 || ((t.config.Columns == cols) && (t.config.Rows == rows)) {
 		t.BaseWidget.Resize(s)
 		return
@@ -276,6 +285,15 @@ func (t *Terminal) Resize(s fyne.Size) {
 	t.BaseWidget.Resize(s)
 
 	off := t.rowOffset()
+	if t.content != nil && t.config.Rows > 0 && rows < t.config.Rows {
+		// Shrinking drops rows below the cursor before pushing the top of the
+		// screen into history, as conhost does. ConPTY repaints its viewport
+		// after a resize; pushing the prompt into history instead left that
+		// repaint duplicating it, under a blank screen.
+		below := len(t.content.Rows) - 1 - (off + t.cursorRow)
+		drop := min(int(t.config.Rows-rows), max(below, 0))
+		t.content.Rows = t.content.Rows[:len(t.content.Rows)-drop]
+	}
 	if t.content != nil && t.config.Rows > 0 && rows > t.config.Rows {
 		for len(t.content.Rows) < off+int(rows) {
 			t.content.Rows = append(t.content.Rows, widget.TextGridRow{})
@@ -758,26 +776,46 @@ func (t *Terminal) Feed(data []byte) {
 	if t.content == nil {
 		t.Refresh()
 	}
-	follow := true
-	if sc := t.scrollContainer; sc != nil {
-		follow = sc.Offset.Y >= sc.Content.Size().Height-sc.Size().Height-2
-	}
+	follow := t.updateFollowing()
 	data = append(t.feedPending, data...)
+	t.content.BeginUpdate()
 	t.feedPending = append([]byte(nil), t.handleOutput(data)...)
+	t.content.EndUpdate()
 	t.Refresh()
-	if sc := t.scrollContainer; sc != nil {
-		// Scroll clamps offsets against Content.Size(), which only grows on
-		// the next layout pass. Size the content to the new history now so a
-		// burst of rows (one ConPTY/PTY read) can be followed immediately
-		// instead of resetting the viewport to the top of the scrollback.
-		min, size := sc.Content.MinSize(), sc.Content.Size()
-		if min.Height > size.Height || min.Width > size.Width {
-			sc.Content.Resize(fyne.NewSize(max(min.Width, size.Width), max(min.Height, size.Height)))
-		}
-		if follow {
-			sc.ScrollToBottom()
-		}
+	t.reconcileScroll(follow)
+}
+
+// updateFollowing records whether the viewport is at the bottom of the output
+// and returns it. A viewport with no height (a hidden drawer) cannot be
+// measured, so the last known state is kept.
+func (t *Terminal) updateFollowing() bool {
+	sc := t.scrollContainer
+	if sc == nil || sc.Content == nil || sc.Size().Height <= 0 {
+		return !t.scrolledBack
 	}
+	t.scrolledBack = sc.Offset.Y < sc.Content.Size().Height-sc.Size().Height-2
+	return !t.scrolledBack
+}
+
+// reconcileScroll sizes the scroll content to the current history, clamps the
+// offset, and returns to the bottom when output was being followed.
+func (t *Terminal) reconcileScroll(follow bool) {
+	sc := t.scrollContainer
+	if sc == nil || sc.Content == nil {
+		return
+	}
+	// Reconcile both growth and shrinkage (ED 3 / alternate screen).
+	// Keeping the old height after clearing history leaves an empty viewport.
+	minimum := sc.Content.MinSize()
+	sc.Content.Resize(fyne.NewSize(max(minimum.Width, sc.Size().Width), max(minimum.Height, sc.Size().Height)))
+	sc.Offset.Y = max(0, min(sc.Offset.Y, sc.Content.Size().Height-sc.Size().Height))
+	sc.Refresh()
+	if follow {
+		sc.ScrollToBottom()
+		t.scrolledBack = false
+	}
+	// Offsets set directly or clamped above do not fire OnScrolled.
+	t.content.Refresh()
 }
 
 // Dimensions returns the current PTY dimensions on the UI thread.

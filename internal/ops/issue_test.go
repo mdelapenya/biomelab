@@ -9,6 +9,7 @@ import (
 	"time"
 
 	gogit "github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing/object"
 
 	gitops "github.com/mdelapenya/biomelab/internal/git"
@@ -251,6 +252,20 @@ func TestWriteIssueNotes_RejectsSymlinkArtifact(t *testing.T) {
 	}
 }
 
+// disableCommitSigning keeps a developer's global commit.gpgSign=true from
+// making go-git refuse test commits (it has no signer plugin registered).
+func disableCommitSigning(t *testing.T, repo *gogit.Repository) {
+	t.Helper()
+	cfg, err := repo.Config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Commit.GpgSign = config.NewOptBool(false)
+	if err := repo.SetConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func newNotesTestRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -258,6 +273,7 @@ func newNotesTestRepo(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	disableCommitSigning(t, raw)
 	wt, err := raw.Worktree()
 	if err != nil {
 		t.Fatal(err)
@@ -281,6 +297,7 @@ func newOpsRepo(t *testing.T, files map[string]string) (string, *gitops.Reposito
 	if err != nil {
 		t.Fatal(err)
 	}
+	disableCommitSigning(t, raw)
 	wt, err := raw.Worktree()
 	if err != nil {
 		t.Fatal(err)

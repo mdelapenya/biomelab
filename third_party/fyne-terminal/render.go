@@ -106,6 +106,13 @@ func (t *Terminal) CreateRenderer() fyne.WidgetRenderer {
 
 	inner := container.New(&termContentLayout{grid: t.content}, t.content, t.cursor)
 	t.scrollContainer = container.NewVScroll(inner)
+	sc := t.scrollContainer
+	grid := t.content
+	grid.Viewport = func() (float32, float32) { return sc.Offset.Y, sc.Size().Height }
+	sc.OnScrolled = func(fyne.Position) {
+		t.updateFollowing()
+		grid.Refresh() // draw the rows that scrolled into view
+	}
 
 	r := &render{term: t, grid: t.content}
 	t.cursorMoved = r.moveCursor

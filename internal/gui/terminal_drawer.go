@@ -213,6 +213,9 @@ func (a *App) ensureCardTerminals() *cardTerminals {
 		a.dashboard.Rebuild()
 	})
 	expand := newActionControl("Expand / Restore", theme.ViewFullScreenIcon(), false, func() {
+		if a.window != nil {
+			a.window.Canvas().Unfocus()
+		}
 		p.expanded = !p.expanded
 		a.dashboard.Rebuild()
 		// Tapping the control unfocused the terminal; without this the next
@@ -556,9 +559,11 @@ func (a *App) confirmTerminalStop(restart bool) {
 		s.state = "Stopping"
 		if restart {
 			a.startCardTerminal(key, wt, s)
-			a.window.Canvas().Focus(p.sessions[key].view)
 		}
 		a.refreshCardTerminal()
+		if restart {
+			a.window.Canvas().Focus(p.sessions[key].view)
+		}
 	}
 	if !s.running {
 		action()
@@ -568,14 +573,14 @@ func (a *App) confirmTerminalStop(restart bool) {
 	done := a.openDialog()
 	var d dialog.Dialog
 	cancel := newDialogButton("Cancel", func() { d.Hide() }, func() { d.Hide() })
-	label := "Stop session"
+	label, title, body := "Stop session", "Stop terminal session?", "This stops the shell or agent running in this card's terminal."
 	if restart {
-		label = "Restart session"
+		label, title, body = "Restart session", "Restart terminal session?", "This stops the shell or agent running in this card's terminal and starts a new one."
 	}
 	confirm := newDialogButton(label, func() { d.Hide(); action() }, func() { d.Hide() })
 	confirm.Importance = widget.HighImportance
-	d = dialog.NewCustomWithoutButtons("Stop terminal session?", container.NewVBox(
-		dialogText("This stops the shell or agent running in this card's terminal."),
+	d = dialog.NewCustomWithoutButtons(title, container.NewVBox(
+		dialogText(body),
 		dialogFooter(cancel, confirm)), a.window)
 	d.SetOnClosed(func() {
 		done()
@@ -629,6 +634,10 @@ func (a *App) stopCardTerminals(match func(cardTerminalKey) bool) []<-chan struc
 	p := a.cardTerminals
 	if p == nil {
 		return nil
+	}
+	if p.visible && match(p.key) {
+		a.leaveCardTerminal()
+		p.visible = false
 	}
 	var stopped []<-chan struct{}
 	for key, s := range p.sessions {

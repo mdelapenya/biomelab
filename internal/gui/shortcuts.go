@@ -69,7 +69,7 @@ func (a *App) handleKeyName(key fyne.KeyName) {
 	case fyne.KeyRight:
 		a.navigateRight()
 		return
-	case fyne.KeyReturn:
+	case fyne.KeyReturn, fyne.KeyEnter:
 		a.handleEnter()
 		return
 	case fyne.KeyEscape:

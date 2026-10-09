@@ -623,11 +623,11 @@ func (d *Dashboard) terminalOwnerSummary(wt git.Worktree, key cardTerminalKey) f
 func (d *Dashboard) helpBar() fyne.CanvasObject {
 	hint := shortcutLabel
 	viewKeys := hint("Switch view", "v")
-	text := "Projects · " + hint("Select mode", "↑ ↓") + " · " + hint("Add repository", "a") + " · " + hint("Add sandbox mode", "n") + " · " + hint("Remove mode", "x") + " · " + hint("Worktrees", "Enter or Tab")
+	text := "Projects · " + hint("Select mode", "Up/Down") + " · " + hint("Add repository", "a") + " · " + hint("Add sandbox mode", "n") + " · " + hint("Remove mode", "x") + " · " + hint("Worktrees", "Enter or Tab")
 	if d.keyboardActive {
-		arrows := "↑ ↓ ← →"
+		arrows := "Arrow keys"
 		if d.state.ViewMode == ViewList {
-			arrows = "↑ ↓"
+			arrows = "Up/Down"
 		}
 		text = "Worktrees · " + hint("Navigate", arrows) + " · " + hint("Projects", "Tab")
 		if d.state.MainWorktree() != nil {

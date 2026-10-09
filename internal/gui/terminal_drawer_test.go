@@ -513,3 +513,45 @@ func TestFailedRestartKeepsThePreviousBarrier(t *testing.T) {
 		t.Fatal("barrier did not open after the previous session's")
 	}
 }
+
+func TestOpeningTerminalConsumesOnlyOpeningEnter(t *testing.T) {
+	for _, key := range []fyne.KeyName{fyne.KeyReturn, fyne.KeyEnter} {
+		t.Run(string(key), func(t *testing.T) {
+			a, re, w := terminalFixture(t)
+			s := seedCardTerminal(a, re, re.state.Worktrees[2])
+			capture := &terminalCapture{}
+			s.view.AttachWriter(capture)
+			c := &keyboardCanvas{Canvas: w.Canvas()}
+			setupKeyHandlersWithModifiers(c, a.handleKeyName, func(rune) {}, func() fyne.KeyModifier { return 0 })
+			c.press(key)
+			if c.Focused() != s.view {
+				t.Fatal("opening key did not focus terminal")
+			}
+			if capture.Len() != 0 {
+				t.Fatalf("opening key reached shell: %q", capture.String())
+			}
+			c.press(key)
+			if capture.Len() != 1 {
+				t.Fatalf("subsequent Enter lost: %q", capture.String())
+			}
+		})
+	}
+}
+
+func TestRemovingShownTerminalCollapsesDrawer(t *testing.T) {
+	a, re, w := terminalFixture(t)
+	shown := re.state.Worktrees[2]
+	seedCardTerminal(a, re, shown)
+	other := seedCardTerminal(a, re, re.state.Worktrees[1])
+	other.running, other.state = false, "Exited"
+	a.handleEnter()
+	key := cardKey(re, shown)
+	a.stopCardTerminals(func(k cardTerminalKey) bool { return k == key })
+	a.dashboard.selectCard(1)
+	if a.cardTerminals.visible || w.Canvas().Focused() != nil {
+		t.Fatal("removed terminal left drawer open or focused")
+	}
+	if a.cardTerminals.sessions[cardKey(re, re.state.Worktrees[1])] != other {
+		t.Fatal("unrelated session removed")
+	}
+}
